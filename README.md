@@ -1,6 +1,6 @@
 # Reth Contributor — 24-Month Daily Plan
 
-> **Start**: YYYY-MM-DD
+> **Start**: 2026-04-25
 > **Horizon**: 24 months, reassess at Month 24
 > **Commitment**: 5h/day × 6 days/week = 30h/week
 > **Schedule**: Mon-Sat work, Sunday rest + weekly ritual
@@ -32,13 +32,13 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 ### Week 1 — Ownership fundamentals
 
 **Pre-week setup (Sunday before, 1-2h, not counted)**:
-- [ ] Install rustup, verify `cargo --version`, `rustc --version`
-- [ ] Install VSCode + rust-analyzer OR nvim + rust-analyzer LSP
-- [ ] Install `cargo install cargo-nextest cargo-expand cargo-watch`
-- [ ] Create private GitHub repo `rust-reth-journey` with `progress.md`, `questions.md`, `notes/` folder
-- [ ] Clone Rustlings: `cargo install rustlings`
-- [ ] Create Twitter account, follow: paradigmxyz, gakonst, mattsse_, dan_cline, DragonRakita
-- [ ] Follow paradigmxyz, bluealloy/revm, alloy-rs, foundry-rs on GitHub
+- [X] Install rustup, verify `cargo --version`, `rustc --version`
+- [X] Install VSCode + rust-analyzer OR nvim + rust-analyzer LSP
+- [X] Install `cargo install cargo-nextest cargo-expand cargo-watch`
+- [X] Create private GitHub repo `rust-reth-journey` with `progress.md`, `questions.md`, `notes/` folder
+- [X] Clone Rustlings: `cargo install rustlings`
+- [X] Create Twitter account, follow: paradigmxyz, gakonst, mattsse_, dan_cline, DragonRakita
+- [X] Follow paradigmxyz, bluealloy/revm, alloy-rs, foundry-rs on GitHub
 
 **Monday — Book ch1-2, Rustlings intro**
 - [ ] Rust Book Chapter 1 (Getting Started)
