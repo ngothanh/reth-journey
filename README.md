@@ -25,608 +25,493 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 
 ---
 
-# PHASE 1: RUST FOUNDATION (Month 1-3)
+# PHASE 1: RUST MASTERY — fast track for experienced engineers (Month 1-3)
 
-## Month 1: Core Rust Syntax + Ownership
+> Compressed for a 12-year Java/Kotlin engineer. Skip beginner syntax (you already have analogues for if/else, structs, generics, modules, testing). Drill the genuinely Rust-specific concepts: ownership, lifetimes, traits + coherence, smart pointers, async/Pin, unsafe, atomics. Use the saved time to start Alloy/revm PRs and Ethereum protocol study early — by end of Month 3 you should already be ahead of the original Phase 2 entry point.
 
-### Week 1 — Ownership fundamentals
+## Month 1: Rust Core (Weeks 1-4)
 
-**Pre-week setup (Sunday before, 1-2h, not counted)**:
-- [X] Install rustup, verify `cargo --version`, `rustc --version`
-- [X] Install VSCode + rust-analyzer OR nvim + rust-analyzer LSP
-- [X] Install `cargo install cargo-nextest cargo-expand cargo-watch`
-- [X] Create private GitHub repo `rust-reth-journey` with `progress.md`, `questions.md`, `notes/` folder
-- [X] Clone Rustlings: `cargo install rustlings`
-- [X] Create Twitter account, follow: paradigmxyz, gakonst, mattsse_, dan_cline, DragonRakita
-- [X] Follow paradigmxyz, bluealloy/revm, alloy-rs, foundry-rs on GitHub
+### Week 1 — Ownership, borrowing, lifetimes (the Java→Rust delta)
 
-**Monday — Book ch1-2, Rustlings intro**
-- [ ] Rust Book Chapter 1 (Getting Started)
-- [ ] Rust Book Chapter 2 (Guessing Game)
-- [ ] Rustlings `intro` (3 exercises)
-- [ ] Rustlings `variables` (6 exercises)
-- [ ] Rustlings `functions` (5 exercises)
-- [ ] Build guessing game from scratch without looking at book
-- [ ] Commit to repo with message "Day 1"
-- [ ] Log in progress.md
+**Pre-week setup**: ✓ already done (rustup, rust-analyzer, cargo tools, repo, Rustlings cloned)
 
-**Tuesday — Book ch3, Rustlings control flow**
-- [ ] Rust Book Chapter 3 (Common Programming Concepts)
-- [ ] Rustlings `if` (3 exercises)
-- [ ] Rustlings `primitive_types` (6 exercises)
-- [ ] Mini exercise: implement Fibonacci (iterative + recursive)
-- [ ] Mini exercise: temperature converter C↔F
-- [ ] Mini exercise: simple calculator with match on operator
-- [ ] Note: expression vs statement in notes/
+**Monday — Skim the Book chs 1-9, write nothing**
+- [X] Speed-read Book ch1-3 (~30 min): hello world, variables, functions, control flow — confirm syntax only
+- [X] Speed-read Book ch5-9 (~90 min): structs, enums, modules, collections, error handling — note differences from Kotlin (Result vs exceptions, sealed classes vs enums-with-data, no inheritance)
+- [X] Skip all Rustlings: `intro`, `variables`, `functions`, `if`, `primitive_types`, `strings`, `vecs`, `hashmaps`, `modules`
+- [X] Write `notes/01_kotlin_to_rust_delta.md`: 1-page diff between Kotlin and Rust mental models
+- [X] Commit + log
+
+**Tuesday — Book ch4 ownership/borrowing (deep, 2x read)**
+- [ ] Book ch4.1 (Ownership) — read twice
+- [ ] Book ch4.2 (References and Borrowing) — read twice
+- [ ] Book ch4.3 (Slices)
+- [ ] Rustlings `move_semantics` (all 6) — do every variant
+- [ ] Write 8 small programs that intentionally fail to compile; collect borrow-checker errors and document each in `notes/02_borrow_checker_errors.md`
 - [ ] Commit + log
 
-**Wednesday — Book ch4.1-4.2 (Ownership & References)**
-- [ ] Rust Book Chapter 4.1 (What is Ownership) — read 2x
-- [ ] Rust Book Chapter 4.2 (References and Borrowing)
-- [ ] Rustlings `move_semantics` (6 exercises — do all)
-- [ ] Draw diagram: stack vs heap with String example in notes/
-- [ ] Write 5 small programs forcing compiler errors to learn borrow checker
-- [ ] Document 3 rules of ownership in own words
+**Wednesday — Book ch10.3 lifetimes + Crust of Rust**
+- [ ] Book ch10.3 (Lifetimes) — read twice
+- [ ] Watch Crust of Rust: Lifetime Annotations (full)
+- [ ] Code along: implement Jon's `StrSplit<'a, 'b>` from scratch
+- [ ] Rustlings `lifetimes` (all 3)
+- [ ] Document lifetime elision rules in `notes/03_lifetimes.md` in own words
 - [ ] Commit + log
 
-**Thursday — Book ch4.3 + ch5 (Slices, Structs)**
-- [ ] Rust Book Chapter 4.3 (Slice Type)
-- [ ] Rust Book Chapter 5.1 (Defining Structs)
-- [ ] Rust Book Chapter 5.2 (Example Program)
-- [ ] Rustlings `strings` (4 exercises)
-- [ ] Rustlings `structs` (3 exercises)
-- [ ] Exercise: String vs &str in function signatures
-- [ ] Exercise: implement `Point` struct with methods
+**Thursday — Traits + generics (the trait coherence delta)**
+- [ ] Book ch10.1 + ch10.2 (Generics, Traits)
+- [ ] Rustlings `generics`, `traits` — all
+- [ ] Read about orphan rule, coherence, sealed traits — these are unlike Java interfaces
+- [ ] Exercise: blanket impl pattern, extension trait pattern
+- [ ] Exercise: write 4 functions, one for each variant — `&dyn Trait`, `Box<dyn Trait>`, `impl Trait` arg, generic `T: Trait`
+- [ ] Note in `notes/04_traits.md`: static vs dynamic dispatch tradeoffs, monomorphization
 - [ ] Commit + log
 
-**Friday — Book ch5.3 + ch6 (Methods, Enums)**
-- [ ] Rust Book Chapter 5.3 (Method Syntax)
-- [ ] Rust Book Chapter 6.1 (Defining an Enum)
-- [ ] Rust Book Chapter 6.2 (match Control Flow)
-- [ ] Rustlings `enums` (3 exercises)
-- [ ] Rustlings `vecs` (2 exercises)
-- [ ] Exercise: implement `Shape` enum with area() method via match
-- [ ] Exercise: implement Option-like enum from scratch
+**Friday — Error handling + iterators (in depth, since `?` is non-obvious)**
+- [ ] Book ch9 + ch13.1 + ch13.2
+- [ ] Rustlings `error_handling`, `options`, `iterators` — all
+- [ ] Read `thiserror` and `anyhow` docs end-to-end
+- [ ] Exercise: rewrite a small program 3 ways — panic, Result+thiserror, anyhow — note when each fits
+- [ ] Watch Crust of Rust: Iterators (full) — code along
+- [ ] Implement `flatten()` from scratch using only the `Iterator` trait
 - [ ] Commit + log
 
-**Saturday — Book ch6.3 + ch7 (if let, Modules)**
-- [ ] Rust Book Chapter 6.3 (if let)
-- [ ] Rust Book Chapter 7 (Modules, Packages, Crates)
-- [ ] Rustlings `modules` (3 exercises)
-- [ ] Rustlings `hashmaps` (3 exercises)
-- [ ] Exercise: reorganize previous exercises into multi-module crate
-- [ ] Practice `pub`, `use`, re-exports
-- [ ] Commit + log
-
-**Sunday — Rest + Weekly Ritual (1h)**
-- [ ] Review all notes from the week
-- [ ] Dedup and close questions.md items
-- [ ] Update progress.md with weekly summary
-- [ ] Honest assessment: "Did I understand ownership or just pass exercises?"
-- [ ] If ownership unclear, add catch-up slot to Week 2
-
----
-
-### Week 2 — Error handling, generics, traits intro
-
-**Monday — Book ch8 (Collections) + ch9.1 (panic)**
-- [ ] Rust Book Chapter 8 (Common Collections) — Vec, String, HashMap in depth
-- [ ] Rust Book Chapter 9.1 (Unrecoverable Errors with panic!)
-- [ ] Rustlings `options` (3 exercises)
-- [ ] Exercise: implement `Stack<T>` using Vec
-- [ ] Exercise: word frequency counter with HashMap
-- [ ] Commit + log
-
-**Tuesday — Book ch9.2-9.3 (Error Handling)**
-- [ ] Rust Book Chapter 9.2 (Recoverable Errors with Result)
-- [ ] Rust Book Chapter 9.3 (To panic! or Not)
-- [ ] Rustlings `error_handling` (6 exercises)
-- [ ] Read `thiserror` crate docs
-- [ ] Exercise: rewrite calculator with Result and custom error enum using thiserror
-- [ ] Practice `?` operator in chains
-- [ ] Commit + log
-
-**Wednesday — Book ch10.1 (Generics)**
-- [ ] Rust Book Chapter 10.1 (Generic Data Types)
-- [ ] Rustlings `generics` (2 exercises)
-- [ ] Exercise: generic `largest<T: PartialOrd>` function
-- [ ] Exercise: generic `Pair<T, U>` struct
-- [ ] Exercise: generic `Container<T>` with Vec backing
-- [ ] Note: monomorphization concept in notes/
-- [ ] Commit + log
-
-**Thursday — Book ch10.2 (Traits)**
-- [ ] Rust Book Chapter 10.2 (Traits)
-- [ ] Rustlings `traits` (5 exercises)
-- [ ] Exercise: implement `Summary` trait for 3 types
-- [ ] Exercise: trait bounds with multiple constraints
-- [ ] Exercise: blanket implementation pattern
-- [ ] Note: static vs dynamic dispatch in notes/
-- [ ] Commit + log
-
-**Friday — Book ch10.3 (Lifetimes)**
-- [ ] Rust Book Chapter 10.3 (Lifetimes)
-- [ ] Rustlings `lifetimes` (3 exercises)
-- [ ] Watch Crust of Rust: Lifetime Annotations (first 30 min)
-- [ ] Exercise: `longest<'a>` function
-- [ ] Exercise: struct with lifetime parameter
-- [ ] Note: lifetime elision rules in notes/
-- [ ] Commit + log
-
-**Saturday — Crust of Rust Lifetimes full + consolidation**
-- [ ] Watch Crust of Rust: Lifetime Annotations completely
-- [ ] Code along with Jon Gjengset's `StrSplit` implementation
-- [ ] Review week's notes
-- [ ] Start Project scaffold: `xcsv` CLI tool (args parsing only, no logic yet)
-- [ ] Read `clap` crate docs
+**Saturday — Closures + Fn/FnMut/FnOnce + R4R intro**
+- [ ] Book ch13.1 (Closures) — focus on FnOnce/FnMut/Fn semantics (Kotlin lambdas don't distinguish)
+- [ ] Exercise: 3 functions, each taking a different Fn variant; explain why they differ
+- [ ] Read Rust for Rustaceans ch1-2 (Foundations, Types) — sets the tone for the rest of Phase 1
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
-- [ ] Review notes
-- [ ] Close questions
-- [ ] Update progress.md
-- [ ] Assessment: "Can I explain lifetimes without looking up?"
+- [ ] "Can I explain ownership/borrowing/lifetimes without looking up?" — if no, redo Tue/Wed exercises
 
 ---
 
-### Week 3 — Testing, closures, iterators
+### Week 2 — Smart pointers, interior mutability, sync concurrency
 
-**Monday — Book ch11 (Writing Tests)**
-- [ ] Rust Book Chapter 11 (Writing Automated Tests)
-- [ ] Rustlings `tests` (3 exercises)
-- [ ] Setup `cargo-nextest` for xcsv project
-- [ ] Add unit tests to existing exercises
-- [ ] Practice `#[cfg(test)]` module pattern
+**Monday — Box, Deref, Drop, Rc**
+- [ ] Book ch15.1-15.4
+- [ ] Implement `MyBox<T>` with `Deref` + `Drop` from scratch
+- [ ] Implement single-linked list with Box, then attempt a doubly-linked list to feel the pain → motivation for Rc/Weak
 - [ ] Commit + log
 
-**Tuesday — Book ch12 (CLI project)**
-- [ ] Rust Book Chapter 12 (I/O Project minigrep)
-- [ ] Build minigrep-like but for CSV: `xcsv` — read CSV, filter by column
-- [ ] Use `clap` for arg parsing
-- [ ] Use `thiserror` for error types
-- [ ] Add integration tests
-- [ ] Commit + log
-
-**Wednesday — Book ch13.1 (Closures)**
-- [ ] Rust Book Chapter 13.1 (Closures)
-- [ ] Exercise: `map`, `filter`, `fold` using closures
-- [ ] Exercise: closure capturing environment
-- [ ] Understand FnOnce, FnMut, Fn trait differences
-- [ ] Apply closures in xcsv for custom filters
-- [ ] Commit + log
-
-**Thursday — Book ch13.2 (Iterators)**
-- [ ] Rust Book Chapter 13.2 (Iterators)
-- [ ] Rustlings `iterators` (5 exercises)
-- [ ] Watch Crust of Rust: Iterators
-- [ ] Exercise: implement custom Iterator for counter type
-- [ ] Exercise: chain iterator adaptors for data processing
-- [ ] Commit + log
-
-**Friday — Iterator deep dive**
-- [ ] Code along Jon Gjengset iterator video — implement StrSplit Iterator
-- [ ] Exercise: implement `flatten()` from scratch
-- [ ] Refactor xcsv to use iterator chains where possible
-- [ ] Add benchmarks comparing loop vs iterator (expect similar perf)
-- [ ] Commit + log
-
-**Saturday — Project day: finish xcsv**
-- [ ] Complete xcsv CLI with clap, thiserror, iterator chains
-- [ ] Add streaming parser for large files (read line by line)
-- [ ] Write README documenting usage
-- [ ] Ensure 80%+ test coverage
-- [ ] Tag as v0.1.0 in repo
-- [ ] Commit + log
-
-**Sunday — Rest + Weekly Ritual**
-
----
-
-### Week 4 — Smart pointers, interior mutability
-
-**Monday — Book ch15.1-15.2 (Box, Deref)**
-- [ ] Rust Book Chapter 15.1 (Box)
-- [ ] Rust Book Chapter 15.2 (Deref Trait)
-- [ ] Exercise: implement `MyBox<T>` with Deref
-- [ ] Exercise: recursive types using Box (linked list, binary tree)
-- [ ] Commit + log
-
-**Tuesday — Book ch15.3-15.4 (Drop, Rc)**
-- [ ] Rust Book Chapter 15.3 (Drop Trait)
-- [ ] Rust Book Chapter 15.4 (Rc)
-- [ ] Rustlings `smart_pointers` (2 exercises)
-- [ ] Exercise: shared state with Rc
-- [ ] Exercise: tree where nodes share children via Rc
-- [ ] Commit + log
-
-**Wednesday — Book ch15.5-15.6 (RefCell, reference cycles)**
-- [ ] Rust Book Chapter 15.5 (RefCell and Interior Mutability)
-- [ ] Rust Book Chapter 15.6 (Reference Cycles, Weak)
+**Tuesday — RefCell, Rc<RefCell<T>>, Weak**
+- [ ] Book ch15.5-15.6
 - [ ] Watch Crust of Rust: Smart Pointers and Interior Mutability
-- [ ] Exercise: `Rc<RefCell<T>>` pattern
-- [ ] Exercise: parent-child tree with Weak for upward refs
+- [ ] Exercise: parent-child tree with Rc + Weak — implement and test cycle-free
+- [ ] Note in `notes/05_smart_pointers.md`: when to reach for Rc vs Arc vs Box vs `&`
 - [ ] Commit + log
 
-**Thursday — Book ch16.1-16.2 (Threads, Channels)**
-- [ ] Rust Book Chapter 16.1 (Threads)
-- [ ] Rust Book Chapter 16.2 (Message Passing with Channels)
-- [ ] Exercise: spawn thread, join handle
-- [ ] Exercise: producer-consumer with mpsc channel
+**Wednesday — Threads, channels, Mutex, Arc**
+- [ ] Book ch16 (whole chapter)
+- [ ] Watch Crust of Rust: Channels — code along, implement bounded MPSC from scratch
+- [ ] Exercise: implement rendezvous channel (capacity 0)
+- [ ] Read `parking_lot::Mutex` vs std — note tradeoffs
 - [ ] Commit + log
 
-**Friday — Book ch16.3 (Shared State) + Crust of Rust Channels**
-- [ ] Rust Book Chapter 16.3 (Shared State, Mutex)
-- [ ] Watch Crust of Rust: Channels
-- [ ] Code along: implement MPSC channel from scratch
-- [ ] Exercise: `Arc<Mutex<T>>` counter shared across threads
-- [ ] Understand Send/Sync marker traits
+**Thursday — Send/Sync + start `shardkv`**
+- [ ] Book ch16.4 (Send and Sync)
+- [ ] Read `std::marker` docs carefully
+- [ ] Exercise: write a struct that is `Send + !Sync` and one that is `!Send + Sync`, justify each
+- [ ] Create crate `shardkv`: define `KVStore<K, V>` trait, implement `MutexHashMapStore<K, V>`, basic tests
 - [ ] Commit + log
 
-**Saturday — Book ch16.4 + Start Project 2 (shardkv)**
-- [ ] Rust Book Chapter 16.4 (Send and Sync)
-- [ ] Create new crate `shardkv`
-- [ ] Define `KVStore<K, V>` trait with get/set/delete
-- [ ] Implement `HashMapStore<K, V>` with Mutex
-- [ ] Write basic tests
+**Friday — `shardkv` sharding + RwLock benchmarks**
+- [ ] Sharded storage: N hashmaps, hash-routed
+- [ ] Add `RwLockStore`
+- [ ] Benchmark with criterion: Mutex vs RwLock vs sharded under varied read/write ratios
+- [ ] Read `parking_lot`, `dashmap`, `arc-swap` docs and write a 1-paragraph summary of each
+- [ ] Commit + log
+
+**Saturday — `shardkv` polish + `EvictionPolicy` trait**
+- [ ] LRU + TTL eviction behind a trait
+- [ ] Make `KVStore` generic over eviction
+- [ ] thiserror error types, tracing instrumentation, full concurrent test coverage
+- [ ] README documenting design choices, tag v0.1.0
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
-- [ ] End of Month 1 review: honest check against Phase 1 trajectory
+
+---
+
+### Week 3 — Async fundamentals + Pin/Unpin
+
+**Monday — Tokio fast track**
+- [ ] Read Tokio tutorial cover-to-cover in one session: Hello → Spawning → Shared State → Channels → I/O → Framing
+- [ ] Write a TCP echo server from scratch (no copy-paste)
+- [ ] Commit + log
+
+**Tuesday — Async Book + manual Future**
+- [ ] Async Book ch1-7 in one go
+- [ ] Watch Crust of Rust: Async/Await (full) — code along, implement a trivial executor
+- [ ] Exercise: implement a counter Future that resolves after N polls — wire it into tokio
+- [ ] Commit + log
+
+**Wednesday — Pin/Unpin + self-referential structs**
+- [ ] Watch Crust of Rust: The Drop Check
+- [ ] Read `std::pin` docs carefully
+- [ ] Exercise: build a self-referential struct, see why it needs Pin
+- [ ] Write `notes/06_pin_unpin.md` in own words — why Pin exists, when you need it, when you don't
+- [ ] Commit + log
+
+**Thursday — Start `backpressure-net`**
+- [ ] Create crate `backpressure-net`
+- [ ] tokio TCP server framework with graceful shutdown (SIGTERM/SIGINT)
+- [ ] Define `ConnectionHandler` trait, basic echo handler
+- [ ] Commit + log
+
+**Friday — Rate limiting as a custom Future**
+- [ ] Per-connection token bucket implemented as a `Future` (not `tokio::time::interval`-based) — this is the deliberate hard exercise
+- [ ] Test under load with mock clients
+- [ ] Commit + log
+
+**Saturday — Backpressure strategies + observability**
+- [ ] `BackpressureStrategy` enum: DropOldest, DropNewest, Block — implement all three
+- [ ] Tracing spans for connection lifecycle
+- [ ] Prometheus metrics via `metrics` crate, `/metrics` endpoint
+- [ ] Load test with 10k concurrent connections, document findings
+- [ ] README, tag v0.1.0
+- [ ] Commit + log
+
+**Sunday — Rest + Weekly Ritual**
+
+---
+
+### Week 4 — Rustonomicon, atomics, variance, unsafe, macros
+
+**Monday — Nomicon ch1-3**
+- [ ] Rustonomicon ch1 (Meet Safe and Unsafe), ch2 (Data Layout), ch3 (selected sections)
+- [ ] Exercise: inspect layouts with `size_of`/`align_of` for `repr(C)`, `repr(transparent)`, `repr(packed)`
+- [ ] Commit + log
+
+**Tuesday — Atomics + memory ordering**
+- [ ] Watch Crust of Rust: Atomics and Memory Ordering (full)
+- [ ] Read `std::sync::atomic` carefully
+- [ ] Exercise: implement spinlock with AtomicBool, then a SeqLock
+- [ ] Re-read your own Ryuo disruptor code with fresh atomics eyes — note any bugs/improvements in `notes/`
+- [ ] Commit + log
+
+**Wednesday — Variance + PhantomData**
+- [ ] Watch Crust of Rust: Subtyping and Variance
+- [ ] Exercise: invariant marker via `PhantomData<*mut T>`, covariant via `PhantomData<&'a T>`
+- [ ] `notes/07_variance.md` — when does it bite you?
+- [ ] Commit + log
+
+**Thursday — Unsafe in practice + miri**
+- [ ] Read Nomicon chapters on aliasing, UB
+- [ ] Exercise: implement a tiny `Vec<T>` clone (push, pop, get) using raw pointers
+- [ ] Run `cargo +nightly miri test` on the project; chase any UB miri reports
+- [ ] Commit + log
+
+**Friday — Macros**
+- [ ] Read Rust for Rustaceans ch7 (Macros)
+- [ ] Read Little Book of Rust Macros (declarative macros sections)
+- [ ] Exercise: write a `vec!`-like declarative macro, then a derive-style proc macro using `syn` + `quote`
+- [ ] Commit + log
+
+**Saturday — Rust for Rustaceans dense read part 1**
+- [ ] R4R ch1-5 (Foundations, Types, Designing Interfaces, Error Handling, Project Structure)
+- [ ] Apply at least one insight to refactor `shardkv` or `backpressure-net`
+- [ ] Commit + log
+
+**Sunday — Rest + End Month 1 review**
+- [ ] Honest assessment: "Could I read reth-trie source today and follow it?"
+- [ ] If no, queue up a re-read of the weakest topic in Week 5
 - [ ] Update North Star M1 metrics
 
 ---
 
-## Month 2: Advanced Rust + Async
+## Month 2: Production Rust + Early Alloy (Weeks 5-8)
 
-### Week 5 — Complete sync patterns, start OOP-ish features
+### Week 5 — Rust for Rustaceans deep + Alloy onboarding
 
-**Monday — Book ch17 (OOP features)**
-- [ ] Rust Book Chapter 17 (Object-Oriented Programming Features)
-- [ ] Understand trait objects vs generics tradeoffs
-- [ ] Exercise: dyn Trait vs impl Trait in function signatures
+**Monday — R4R ch6-8 (Testing, Macros, Async)**
+- [ ] R4R ch6, ch7, ch8
+- [ ] Cross-reference R4R async chapter with Async Book; identify any gaps in your model
 - [ ] Commit + log
 
-**Tuesday — shardkv: sharding**
-- [ ] Implement sharded storage: N independent hashmaps with hash-based routing
-- [ ] Benchmark: single Mutex<HashMap> vs sharded (use criterion)
-- [ ] Read `ArcSwap` crate docs
+**Tuesday — R4R ch9-11 (Unsafe, Concurrency, FFI)**
+- [ ] R4R ch9, ch10, ch11
+- [ ] Note FFI patterns — relevant for libmdbx-rs in Phase 3
 - [ ] Commit + log
 
-**Wednesday — shardkv: RwLock variant**
-- [ ] Add `RwLockStore` implementation
-- [ ] Benchmark Mutex vs RwLock under varied read/write ratios
-- [ ] Document findings in notes/
+**Wednesday — R4R ch12 + Alloy clone + structure tour**
+- [ ] R4R final chapter
+- [ ] Clone alloy-rs/alloy, read top-level README, browse Cargo.toml workspace
+- [ ] Read alloy-primitives source (Address, U256, B256, Bytes) — note newtype + From/TryFrom patterns
 - [ ] Commit + log
 
-**Thursday — shardkv: eviction trait**
-- [ ] Define `EvictionPolicy` trait
-- [ ] Implement LRU eviction
-- [ ] Implement TTL eviction
-- [ ] Make KVStore generic over eviction
+**Thursday — alloy-provider source dive**
+- [ ] Read Provider trait + impls
+- [ ] Run a script that fetches latest mainnet block via public RPC
 - [ ] Commit + log
 
-**Friday — shardkv: polish**
-- [ ] Add proper error types with thiserror
-- [ ] Add tracing instrumentation
-- [ ] Full test coverage including concurrent access tests
-- [ ] README documenting design choices
-- [ ] Tag v0.1.0
-- [ ] Commit + log
-
-**Saturday — Start Tokio tutorial**
-- [ ] Read Tokio tutorial: Hello Tokio, Spawning
-- [ ] Setup tokio in a new scratch project
-- [ ] Exercise: concurrent HTTP fetcher with tokio
-- [ ] Commit + log
-
-**Sunday — Rest + Weekly Ritual**
-
----
-
-### Week 6 — Tokio fundamentals
-
-**Monday — Tokio: Shared State, Channels**
-- [ ] Read Tokio tutorial: Shared State
-- [ ] Read Tokio tutorial: Channels (tokio mpsc)
-- [ ] Exercise: shared state counter across async tasks
-- [ ] Exercise: broadcast channel for pub/sub
-- [ ] Commit + log
-
-**Tuesday — Tokio: I/O, Framing**
-- [ ] Read Tokio tutorial: I/O
-- [ ] Read Tokio tutorial: Framing
-- [ ] Exercise: TCP echo server (from scratch, no tutorial copy)
-- [ ] Handle multiple connections concurrently
-- [ ] Commit + log
-
-**Wednesday — Async Book ch1-4**
-- [ ] Async Book Chapter 1-4 (futures, async/await, pinning)
-- [ ] Understand Future trait
-- [ ] Understand Pin at high level
-- [ ] Commit + log
-
-**Thursday — Async Book ch5-7 + Rustlings threads**
-- [ ] Async Book Chapter 5-7 (executors, streams, TLS async)
-- [ ] Rustlings `threads` (3 exercises, sync not async)
-- [ ] Exercise: manual Future implementation (counter that resolves after N polls)
-- [ ] Commit + log
-
-**Friday — Async Book ch8-9 + async ecosystem**
-- [ ] Async Book Chapter 8-9 (TLS, async gotchas)
-- [ ] Read docs: `tracing`, `tracing-subscriber`
-- [ ] Read docs: `reqwest` for async HTTP client
-- [ ] Exercise: async HTTP client with tracing instrumentation
-- [ ] Commit + log
-
-**Saturday — Start Project 3 (backpressure-net)**
-- [ ] Create crate `backpressure-net`
-- [ ] Define TCP server framework with tokio
-- [ ] Support graceful shutdown via SIGTERM/SIGINT
-- [ ] Basic connection handler trait
-- [ ] Commit + log
-
-**Sunday — Rest + Weekly Ritual**
-
----
-
-### Week 7 — Advanced async, Pin/Unpin
-
-**Monday — Crust of Rust: Async/Await**
-- [ ] Watch Crust of Rust: Async/Await (full)
-- [ ] Code along — implement simple executor
-- [ ] Commit + log
-
-**Tuesday — Pin/Unpin deep**
-- [ ] Watch Crust of Rust: The Drop Check
-- [ ] Read std::pin docs carefully
-- [ ] Exercise: self-referential struct demonstrating need for Pin
-- [ ] Write explanation of Pin/Unpin in notes/ in own words
-- [ ] Commit + log
-
-**Wednesday — backpressure-net: rate limiting**
-- [ ] Add per-connection rate limiting with token bucket
-- [ ] Implement token bucket as custom Future
-- [ ] Test under load with mock clients
-- [ ] Commit + log
-
-**Thursday — backpressure-net: backpressure strategies**
-- [ ] Define `BackpressureStrategy` enum: DropOldest, DropNewest, Block
-- [ ] Implement all three
-- [ ] Test each under queue overflow
-- [ ] Commit + log
-
-**Friday — backpressure-net: observability**
-- [ ] Add tracing spans for connection lifecycle
-- [ ] Add Prometheus-compatible metrics (use `metrics` crate)
-- [ ] Expose /metrics endpoint
-- [ ] Commit + log
-
-**Saturday — backpressure-net: polish + load test**
-- [ ] Load test with 10,000 concurrent connections
-- [ ] Document findings
-- [ ] README with usage examples
-- [ ] Tag v0.1.0
-- [ ] Commit + log
-
-**Sunday — Rest + Weekly Ritual**
-
----
-
-### Week 8 — Rustonomicon intro, unsafe basics
-
-**Monday — Rustonomicon ch1 (Meet Safe and Unsafe)**
-- [ ] Rustonomicon Chapter 1 (Meet Safe and Unsafe)
-- [ ] Understand unsafe superpowers
-- [ ] Understand undefined behavior concept
-- [ ] Commit + log
-
-**Tuesday — Rustonomicon ch2 (Data Layout)**
-- [ ] Rustonomicon Chapter 2 (Data Layout)
-- [ ] `repr(C)`, `repr(transparent)`, alignment
-- [ ] Exercise: inspect layout with `std::mem::size_of` and `align_of`
-- [ ] Commit + log
-
-**Wednesday — Rustonomicon ch3 (Ownership intro for unsafe)**
-- [ ] Rustonomicon Chapter 3 selected sections
-- [ ] Read about lifetimes in unsafe context
-- [ ] Exercise: small unsafe block with raw pointer usage
-- [ ] Commit + log
-
-**Thursday — Crust of Rust: Atomics and Memory Ordering**
-- [ ] Watch Crust of Rust: Atomics and Memory Ordering
-- [ ] Read std::sync::atomic docs
-- [ ] Review your own disruptor Ryuo code with fresh eyes
-- [ ] Exercise: implement spinlock with AtomicBool
-- [ ] Commit + log
-
-**Friday — Crust of Rust: Subtyping and Variance**
-- [ ] Watch Crust of Rust: Subtyping and Variance
-- [ ] Understand PhantomData use cases
-- [ ] Exercise: invariant marker in struct
-- [ ] Commit + log
-
-**Saturday — Consolidation + start Rust for Rustaceans**
-- [ ] Begin Rust for Rustaceans ch1-2
-- [ ] Note takeaways in notes/
-- [ ] Review all Month 2 learnings
-- [ ] Commit + log
-
-**Sunday — Rest + End Month 2 review**
-- [ ] Update North Star M2 metrics (should still be mostly 0s, that's expected)
-- [ ] Honest assessment of Rust capability
-
----
-
-## Month 3: Rust Mastery + Alloy Exposure
-
-### Week 9 — Rust for Rustaceans core chapters
-
-**Monday — Rust for Rustaceans ch1-3**
-- [ ] Rust for Rustaceans Chapter 1 (Foundations)
-- [ ] Rust for Rustaceans Chapter 2 (Types)
-- [ ] Rust for Rustaceans Chapter 3 (Designing Interfaces)
-- [ ] Apply learnings to refactor xcsv or shardkv
-- [ ] Commit + log
-
-**Tuesday — Rust for Rustaceans ch4-5**
-- [ ] Rust for Rustaceans Chapter 4 (Error Handling)
-- [ ] Rust for Rustaceans Chapter 5 (Project Structure)
-- [ ] Refactor error types across your projects to match best practices
-- [ ] Commit + log
-
-**Wednesday — Rust for Rustaceans ch6-7**
-- [ ] Rust for Rustaceans Chapter 6 (Testing)
-- [ ] Rust for Rustaceans Chapter 7 (Macros)
-- [ ] Exercise: write a declarative macro
-- [ ] Commit + log
-
-**Thursday — Rust for Rustaceans ch8-9**
-- [ ] Rust for Rustaceans Chapter 8 (Async)
-- [ ] Rust for Rustaceans Chapter 9 (Unsafe Code)
-- [ ] Cross-reference with Async Book and Rustonomicon
-- [ ] Commit + log
-
-**Friday — Rust for Rustaceans ch10-11**
-- [ ] Rust for Rustaceans Chapter 10 (Concurrency)
-- [ ] Rust for Rustaceans Chapter 11 (FFI)
-- [ ] Note FFI takeaways for future C library bindings (MDBX)
-- [ ] Commit + log
-
-**Saturday — Rust for Rustaceans ch12 + consolidation**
-- [ ] Rust for Rustaceans final chapter
-- [ ] Review book entirely via notes
-- [ ] Commit + log
-
-**Sunday — Rest + Weekly Ritual**
-
----
-
-### Week 10 — Start reading production Rust (Alloy)
-
-**Monday — Alloy exploration**
-- [ ] Clone alloy-rs/alloy repo
-- [ ] Read top-level README
-- [ ] Browse crate structure in Cargo.toml
-- [ ] Read alloy-primitives docs on docs.rs
-- [ ] Commit notes
-
-**Tuesday — Alloy primitives deep read**
-- [ ] Read alloy-primitives source: Address, U256, B256, Bytes types
-- [ ] Note patterns: type newtype wrappers, From/TryFrom implementations
-- [ ] Exercise: create own small crate using alloy-primitives
-- [ ] Commit + log
-
-**Wednesday — Alloy provider**
-- [ ] Read alloy-provider docs
-- [ ] Read source of Provider trait
-- [ ] Exercise: write program fetching latest mainnet block via public RPC
-- [ ] Commit + log
-
-**Thursday — Alloy RPC types**
-- [ ] Read alloy-rpc-types source
-- [ ] Note serde patterns used extensively
-- [ ] Exercise: parse and manipulate Transaction types
-- [ ] Commit + log
-
-**Friday — Alloy signer + wallet**
-- [ ] Read alloy-signer docs and source
-- [ ] Understand EIP-191, EIP-712 signing
+**Friday — alloy-rpc-types + signer**
+- [ ] Read alloy-rpc-types source — note serde patterns
+- [ ] Read alloy-signer; understand EIP-191/EIP-712 signing
 - [ ] Exercise: sign a message, recover signer
 - [ ] Commit + log
 
-**Saturday — Mini-project using Alloy**
-- [ ] Build mini-Etherscan CLI: input address, output balance, nonce, recent txs
-- [ ] Use Alloy for all Ethereum interaction
-- [ ] ~500 LOC
+**Saturday — Mini Etherscan CLI using Alloy**
+- [ ] Build CLI: `etherscanlite <address>` → balance, nonce, recent txs
+- [ ] ~500 LOC, full Alloy stack
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 11 — Jon Gjengset advanced videos
+### Week 6 — Ethereum protocol primer + first Alloy PR
 
-**Monday — Crust of Rust: Iterators deep**
-- [ ] Rewatch Iterators video if needed
-- [ ] Implement more iterator adaptors from scratch
+**Monday — Mastering Ethereum ch3-4 + Yellow Paper §4**
+- [ ] ME ch3 (Clients), ch4 (Cryptography)
+- [ ] Yellow Paper §4 (Block, State, Account)
+- [ ] Run reth on Sepolia, observe sync logs
 - [ ] Commit + log
 
-**Tuesday — Crust of Rust: Channels deep**
-- [ ] Rewatch Channels, implement bounded channel from scratch
-- [ ] Add flavor: rendezvous channel (capacity 0)
+**Tuesday — ME ch5-6 + Yellow Paper §6**
+- [ ] ME ch5 (Wallets), ch6 (Transactions)
+- [ ] Yellow Paper §6 (Transaction Execution)
+- [ ] Exercise: build/sign legacy + EIP-1559 + EIP-4844 txs via Alloy
 - [ ] Commit + log
 
-**Wednesday — Custom Future implementation**
-- [ ] Implement timer Future from scratch using std::task primitives
-- [ ] Integrate with tokio runtime
+**Wednesday — EIP-1559 + EIP-4844**
+- [ ] Read EIP-1559 spec + Paradigm 1559 analysis posts
+- [ ] Read EIP-4844 spec; understand blob txs + KZG at high level
+- [ ] Commit notes
+
+**Thursday — Alloy issue hunt + claim**
+- [ ] Browse alloy-rs/alloy issues: `good first issue`, `help wanted`, `docs`
+- [ ] Identify 3 candidates, pick one, comment to claim
+- [ ] Read CONTRIBUTING.md + skim 5 recently merged PRs to learn the style
+- [ ] Commit notes
+
+**Friday — First Alloy PR work**
+- [ ] Fork, branch with convention, implement
 - [ ] Commit + log
 
-**Thursday — State machine async**
-- [ ] Build small async state machine: simple consensus round or leader election heartbeat
-- [ ] Use custom Futures + tokio
-- [ ] Property tests
-- [ ] Commit + log
-
-**Friday — Advanced trait patterns**
-- [ ] Practice extension traits
-- [ ] Practice sealed trait pattern
-- [ ] Practice type-state pattern
-- [ ] Apply to refactor one existing project
-- [ ] Commit + log
-
-**Saturday — Rustlings finish**
-- [ ] Complete remaining Rustlings sections
-- [ ] Verify 100+ exercises completed
+**Saturday — First Alloy PR submitted**
+- [ ] `cargo fmt`, `cargo clippy --all`, `cargo nextest`
+- [ ] Clear PR description with motivation + test plan
+- [ ] Open PR
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 12 — Phase 1 consolidation + Phase 2 prep
+### Week 7 — More EIPs + Alloy PR velocity
 
-**Monday — Revm passive exposure**
-- [ ] Clone bluealloy/revm
-- [ ] Browse structure
-- [ ] Read top-level docs (don't deep dive yet, just familiarize)
+**Monday — Address review feedback on PR #1**
+- [ ] Iterate; learn from style suggestions
+- [ ] Commit + log
+
+**Tuesday — EIP-7702 + EIP-7685**
+- [ ] Read both specs end-to-end
+- [ ] Notes on authorization list mechanics + execution layer requests
 - [ ] Commit notes
 
-**Tuesday — Reth passive exposure**
-- [ ] Clone paradigmxyz/reth
-- [ ] `cargo build --release` (30-60 min first time)
-- [ ] Browse structure
-- [ ] Run `reth --help`
+**Wednesday — EOF EIPs batch read**
+- [ ] EIP-3540, 3670, 4200, 4750
+- [ ] Note implications for EVM implementation (revm/exec-vm)
 - [ ] Commit notes
 
-**Wednesday — Read Mastering Ethereum prep**
-- [ ] Start Mastering Ethereum Chapter 1-2 (intro)
-- [ ] Start reading ethereum.org developer intro
+**Thursday — Second Alloy PR**
+- [ ] Pick + implement
+- [ ] Commit + log
+
+**Friday — Third Alloy PR (medium difficulty)**
+- [ ] Aim substantive, not typo
+- [ ] Commit + log
+
+**Saturday — Third Alloy PR done + Foundry intro**
+- [ ] Submit PR #3
+- [ ] Clone foundry-rs/foundry, browse `forge` + `cast` crates
 - [ ] Commit notes
 
-**Thursday — Twitter warm-up**
-- [ ] First thoughtful reply to a reth/paradigm tweet
-- [ ] First technical tweet (not marketing)
-- [ ] Follow 20 more Ethereum infra engineers
-- [ ] Log presence activities
+**Sunday — Rest + Weekly Ritual**
 
-**Friday — GitHub presence warm-up**
-- [ ] Star key repos: reth, revm, alloy, foundry, ethers-rs, erigon (reference)
+---
+
+### Week 8 — Foundry PR + revm familiarization
+
+**Monday — Foundry issue hunt + claim**
+- [ ] Browse Foundry issues, pick good first
+- [ ] Commit notes
+
+**Tuesday — First Foundry PR**
+- [ ] Implement + submit
+- [ ] Commit + log
+
+**Wednesday — revm overview**
+- [ ] Clone bluealloy/revm, read README + arch doc
+- [ ] Browse crate structure
+- [ ] Commit notes
+
+**Thursday — revm-primitives + interpreter**
+- [ ] Read revm-primitives, compare with alloy-primitives
+- [ ] Read revm-interpreter — opcode dispatch, gas metering
+- [ ] Trace ADD opcode end-to-end, document in `notes/`
+- [ ] Commit + log
+
+**Friday — Mastering Ethereum ch13 (EVM)**
+- [ ] ME ch13 full chapter
+- [ ] Walk evm.codes top 20 opcodes
+- [ ] Commit notes
+
+**Saturday — Outstanding PR cleanup + 4th Alloy PR if time**
+- [ ] Address all reviewer feedback across open PRs
+- [ ] Commit + log
+
+**Sunday — Rest + End Month 2 review**
+- [ ] Update North Star M2 metrics
+- [ ] Target check: 3+ Alloy PRs opened (some merged), 1+ Foundry PR
+
+---
+
+## Month 3: Deep Practice + Ethereum Protocol (Weeks 9-12)
+
+### Week 9 — Tiny EVM (throwaway learning artifact)
+
+**Monday — Tiny EVM stack + arithmetic**
+- [ ] Implement stack + 5 arithmetic opcodes (ADD, SUB, MUL, DIV, MOD)
+- [ ] Commit + log
+
+**Tuesday — Memory + control flow**
+- [ ] MSTORE, MLOAD, JUMP, JUMPI, JUMPDEST
+- [ ] Comparison/logic opcodes
+- [ ] Commit + log
+
+**Wednesday — Storage + finalize**
+- [ ] SSTORE/SLOAD against an in-memory map
+- [ ] 15-20 opcodes total, manual test cases
+- [ ] Commit notes (this is throwaway — do not publish)
+
+**Thursday — First revm PR**
+- [ ] Browse issues, pick good first, implement, submit
+- [ ] Commit + log
+
+**Friday — RLP**
+- [ ] Read RLP spec
+- [ ] Exercise: implement RLP encoder/decoder (throwaway)
+- [ ] Read alloy-rlp source for comparison
+- [ ] Commit + log
+
+**Saturday — More PRs (Alloy/revm)**
+- [ ] Whichever is unblocked, push velocity
+- [ ] Commit + log
+
+**Sunday — Rest + Weekly Ritual**
+
+---
+
+### Week 10 — MPT theory + tiny MPT
+
+**Monday — MPT theory**
+- [ ] ethereum.org MPT docs + 2-3 blog explanations to triangulate
+- [ ] Draw extension/branch/leaf/hash node diagrams in `notes/`
+- [ ] Commit + log
+
+**Tuesday — Tiny MPT: insert + get**
+- [ ] Throwaway MPT — happy path only
+- [ ] Commit + log
+
+**Wednesday — Tiny MPT: root hash**
+- [ ] keccak-based root hash
+- [ ] Test against simplest Ethereum trie test vectors
+- [ ] Commit + log
+
+**Thursday — Second revm PR**
+- [ ] Pick, implement, submit
+- [ ] Commit + log
+
+**Friday — Reth passive exposure**
+- [ ] Clone paradigmxyz/reth, `cargo build --release` (30-60 min first time)
+- [ ] Browse structure, run `reth --help`, read 5 recent merged PRs for style
+- [ ] Commit notes
+
+**Saturday — Custom Future state machine exercise**
+- [ ] Build a small async state machine (e.g., leader election heartbeat) using custom Futures + tokio
+- [ ] Property tests with `proptest` or `quickcheck`
+- [ ] Commit + log
+
+**Sunday — Rest + Weekly Ritual**
+
+---
+
+### Week 11 — Type-state + advanced trait patterns + reth survey
+
+**Monday — Advanced trait patterns**
+- [ ] Type-state pattern, sealed trait pattern, extension traits
+- [ ] Refactor `backpressure-net` to use type-state for connection lifecycle
+- [ ] Commit + log
+
+**Tuesday — Erigon staged sync**
+- [ ] Read Erigon staged sync design doc
+- [ ] Browse `reth/crates/stages`
+- [ ] Map: headers → bodies → senders → execution → hashing → merkle
+- [ ] Commit notes
+
+**Wednesday — reth-trie + reth-db survey (passive)**
+- [ ] Browse `reth/crates/trie` + `reth/crates/storage`
+- [ ] Identify key abstractions; do not deep dive yet
+- [ ] Commit notes
+
+**Thursday — Third revm PR (medium difficulty)**
+- [ ] Pick substantive issue, implement
+- [ ] Commit + log
+
+**Friday — Twitter + GitHub presence warm-up**
+- [ ] First thoughtful technical reply on a reth/paradigm tweet
+- [ ] Star key repos (reth, revm, alloy, foundry, ethers-rs, erigon)
 - [ ] Watch reth repo for notifications
-- [ ] Read 5 recent merged PRs in reth to see style
+- [ ] Follow 20 more Ethereum infra engineers
+- [ ] Commit notes
+
+**Saturday — Outstanding PR cleanup**
+- [ ] Address all reviewer feedback across open PRs
+- [ ] Commit + log
+
+**Sunday — Rest + Weekly Ritual**
+
+---
+
+### Week 12 — Phase 1 close + Phase 2 prep
+
+**Monday — MDBX overview**
+- [ ] Read libmdbx high-level README + libmdbx-rs crate skim
+- [ ] Commit notes
+
+**Tuesday — Reth architecture talk + consensus background**
+- [ ] Watch any gakonst reth architecture talk on YouTube
+- [ ] Mastering Ethereum consensus chapter; understand The Merge at high level
+- [ ] Commit notes
+
+**Wednesday — Final Alloy/revm PR for Phase 1**
+- [ ] Push one more PR over the finish line
+- [ ] Commit + log
+
+**Thursday — Maintainer tracker**
+- [ ] Note which maintainers reviewed which PRs of yours
+- [ ] Identify mentor candidate (likely Matthias Seitz)
+- [ ] Commit notes
+
+**Friday — Reth Telegram + Discord**
+- [ ] Join reth Telegram, observe (don't post yet)
 - [ ] Commit notes
 
 **Saturday — Phase 1 review**
-- [ ] Review all 3 projects: xcsv, shardkv, backpressure-net
-- [ ] Write tagged releases v0.1.0 if not already
-- [ ] Verify all exit criteria for Phase 1
-- [ ] Document Phase 1 reflection in progress.md
+- [ ] Verify: 3-5 Alloy PRs, 2-3 revm PRs, 1-2 Foundry PRs (some merged)
+- [ ] Verify: `shardkv` + `backpressure-net` both at v0.1.0 with bench, tests, README
+- [ ] Verify: notes/01-07 all written
+- [ ] Phase 1 reflection in `progress.md`
 - [ ] Commit + log
 
-**Sunday — End Phase 1 ritual (1-2h)**
-- [ ] Full Phase 1 assessment against exit criteria
+**Sunday — End Phase 1 ritual**
+- [ ] Full Phase 1 assessment
 - [ ] Update North Star M3 metrics
-- [ ] Celebrate completion
-- [ ] Prep for Phase 2 start tomorrow
+- [ ] **Note**: you enter Phase 2 already with 6+ ecosystem PRs; the original Phase 2 plan below assumes you're starting from zero. Skim Phase 2 and consider compressing Weeks 13-16 — Phase 2 should now begin with revm depth + Foundry velocity rather than first Alloy PRs.
+- [ ] Phase 2 starts tomorrow
 
 ---
 
