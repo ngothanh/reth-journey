@@ -5,10 +5,19 @@
 > **Commitment**: 5h/day × 6 days/week = 30h/week
 > **Schedule**: Mon-Sat work, Sunday rest + weekly ritual
 
-**Deliverables**:
+**Final-phase deliverables**:
 - `storage-trie` crate (Month 7-12) — reth storage + trie re-implementation
 - `exec-vm` crate (Month 13-18) — revm + reth evm re-implementation
 - `consensus-engine` crate (Month 19-24) — reth consensus + engine API re-implementation
+
+**Phase 1-2 seed crates** (built during Rust mastery, NOT throwaway — extended in later phases):
+- `eth-primitives` (Week 1-4) — mirrors `alloy-primitives`. Newtypes, hashing, atomic-cached hashes.
+- `eth-rlp` (Week 5) — mirrors `alloy-rlp`. Encodable/Decodable traits + derive macro.
+- `eth-storage-cache` (Week 2) — mirrors `revm::CacheDB` + reth in-memory state cache. Replaces `shardkv`.
+- `eth-network-codec` (Week 3) — mirrors `reth-eth-wire` framing layer. Replaces `backpressure-net`.
+- `eth-consensus` (Week 6-13) — mirrors `alloy-consensus`. Header, tx envelopes, EIP fee math.
+- `eth-trie` (Week 10, 20) — mirrors `alloy-trie`. Nibbles, HashBuilder, proof retainer.
+- `exec-vm` seed (Week 9, 17) — mirrors `revm-interpreter` subset. Same crate that ships v1.0 in Phase 4.
 
 ---
 
@@ -25,452 +34,598 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 
 ---
 
+## Curriculum Principle: Inherited Exercises
+
+**No throwaways.** Every exercise in Phase 1 and Phase 2 builds a real component in a workspace crate that mirrors a specific upstream module in alloy / reth / revm AND is reused in a later phase. The same `exec-vm` crate seeded in Week 9 is the one that ships v1.0 in Phase 4. The same `eth-trie` crate seeded in Week 10 is what `storage-trie` extends in Phase 3.
+
+Each week is annotated with:
+- **Mirror target** — the upstream crate/module the week's artifact mirrors (read it; don't copy it).
+- **Crate / file** — what gets created or extended in this workspace.
+- **Inherits from** — the prior week's artifacts this work depends on.
+- **Feeds into** — the future phase/crate that consumes this work.
+
+Workspace layout (built incrementally):
+
+```
+crates/
+  eth-primitives/      Week 1-4    → mirrors alloy-primitives
+  eth-storage-cache/   Week 2      → mirrors revm::CacheDB + reth in-memory state cache
+  eth-network-codec/   Week 3      → mirrors reth-eth-wire framing
+  eth-rlp/             Week 5      → mirrors alloy-rlp + alloy-rlp-derive
+  eth-consensus/       Week 6-13   → mirrors alloy-consensus
+  exec-vm/             Week 9, 17, Phase 4   → mirrors revm-interpreter + revm
+  eth-trie/            Week 10, 20, Phase 3  → mirrors alloy-trie
+  storage-trie/        Phase 3     → owns mmap/MDBX-backed state DB; consumes eth-trie + eth-storage-cache + eth-rlp + eth-primitives
+  consensus-engine/    Phase 5     → owns engine API + fork choice; consumes everything above
+```
+
+If you ever feel an exercise is "just to learn the syntax," stop — find the matching alloy/reth/revm module instead. Concept must serve the artifact, not the other way around.
+
+---
+
 # PHASE 1: RUST MASTERY — fast track for experienced engineers (Month 1-3)
 
 > Compressed for a 12-year Java/Kotlin engineer. Skip beginner syntax (you already have analogues for if/else, structs, generics, modules, testing). Drill the genuinely Rust-specific concepts: ownership, lifetimes, traits + coherence, smart pointers, async/Pin, unsafe, atomics. Use the saved time to start Alloy/revm PRs and Ethereum protocol study early — by end of Month 3 you should already be ahead of the original Phase 2 entry point.
 
 ## Month 1: Rust Core (Weeks 1-4)
 
-### Week 1 — Ownership, borrowing, lifetimes (the Java→Rust delta)
+### Week 1 — Ownership/borrowing/lifetimes via `eth-primitives` foundation
+
+**Mirror target**: `alloy-primitives` (Address, B256, U256, Bytes, FixedBytes)
+**Crate created**: `crates/eth-primitives/` — workspace member from Day 1.
+**Inherits from**: nothing (this is the root of the chain).
+**Feeds into**: every later week — eth-rlp imports its types Week 5; eth-consensus Week 6; eth-trie Week 10; storage-trie Phase 3; exec-vm Phase 4; consensus-engine Phase 5.
+
+> Read alloy-primitives source for **shape** (signatures, type relationships) — don't copy code. Rebuild from spec + your own design choices. Mistakes ARE the lesson.
 
 **Pre-week setup**: ✓ already done (rustup, rust-analyzer, cargo tools, repo, Rustlings cloned)
 
-**Monday — Skim the Book chs 1-9, write nothing**
+**Monday — Skim the Book chs 1-9, write nothing + workspace scaffold**
 - [X] Speed-read Book ch1-3 (~30 min): hello world, variables, functions, control flow — confirm syntax only
 - [X] Speed-read Book ch5-9 (~90 min): structs, enums, modules, collections, error handling — note differences from Kotlin (Result vs exceptions, sealed classes vs enums-with-data, no inheritance)
 - [X] Skip all Rustlings: `intro`, `variables`, `functions`, `if`, `primitive_types`, `strings`, `vecs`, `hashmaps`, `modules`
 - [X] Write `notes/01_kotlin_to_rust_delta.md`: 1-page diff between Kotlin and Rust mental models
-- [X] Commit + log
+- [ ] Create workspace `Cargo.toml` (resolver = "2", `[workspace] members = ["crates/*"]`)
+- [ ] Create `crates/eth-primitives` with `Cargo.toml`, `src/lib.rs`, `src/error.rs` skeleton
+- [ ] Read alloy-primitives top-level `lib.rs` + map the 8 types you'll build this week (Bytes, FixedBytes, Address, B256, B64, U256, Bloom, PrimitivesError)
+- [ ] Commit + log
 
-**Tuesday — Book ch4 ownership/borrowing (deep, 2x read)**
+**Tuesday — Book ch4 + `FixedBytes<const N: usize>`**
 - [ ] Book ch4.1 (Ownership) — read twice
 - [ ] Book ch4.2 (References and Borrowing) — read twice
 - [ ] Book ch4.3 (Slices)
-- [ ] Rustlings `move_semantics` (all 6) — do every variant
-- [ ] Write 8 small programs that intentionally fail to compile; collect borrow-checker errors and document each in `notes/02_borrow_checker_errors.md`
+- [ ] Rustlings `move_semantics` (all 6)
+- [ ] **Build**: `crates/eth-primitives/src/fixed_bytes.rs` — `FixedBytes<const N: usize>([u8; N])` with `Copy`, `Default`, `From<[u8; N]>`, `AsRef<[u8]>`, `AsMut<[u8]>`, `Deref<Target=[u8; N]>`, `PartialEq`, `Hash`. `repr(transparent)` so it's ABI-compatible with `[u8; N]` (same as alloy).
+- [ ] Test: zero-init, equality, slice access, hash stability. Match alloy-primitives FixedBytes test cases.
+- [ ] Borrow-checker drill: try to write a method `fn split(&mut self) -> (&mut [u8], &mut [u8])` and resolve it the right way (`split_at_mut`). Document the lesson in `notes/02_borrow_checker_errors.md` from real code, not contrived programs.
 - [ ] Commit + log
 
-**Wednesday — Book ch10.3 lifetimes + Crust of Rust**
+**Wednesday — Lifetimes + `Bytes` + `BytesView<'a>`**
 - [ ] Book ch10.3 (Lifetimes) — read twice
 - [ ] Watch Crust of Rust: Lifetime Annotations (full)
-- [ ] Code along: implement Jon's `StrSplit<'a, 'b>` from scratch
-- [ ] Rustlings `lifetimes` (all 3)
-- [ ] Document lifetime elision rules in `notes/03_lifetimes.md` in own words
+- [ ] **Build**: `crates/eth-primitives/src/bytes.rs` — `Bytes(Arc<[u8]>)` cheap-clone wrapper mirroring `alloy_primitives::Bytes`. Methods: `new()`, `from_static(&'static [u8])`, `slice(range) -> Bytes`, `len`, `is_empty`, `as_ref`.
+- [ ] **Build**: `BytesView<'a>(&'a [u8])` for borrowed views — this is where lifetime annotations earn their keep. Add `Bytes::view(&self) -> BytesView<'_>`.
+- [ ] Implement `From<Vec<u8>>`, `From<&'static [u8]>`, `Display` (lowercase hex with 0x prefix).
+- [ ] Document lifetime elision rules in `notes/03_lifetimes.md` using the actual `Bytes::slice` and `BytesView::split_at` signatures as examples.
 - [ ] Commit + log
 
-**Thursday — Traits + generics (the trait coherence delta)**
+**Thursday — Traits + `Address` + `B256` + sealed-trait pattern**
 - [ ] Book ch10.1 + ch10.2 (Generics, Traits)
 - [ ] Rustlings `generics`, `traits` — all
-- [ ] Read about orphan rule, coherence, sealed traits — these are unlike Java interfaces
-- [ ] Exercise: blanket impl pattern, extension trait pattern
-- [ ] Exercise: write 4 functions, one for each variant — `&dyn Trait`, `Box<dyn Trait>`, `impl Trait` arg, generic `T: Trait`
-- [ ] Note in `notes/04_traits.md`: static vs dynamic dispatch tradeoffs, monomorphization
+- [ ] Read about orphan rule, coherence, sealed traits
+- [ ] **Build**: `crates/eth-primitives/src/address.rs` — `pub type Address = FixedBytes<20>;` + impl block with `Address::from_word(B256)`, `Address::with_last_byte(u8)`, `Address::ZERO`. EIP-55 checksum encoding via `to_checksum(chain_id: Option<u64>) -> String`.
+- [ ] **Build**: `crates/eth-primitives/src/aliases.rs` — `pub type B256 = FixedBytes<32>;`, `B64 = FixedBytes<8>`. Match alloy aliases exactly.
+- [ ] **Build**: sealed-trait pattern for a future `Encodable` placeholder — `mod private { pub trait Sealed {} }`. impl `Sealed` for `Address`, `B256`, `Bytes`. This blocks downstream crates from extending the trait — same pattern reth uses on `BlockHashOrNumber`.
+- [ ] Write 4 functions (one each for `&dyn Encodable`, `Box<dyn Encodable>`, `impl Encodable`, `<T: Encodable>`) over the sealed trait — observe what compiles and why.
+- [ ] Notes in `notes/04_traits.md`: static vs dynamic dispatch tradeoffs.
 - [ ] Commit + log
 
-**Friday — Error handling + iterators (in depth, since `?` is non-obvious)**
+**Friday — Error handling + iterators via `PrimitivesError` + hex parsing**
 - [ ] Book ch9 + ch13.1 + ch13.2
 - [ ] Rustlings `error_handling`, `options`, `iterators` — all
 - [ ] Read `thiserror` and `anyhow` docs end-to-end
-- [ ] Exercise: rewrite a small program 3 ways — panic, Result+thiserror, anyhow — note when each fits
-- [ ] Watch Crust of Rust: Iterators (full) — code along
-- [ ] Implement `flatten()` from scratch using only the `Iterator` trait
+- [ ] **Build**: `crates/eth-primitives/src/error.rs` — `PrimitivesError` enum (`InvalidLength { expected, got }`, `InvalidHex(String)`, `InvalidChecksum`, `Overflow`) with `thiserror::Error`. Match alloy's variants where they overlap.
+- [ ] **Build**: `FromStr` for `Address`, `B256`, `Bytes` — accept both `0x`-prefixed and bare hex. Iterator-driven byte-pair decoder (no `hex` crate dep — write it yourself, then compare to `const-hex`).
+- [ ] Three rewrites of `parse_address`: panic, Result+thiserror, anyhow — keep Result+thiserror in the crate; document the trade in `notes/04_traits.md`.
+- [ ] Watch Crust of Rust: Iterators (full).
+- [ ] Implement `flatten()` from scratch — but apply it: write a `Bytes::concat(parts: impl IntoIterator<Item = impl AsRef<[u8]>>) -> Bytes` using only `Iterator` trait. This is the same shape `alloy_rlp::encode` will need next week.
 - [ ] Commit + log
 
-**Saturday — Closures + Fn/FnMut/FnOnce + R4R intro**
+**Saturday — Closures + Fn/FnMut/FnOnce + `U256` + R4R**
 - [ ] Book ch13.1 (Closures) — focus on FnOnce/FnMut/Fn semantics (Kotlin lambdas don't distinguish)
-- [ ] Exercise: 3 functions, each taking a different Fn variant; explain why they differ
-- [ ] Read Rust for Rustaceans ch1-2 (Foundations, Types) — sets the tone for the rest of Phase 1
+- [ ] **Build**: `crates/eth-primitives/src/uint.rs` — `pub use ruint::aliases::U256;` + extension trait `U256Ext` adding `from_be_slice`, `to_be_bytes_trimmed_vec`, `bit_len`. Mirrors alloy-primitives' U256 surface.
+- [ ] Closure exercise via real use: `Bytes::map_chunks<F: FnMut(&[u8]) -> Bytes>(&self, chunk_size, f) -> Bytes` — used Week 5 by RLP encoder for length-prefixed framing.
+- [ ] Read Rust for Rustaceans ch1-2 (Foundations, Types).
+- [ ] `cargo clippy --all -- -D warnings`, `cargo test`, tag `eth-primitives v0.1.0-week1`.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
-- [ ] "Can I explain ownership/borrowing/lifetimes without looking up?" — if no, redo Tue/Wed exercises
+- [ ] "Can I explain ownership/borrowing/lifetimes using `Bytes::slice` and `FixedBytes` examples without looking up?" — if no, redo Tue/Wed.
+- [ ] Inheritance check: `eth-primitives` exports Address, B256, Bytes, FixedBytes, U256, PrimitivesError. Every later week imports from this.
 
 ---
 
-### Week 2 — Smart pointers, interior mutability, sync concurrency
+### Week 2 — Smart pointers + sync concurrency via `eth-storage-cache`
 
-**Monday — Box, Deref, Drop, Rc**
+**Mirror target**: `revm::db::CacheDB` (in-memory state DB) + `reth_provider`'s in-memory layer + `revm_primitives::Database` trait shape.
+**Crate created**: `crates/eth-storage-cache/` — replaces what was `shardkv` (which fed into nothing).
+**Inherits from**: `eth-primitives` (Address, B256, U256, Bytes from Week 1).
+**Feeds into**: `exec-vm` Phase 4 consumes this as its `Database` impl driving execution; `storage-trie` Phase 3 uses this as the in-memory layer above MDBX.
+
+> The `StateCache` trait you build this week is the same trait `exec-vm` will require to read account state during opcode execution. Get the shape right.
+
+**Monday — Box, Deref, Drop via `Page` primitive**
 - [ ] Book ch15.1-15.4
-- [ ] Implement `MyBox<T>` with `Deref` + `Drop` from scratch
-- [ ] Implement single-linked list with Box, then attempt a doubly-linked list to feel the pain → motivation for Rc/Weak
+- [ ] **Build**: `crates/eth-storage-cache/src/page.rs` — `Page(Box<[u8; 4096]>)` with `Deref<Target=[u8; 4096]>`, `DerefMut`, `Drop` instrumented via `tracing::trace!` to learn drop order. This 4 KiB page is the actual primitive `storage-trie` Phase 3 reuses for its mmap-backed layout.
+- [ ] Implement `MyBox<T>` exercise but apply it: write a `PageBox<T: ?Sized>` that uses `Page` as backing storage for `T` (single-allocation deserialize-in-place). This is the shape MDBX cursors use.
+- [ ] Single-linked list of `Page`s as a free-list allocator (`PageAllocator`). Attempt a doubly-linked free list to feel the pain → motivates Rc/Weak Tuesday.
 - [ ] Commit + log
 
-**Tuesday — RefCell, Rc<RefCell<T>>, Weak**
+**Tuesday — RefCell, Rc, Arc via `Account` cache**
 - [ ] Book ch15.5-15.6
 - [ ] Watch Crust of Rust: Smart Pointers and Interior Mutability
-- [ ] Exercise: parent-child tree with Rc + Weak — implement and test cycle-free
-- [ ] Note in `notes/05_smart_pointers.md`: when to reach for Rc vs Arc vs Box vs `&`
+- [ ] **Build**: `crates/eth-storage-cache/src/account.rs` — `Account { nonce: u64, balance: U256, code_hash: B256, code: Option<Bytes> }` mirroring `revm_primitives::Account`. Use `eth-primitives` types.
+- [ ] **Build**: `LocalAccountCache(HashMap<Address, Rc<RefCell<Account>>>)` first — single-threaded. Add `get_or_load`, `commit`. Use `RefCell::borrow_mut` and observe the runtime panic when you double-borrow — the borrow-checker lesson moves to runtime.
+- [ ] **Migrate**: clone the file to `SharedAccountCache(HashMap<Address, Arc<RwLock<Account>>>)` for the multi-threaded version. Document the line-by-line diff in `notes/05_smart_pointers.md` — when to reach for Rc vs Arc vs Box vs `&`.
 - [ ] Commit + log
 
-**Wednesday — Threads, channels, Mutex, Arc**
+**Wednesday — Threads, channels, Mutex via `StateCache` trait**
 - [ ] Book ch16 (whole chapter)
-- [ ] Watch Crust of Rust: Channels — code along, implement bounded MPSC from scratch
-- [ ] Exercise: implement rendezvous channel (capacity 0)
-- [ ] Read `parking_lot::Mutex` vs std — note tradeoffs
+- [ ] Watch Crust of Rust: Channels — implement bounded MPSC from scratch
+- [ ] **Build**: `crates/eth-storage-cache/src/database.rs` — `StateCache` trait shaped like revm's `Database`:
+  ```
+  trait StateCache {
+      type Error;
+      fn basic(&self, addr: Address) -> Result<Option<Account>, Self::Error>;
+      fn code_by_hash(&self, hash: B256) -> Result<Bytes, Self::Error>;
+      fn storage(&self, addr: Address, slot: U256) -> Result<U256, Self::Error>;
+      fn block_hash(&self, num: u64) -> Result<B256, Self::Error>;
+  }
+  ```
+- [ ] Implement `MutexCache` (single mutex over the HashMap) and `RwLockCache`. Apply your bounded-MPSC channel as a write-batch queue: writes go through the channel, applied in order by a single committer thread (this is the same pattern reth uses for its `StateProviderFactory` writer).
+- [ ] Read `parking_lot::Mutex` vs std — keep `parking_lot` as the dep (reth uses it).
 - [ ] Commit + log
 
-**Thursday — Send/Sync + start `shardkv`**
+**Thursday — Send/Sync via `ShardedCache`**
 - [ ] Book ch16.4 (Send and Sync)
 - [ ] Read `std::marker` docs carefully
-- [ ] Exercise: write a struct that is `Send + !Sync` and one that is `!Send + Sync`, justify each
-- [ ] Create crate `shardkv`: define `KVStore<K, V>` trait, implement `MutexHashMapStore<K, V>`, basic tests
+- [ ] **Build**: `ShardedCache<const N: usize>` — `[parking_lot::RwLock<HashMap<Address, Account>>; N]` hash-routed by `Address::word()[0] % N`. Implement `StateCache` for it. Same sharding scheme reth's tx pool uses.
+- [ ] Send/!Sync + !Send/Sync exercises grounded in the cache: prove `Rc<RefCell<Account>>` is `!Send` (compile error) and `Arc<RwLock<Account>>` is `Send + Sync`. Document the trait bounds your `StateCache` impls need.
 - [ ] Commit + log
 
-**Friday — `shardkv` sharding + RwLock benchmarks**
-- [ ] Sharded storage: N hashmaps, hash-routed
-- [ ] Add `RwLockStore`
-- [ ] Benchmark with criterion: Mutex vs RwLock vs sharded under varied read/write ratios
-- [ ] Read `parking_lot`, `dashmap`, `arc-swap` docs and write a 1-paragraph summary of each
+**Friday — `EvictionPolicy` + criterion benches**
+- [ ] **Build**: `crates/eth-storage-cache/src/eviction.rs` — `EvictionPolicy` trait. Two impls: `LruEviction` (size-bounded), `BlockTagEviction` (pinned by block number, evicts when N blocks behind chain head — this is the eviction `BlockchainTree` actually uses).
+- [ ] Wire eviction into `ShardedCache` (each shard has its own LRU).
+- [ ] criterion bench: Mutex vs RwLock vs Sharded(N=16, N=64) under varied read/write ratios. Plot and commit the results.
+- [ ] Read `parking_lot`, `dashmap`, `arc-swap` docs — 1-paragraph summary each in `notes/05_smart_pointers.md`. Note: reth picks `parking_lot::RwLock` over `dashmap` for the state cache; understand why (you'll see contention patterns in the bench).
 - [ ] Commit + log
 
-**Saturday — `shardkv` polish + `EvictionPolicy` trait**
-- [ ] LRU + TTL eviction behind a trait
-- [ ] Make `KVStore` generic over eviction
-- [ ] thiserror error types, tracing instrumentation, full concurrent test coverage
-- [ ] README documenting design choices, tag v0.1.0
-- [ ] Commit + log
-
-**Sunday — Rest + Weekly Ritual**
-
----
-
-### Week 3 — Async fundamentals + Pin/Unpin
-
-**Monday — Tokio fast track**
-- [ ] Read Tokio tutorial cover-to-cover in one session: Hello → Spawning → Shared State → Channels → I/O → Framing
-- [ ] Write a TCP echo server from scratch (no copy-paste)
-- [ ] Commit + log
-
-**Tuesday — Async Book + manual Future**
-- [ ] Async Book ch1-7 in one go
-- [ ] Watch Crust of Rust: Async/Await (full) — code along, implement a trivial executor
-- [ ] Exercise: implement a counter Future that resolves after N polls — wire it into tokio
-- [ ] Commit + log
-
-**Wednesday — Pin/Unpin + self-referential structs**
-- [ ] Watch Crust of Rust: The Drop Check
-- [ ] Read `std::pin` docs carefully
-- [ ] Exercise: build a self-referential struct, see why it needs Pin
-- [ ] Write `notes/06_pin_unpin.md` in own words — why Pin exists, when you need it, when you don't
-- [ ] Commit + log
-
-**Thursday — Start `backpressure-net`**
-- [ ] Create crate `backpressure-net`
-- [ ] tokio TCP server framework with graceful shutdown (SIGTERM/SIGINT)
-- [ ] Define `ConnectionHandler` trait, basic echo handler
-- [ ] Commit + log
-
-**Friday — Rate limiting as a custom Future**
-- [ ] Per-connection token bucket implemented as a `Future` (not `tokio::time::interval`-based) — this is the deliberate hard exercise
-- [ ] Test under load with mock clients
-- [ ] Commit + log
-
-**Saturday — Backpressure strategies + observability**
-- [ ] `BackpressureStrategy` enum: DropOldest, DropNewest, Block — implement all three
-- [ ] Tracing spans for connection lifecycle
-- [ ] Prometheus metrics via `metrics` crate, `/metrics` endpoint
-- [ ] Load test with 10k concurrent connections, document findings
-- [ ] README, tag v0.1.0
+**Saturday — Polish + R4R + tag v0.1.0**
+- [ ] thiserror `StateCacheError`, tracing spans on `basic`/`storage` calls (block_number + address fields), full concurrent tests with `loom` on a tiny subset.
+- [ ] Read Rust for Rustaceans ch1-2 (Foundations, Types).
+- [ ] README documents the trait, the shard scheme, the eviction policies. Tag `eth-storage-cache v0.1.0`.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+- [ ] Inheritance check: `StateCache` trait mirrors revm's `Database` — Phase 4 `exec-vm` will impl this trait for free; Phase 3 `storage-trie` will impl it backed by mmap.
 
 ---
 
-### Week 4 — Rustonomicon, atomics, variance, unsafe, macros
+### Week 3 — Async/Pin/Future via `eth-network-codec`
 
-**Monday — Nomicon ch1-3**
-- [ ] Rustonomicon ch1 (Meet Safe and Unsafe), ch2 (Data Layout), ch3 (selected sections)
-- [ ] Exercise: inspect layouts with `size_of`/`align_of` for `repr(C)`, `repr(transparent)`, `repr(packed)`
+**Mirror target**: `reth-eth-wire` framing layer + `tokio_util::codec::Framed`. Specifically the `P2PStream` / `EthStream` framing — message length prefix, snappy compression hook, message-id dispatch. Not the full devp2p/RLPx handshake (that's a Phase 5 problem); just the codec + stream substrate.
+**Crate created**: `crates/eth-network-codec/` — replaces what was `backpressure-net`.
+**Inherits from**: `eth-primitives` (B256 for message hashes, Bytes for payloads).
+**Feeds into**: Phase 5 `consensus-engine` reuses the `MessageStream` for engine API JSON-RPC framing; the rate-limited stream becomes the per-peer ingress for any sync stage that consumes block bodies; Week 11 type-state pattern adds `Connection<S>` lifecycle states.
+
+**Monday — Tokio fast track + transport scaffold**
+- [ ] Read Tokio tutorial cover-to-cover: Hello → Spawning → Shared State → Channels → I/O → Framing.
+- [ ] **Build**: `crates/eth-network-codec/src/transport.rs` — `tokio::net::TcpStream` wrapper + `tokio_util::codec::LengthDelimitedCodec` framed reader/writer with 1 MiB max frame size (devp2p limit).
+- [ ] Manual TCP echo via the framed transport — proves bytes flow round-trip.
 - [ ] Commit + log
 
-**Tuesday — Atomics + memory ordering**
-- [ ] Watch Crust of Rust: Atomics and Memory Ordering (full)
-- [ ] Read `std::sync::atomic` carefully
-- [ ] Exercise: implement spinlock with AtomicBool, then a SeqLock
-- [ ] Re-read your own Ryuo disruptor code with fresh atomics eyes — note any bugs/improvements in `notes/`
+**Tuesday — Manual Future + `MessageRequest`**
+- [ ] Async Book ch1-7 in one go.
+- [ ] Watch Crust of Rust: Async/Await (full) — implement a trivial executor.
+- [ ] **Build**: `crates/eth-network-codec/src/request.rs` — `MessageRequest<R>` future that registers a request_id and resolves when the response arrives via a `oneshot::Receiver<R>`. Same shape as reth's `HeadersRequest` / `BodiesRequest`.
+- [ ] Counter Future exercise applied: build a `RetryFuture<F: Future>` that retries the inner future up to N times — used for transient network errors.
 - [ ] Commit + log
 
-**Wednesday — Variance + PhantomData**
-- [ ] Watch Crust of Rust: Subtyping and Variance
-- [ ] Exercise: invariant marker via `PhantomData<*mut T>`, covariant via `PhantomData<&'a T>`
-- [ ] `notes/07_variance.md` — when does it bite you?
+**Wednesday — Pin/Unpin via `MessageStream`**
+- [ ] Watch Crust of Rust: The Drop Check; read `std::pin` docs.
+- [ ] **Build**: `crates/eth-network-codec/src/stream.rs` — `MessageStream<C: Codec, IO>` implementing `tokio_stream::Stream<Item = Result<C::Message, CodecError>>`. Requires `Pin` projection — use `pin_project_lite` (the same crate reth-eth-wire uses).
+- [ ] Demonstrate why `MessageStream` cannot be `Unpin` (it holds a borrowed read buffer mid-poll). Self-referential struct exercise: rewrite `MessageStream` once with manual unsafe pin projection, then with `pin_project_lite`. Compare.
+- [ ] `notes/06_pin_unpin.md` — written using your `MessageStream` as the worked example.
 - [ ] Commit + log
 
-**Thursday — Unsafe in practice + miri**
-- [ ] Read Nomicon chapters on aliasing, UB
-- [ ] Exercise: implement a tiny `Vec<T>` clone (push, pop, get) using raw pointers
-- [ ] Run `cargo +nightly miri test` on the project; chase any UB miri reports
+**Thursday — `EthMessage` enum + `Codec` trait**
+- [ ] **Build**: `crates/eth-network-codec/src/codec.rs` — `Codec` trait (`type Message`, `encode`, `decode`).
+- [ ] **Build**: `crates/eth-network-codec/src/message.rs` — `EthMessage` enum subset: `Status { protocol_version, network_id, td, head, genesis }`, `BlockHeaders(Vec<HeaderRlp>)`, `BlockBodies(Vec<BodyRlp>)`, `NewBlock { block, td }`, `GetBlockHeaders { start, limit, skip, reverse }`. Mirrors `reth_eth_wire::EthMessage` shape (message_id + payload).
+- [ ] RLP encode/decode placeholder using a tagged-byte format for now (full RLP comes Week 5; today the goal is the message-id dispatch table).
+- [ ] tokio TCP server scaffold with graceful shutdown (SIGTERM/SIGINT) running the codec.
 - [ ] Commit + log
 
-**Friday — Macros**
-- [ ] Read Rust for Rustaceans ch7 (Macros)
-- [ ] Read Little Book of Rust Macros (declarative macros sections)
-- [ ] Exercise: write a `vec!`-like declarative macro, then a derive-style proc macro using `syn` + `quote`
+**Friday — Token bucket as custom `Future` + per-peer rate limiting**
+- [ ] **Build**: `crates/eth-network-codec/src/rate_limit.rs` — `TokenBucket` as a custom `Future` (NOT `tokio::time::interval`-based). Wakers driven by a `tokio::time::Sleep`. This is the same shape reth uses for per-peer rate limiting on the `eth/68` protocol.
+- [ ] **Build**: `RateLimitedStream<S: Stream>` that wraps `MessageStream` and enforces per-peer token bucket. Type-state pattern preview: `RateLimitedStream` is parameterized over the rate config to make zero-cost when limits are disabled.
+- [ ] Test under load with mock clients (1k concurrent peers, fixed token rate).
 - [ ] Commit + log
 
-**Saturday — Rust for Rustaceans dense read part 1**
-- [ ] R4R ch1-5 (Foundations, Types, Designing Interfaces, Error Handling, Project Structure)
-- [ ] Apply at least one insight to refactor `shardkv` or `backpressure-net`
+**Saturday — `BackpressureStrategy` + observability + tag v0.1.0**
+- [ ] **Build**: `BackpressureStrategy` enum (`DropOldest`, `DropNewest`, `Block`) wired into a bounded peer-message channel. All three impls — same options reth offers on its peer message buffers.
+- [ ] Tracing spans for connection lifecycle (peer_id, protocol_version, connected_at).
+- [ ] Prometheus metrics via `metrics` crate (`peer_msgs_in_total`, `peer_msgs_dropped_total{strategy}`, `peer_rate_limit_events_total`), `/metrics` endpoint.
+- [ ] Load test with 10k concurrent connections, document findings in README.
+- [ ] Tag `eth-network-codec v0.1.0`.
+- [ ] Commit + log
+
+**Sunday — Rest + Weekly Ritual**
+- [ ] Inheritance check: `Codec` trait + `MessageStream` + `RateLimitedStream` are the substrate Phase 5 will use for engine API; Week 11 will add `Connection<Disconnected/Handshaking/Established>` type-states.
+
+---
+
+### Week 4 — Atomics, unsafe, variance, macros via `eth-primitives` v0.2
+
+**Mirror target**: `reth_primitives::SealedHeader` (atomic-cached hash via OnceLock), `alloy_primitives::U256` (`repr(transparent)` over ruint), `alloy_primitives::b256!` const macro, `alloy-rlp-derive` (proc macro scaffold).
+**Crate extended**: `eth-primitives` from v0.1 → v0.2 (no new crate). Add `crates/eth-primitives-derive/` for the proc macro.
+**Inherits from**: Week 1 `eth-primitives` (FixedBytes, Bytes, Address, B256, U256).
+**Feeds into**: Week 5 `eth-rlp` derive macro builds on the proc macro infrastructure here; `consensus-engine` Phase 5 uses the SeqLock-protected `ChainHead` for fork choice updates.
+
+**Monday — Layout audit on existing `eth-primitives`**
+- [ ] Rustonomicon ch1 (Meet Safe and Unsafe), ch2 (Data Layout), ch3 (selected sections).
+- [ ] Run `size_of`/`align_of` over every type in `eth-primitives`. Verify `FixedBytes<N>` is `repr(transparent)` (so `Address` has the same ABI as `[u8; 20]` — same as alloy).
+- [ ] Add `repr(C)` to `Account` (in `eth-storage-cache`) and document why it matters for the future MDBX serialization in Phase 3.
+- [ ] Inspect `Bytes` layout — `Arc<[u8]>` has 2-word size; document in `notes/07_variance.md` why this matters (covariance over the contained slice).
+- [ ] Commit + log
+
+**Tuesday — Atomics via `SealedHeader` + `ChainHead` SeqLock**
+- [ ] Watch Crust of Rust: Atomics and Memory Ordering (full).
+- [ ] **Build**: `crates/eth-primitives/src/atomic_hash.rs` — `OnceLock<B256>` lazy hash cache. Define a `Sealable` trait with `fn hash_slow(&self) -> B256;` — impls cache via `OnceLock`. This is exactly how reth's `SealedHeader` lazily caches `keccak256(rlp(header))`.
+- [ ] **Build**: `crates/eth-primitives/src/chain_head.rs` — `ChainHead { hash: B256, number: u64 }` protected by a SeqLock (writer increments seq, reader retries on odd seq). Used Phase 5 by `consensus-engine` for `engine_forkchoiceUpdated` reads-hot/writes-rare pattern.
+- [ ] Re-read your own Ryuo disruptor code with fresh atomics eyes — note any bugs/improvements.
+- [ ] Commit + log
+
+**Wednesday — Variance + PhantomData via `Sealed<T>`**
+- [ ] Watch Crust of Rust: Subtyping and Variance.
+- [ ] **Build**: `crates/eth-primitives/src/sealed.rs` — `Sealed<T> { inner: T, hash: OnceLock<B256> }` newtype. Same shape as `reth_primitives::SealedHeader<H>` — a generic wrapper that adds a cached hash to any header-like.
+- [ ] Make `Sealed<T>` covariant via `PhantomData<&'a T>` for a borrowed variant `SealedRef<'a, T>`. Demonstrate the variance bites when you try to mutate through a shared reference — `notes/07_variance.md` worked example uses `Sealed`.
+- [ ] R4R ch6.
+- [ ] Commit + log
+
+**Thursday — Unsafe + miri via `BytesMut::reserve`**
+- [ ] Read Nomicon chapters on aliasing, UB.
+- [ ] **Build**: `crates/eth-primitives/src/bytes_mut.rs` — `BytesMut` (mirrors `bytes::BytesMut` / `alloy_primitives::BytesMut`). `reserve` and `extend_from_slice` written with raw pointer arithmetic (`NonNull<u8>` + `Layout`). Convert to `Bytes` via `BytesMut::freeze` (cheap — moves the allocation into `Arc<[u8]>`).
+- [ ] Run `cargo +nightly miri test -p eth-primitives`. Chase every UB report. Don't move on until miri is clean.
+- [ ] Commit + log
+
+**Friday — Macros via `b256!` + `SimpleEncode` derive**
+- [ ] Read Rust for Rustaceans ch7 (Macros) + Little Book of Rust Macros (declarative).
+- [ ] **Build**: `crates/eth-primitives/src/macros.rs` — `b256!("0xdead...")` and `address!("0x...")` const macros (`macro_rules!`) that hex-decode at compile time and produce `FixedBytes<N>`. Mirrors `alloy_primitives::b256!`.
+- [ ] **Build**: `crates/eth-primitives-derive/` proc-macro crate using `syn` + `quote`. Implement `#[derive(SimpleEncode)]` for fixed-size field types — placeholder for Week 5's `RlpEncodable`. The crate scaffolding (Cargo.toml `proc-macro = true`, `syn`/`quote`/`proc-macro2` deps, basic `DeriveInput` parsing) IS the Week 5 derive's home — no rewrite needed next week.
+- [ ] Test the derive on a 3-field struct.
+- [ ] Commit + log
+
+**Saturday — R4R + integration polish**
+- [ ] R4R ch1-5 (Foundations, Types, Designing Interfaces, Error Handling, Project Structure) — already partially done; finish.
+- [ ] Apply at least one R4R insight to refactor `eth-storage-cache` or `eth-network-codec` (e.g., sealed traits on the public API, `#[non_exhaustive]` on error enums).
+- [ ] Tag `eth-primitives v0.2.0`.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 1 review**
 - [ ] Honest assessment: "Could I read reth-trie source today and follow it?"
-- [ ] If no, queue up a re-read of the weakest topic in Week 5
+- [ ] Inheritance check: 4 crates shipped — `eth-primitives v0.2`, `eth-storage-cache v0.1`, `eth-network-codec v0.1`, `eth-primitives-derive v0.1`. Every later Phase 1 week imports from these.
+- [ ] If any Rust topic is shaky, queue a Week-5 re-read; do NOT redo any artifact (it's all production now).
 - [ ] Update North Star M1 metrics
 
 ---
 
 ## Month 2: Production Rust + Early Alloy (Weeks 5-8)
 
-### Week 5 — Rust for Rustaceans deep + Alloy onboarding
+### Week 5 — `eth-rlp` crate + Alloy onboarding
 
-**Monday — R4R ch6-8 (Testing, Macros, Async)**
-- [ ] R4R ch6, ch7, ch8
-- [ ] Cross-reference R4R async chapter with Async Book; identify any gaps in your model
+**Mirror target**: `alloy-rlp` + `alloy-rlp-derive`. Specifically `Encodable`, `Decodable`, `Header`, `length_of_length`, and the `RlpEncodable`/`RlpDecodable` derive macros.
+**Crate created**: `crates/eth-rlp/` + extends `crates/eth-primitives-derive/` to host the RLP derive.
+**Inherits from**: `eth-primitives` v0.2 (Bytes, BytesMut, Address, B256, U256), `eth-primitives-derive` (proc-macro crate scaffold from Week 4 Friday).
+**Feeds into**: `eth-consensus` Week 6 uses RLP for Header + tx encoding; `eth-trie` Week 10 uses it for trie node hashing; `storage-trie` Phase 3 uses it for DB serialization; `exec-vm` Phase 4 uses it for receipts.
+
+**Monday — Spec + traits**
+- [ ] Read the RLP spec (ethereum.org) end-to-end. Read `alloy-rlp`'s `Encodable` and `Decodable` source — copy the trait shapes exactly (your downstream consumers expect alloy's signatures).
+- [ ] **Build**: `crates/eth-rlp/src/lib.rs` — `pub trait Encodable { fn length(&self) -> usize; fn encode(&self, out: &mut dyn BufMut); }`, `pub trait Decodable: Sized { fn decode(buf: &mut &[u8]) -> Result<Self, RlpError>; }`. Match alloy's signatures.
+- [ ] R4R ch7 (Macros) cross-reference for the derive groundwork.
 - [ ] Commit + log
 
-**Tuesday — R4R ch9-11 (Unsafe, Concurrency, FFI)**
-- [ ] R4R ch9, ch10, ch11
-- [ ] Note FFI patterns — relevant for libmdbx-rs in Phase 3
+**Tuesday — `Header` + scalar encoding**
+- [ ] **Build**: `crates/eth-rlp/src/header.rs` — `Header { list: bool, payload_length: usize }`, `decode_header`, `encode_header`. Test against ethereumjs RLP fixtures.
+- [ ] **Build**: `crates/eth-rlp/src/encodable.rs` — `Encodable`/`Decodable` impls for `u8`, `u16`, `u32`, `u64`, `U256`, `bool`, `&[u8]`, `Vec<u8>`, `String`, `Address`, `B256`, `Bytes` (using your `eth-primitives` types).
+- [ ] R4R ch9-11 — note FFI patterns for libmdbx-rs Phase 3.
 - [ ] Commit + log
 
-**Wednesday — R4R ch12 + Alloy clone + structure tour**
-- [ ] R4R final chapter
-- [ ] Clone alloy-rs/alloy, read top-level README, browse Cargo.toml workspace
-- [ ] Read alloy-primitives source (Address, U256, B256, Bytes) — note newtype + From/TryFrom patterns
+**Wednesday — List encoding + `Vec<T>` + `length_of_length`**
+- [ ] **Build**: `Encodable` for `Vec<T: Encodable>`, `Option<T>`, `(A, B)`, fixed-size arrays. Length-of-length helper (the alloy `length_of_length` function).
+- [ ] Nested list test: encode `Vec<Vec<u64>>` matches Geth's RLP output byte-for-byte.
+- [ ] Buffer-size-class optimization: pre-size the output `BytesMut` when `Encodable::length` is exact (this is the same pattern alloy uses).
+- [ ] R4R ch12.
 - [ ] Commit + log
 
-**Thursday — alloy-provider source dive**
-- [ ] Read Provider trait + impls
-- [ ] Run a script that fetches latest mainnet block via public RPC
+**Thursday — Alloy code tour (compare not copy)**
+- [ ] Clone alloy-rs/alloy. Browse workspace `Cargo.toml`. Read `alloy-primitives` source AND DIFF against your `eth-primitives`. Note 5 specific places they diverge — for each, decide: keep yours, port theirs, or document trade.
+- [ ] Read `alloy-rlp` source — confirm your trait signatures match. Note any helpers alloy has that you don't (e.g., `encode_iter`, `MaxEncodedLen`).
+- [ ] Commit notes + diff log.
 - [ ] Commit + log
 
-**Friday — alloy-rpc-types + signer**
-- [ ] Read alloy-rpc-types source — note serde patterns
-- [ ] Read alloy-signer; understand EIP-191/EIP-712 signing
-- [ ] Exercise: sign a message, recover signer
+**Friday — `RlpEncodable` / `RlpDecodable` derive macros**
+- [ ] **Build**: extend `crates/eth-primitives-derive/` (renamed `eth-rlp-derive` if cleaner) with `#[derive(RlpEncodable, RlpDecodable)]` proc macros. Mirror `alloy-rlp-derive` API: tuple-struct support, named-struct support, `#[rlp(skip)]`, `#[rlp(flatten)]`.
+- [ ] Test on a 5-field struct (`TestHeader { parent: B256, beneficiary: Address, number: u64, gas_used: u64, extra: Bytes }`) — bytes match alloy's derive output.
 - [ ] Commit + log
 
-**Saturday — Mini Etherscan CLI using Alloy**
-- [ ] Build CLI: `etherscanlite <address>` → balance, nonce, recent txs
-- [ ] ~500 LOC, full Alloy stack
+**Saturday — `etherscanlite` CLI on `eth-primitives`**
+- [ ] **Build**: `crates/etherscanlite/` — CLI: `etherscanlite <address>` → fetches balance, nonce, last-5-tx hashes via `alloy-provider` JSON-RPC, but parses the responses INTO your `eth-primitives::Address` / `B256` / `U256`. ~500 LOC. Demonstrates eth-primitives interop with the alloy ecosystem.
+- [ ] First Alloy issue scan — `good first issue` in `alloy-rlp` or `alloy-primitives` preferred (you now know the codebase). Pick one for next week.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+- [ ] Tag `eth-rlp v0.1.0`. Inheritance check: derive macros + `Encodable`/`Decodable` ready for Week 6 `eth-consensus`.
 
 ---
 
-### Week 6 — Ethereum protocol primer + first Alloy PR
+### Week 6 — `eth-consensus` core: Header + transaction envelopes
 
-**Monday — Mastering Ethereum ch3-4 + Yellow Paper §4**
-- [ ] ME ch3 (Clients), ch4 (Cryptography)
-- [ ] Yellow Paper §4 (Block, State, Account)
-- [ ] Run reth on Sepolia, observe sync logs
+**Mirror target**: `alloy-consensus` (`Header`, `TxLegacy`, `TxEip2930`, `TxEip1559`, `TxEip4844`, `Transaction` trait, `Signed<T>`, `TxEnvelope`).
+**Crate created**: `crates/eth-consensus/`.
+**Inherits from**: `eth-primitives` (Address, B256, U256, Bytes), `eth-rlp` (RLP traits + derive).
+**Feeds into**: `eth-trie` Week 10-11 (header → state root verification); `exec-vm` Phase 4 (`BlockEnv` + `TxEnv` construction); `consensus-engine` Phase 5 (payload validation, fork choice).
+
+**Monday — Yellow Paper §4 + `Header`**
+- [ ] ME ch3 (Clients), ch4 (Cryptography). Yellow Paper §4 (Block, State, Account).
+- [ ] Run reth on Sepolia, observe sync logs.
+- [ ] **Build**: `crates/eth-consensus/src/header.rs` — `Header` struct mirroring `alloy_consensus::Header` exactly (parent_hash, ommers_hash, beneficiary, state_root, transactions_root, receipts_root, logs_bloom, difficulty, number, gas_limit, gas_used, timestamp, extra_data, mix_hash, nonce, base_fee_per_gas, withdrawals_root, blob_gas_used, excess_blob_gas, parent_beacon_block_root, requests_hash). `#[derive(RlpEncodable, RlpDecodable)]` from your Week-5 derive.
+- [ ] Test: encode mainnet block 1's header → bytes match `cast block 1 --raw`.
 - [ ] Commit + log
 
-**Tuesday — ME ch5-6 + Yellow Paper §6**
-- [ ] ME ch5 (Wallets), ch6 (Transactions)
-- [ ] Yellow Paper §6 (Transaction Execution)
-- [ ] Exercise: build/sign legacy + EIP-1559 + EIP-4844 txs via Alloy
+**Tuesday — Tx types + `Transaction` trait**
+- [ ] ME ch5 (Wallets), ch6 (Transactions). Yellow §6.
+- [ ] **Build**: `crates/eth-consensus/src/transaction/legacy.rs` — `TxLegacy { chain_id, nonce, gas_price, gas_limit, to: TxKind, value, input }`. `TxKind = Call(Address) | Create`.
+- [ ] **Build**: `eip1559.rs` — `TxEip1559 { chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, to, value, input, access_list }`.
+- [ ] **Build**: `eip4844.rs` — `TxEip4844 { ..., max_fee_per_blob_gas, blob_versioned_hashes }`.
+- [ ] **Build**: `Transaction` trait with the same shape as alloy (chain_id, nonce, gas_limit, gas_price, value, input, to, signature_hash). Default-method-rich.
+- [ ] Sign each tx type via `alloy-signer` against your `signature_hash()`. Verify recovery.
 - [ ] Commit + log
 
-**Wednesday — EIP-1559 + EIP-4844**
-- [ ] Read EIP-1559 spec + Paradigm 1559 analysis posts
-- [ ] Read EIP-4844 spec; understand blob txs + KZG at high level
-- [ ] Commit notes
+**Wednesday — EIP-1559 + EIP-4844 fee math**
+- [ ] Read EIP-1559 spec + Paradigm 1559 analysis. Read EIP-4844 spec.
+- [ ] **Build**: `crates/eth-consensus/src/eip1559.rs` — `pub fn calc_next_block_base_fee(parent: &Header) -> u64`. Mirrors alloy-eips. Test against mainnet pre/post-1559 block pairs.
+- [ ] **Build**: `crates/eth-consensus/src/eip4844.rs` — `calc_excess_blob_gas`, `calc_blob_fee`, `MAX_BLOB_GAS_PER_BLOCK`, `BLOB_GASPRICE_UPDATE_FRACTION`. Test fee fork transitions.
+- [ ] Commit + log
 
-**Thursday — Alloy issue hunt + claim**
-- [ ] Browse alloy-rs/alloy issues: `good first issue`, `help wanted`, `docs`
-- [ ] Identify 3 candidates, pick one, comment to claim
-- [ ] Read CONTRIBUTING.md + skim 5 recently merged PRs to learn the style
-- [ ] Commit notes
+**Thursday — Alloy issue hunt + claim (now informed by your eth-consensus work)**
+- [ ] Browse alloy-rs/alloy issues: `good first issue`, `help wanted`, `docs`.
+- [ ] Prefer issues in `alloy-consensus`, `alloy-eips`, or `alloy-rlp` — domains you now own in code. Pick one, claim.
+- [ ] Read CONTRIBUTING.md + skim 5 recently merged PRs.
+- [ ] Commit notes.
 
 **Friday — First Alloy PR work**
-- [ ] Fork, branch with convention, implement
+- [ ] Fork, branch with convention, implement. Use what you learned building `eth-consensus`.
 - [ ] Commit + log
 
-**Saturday — First Alloy PR submitted**
-- [ ] `cargo fmt`, `cargo clippy --all`, `cargo nextest`
-- [ ] Clear PR description with motivation + test plan
-- [ ] Open PR
+**Saturday — First Alloy PR submitted + `Signed<T>`**
+- [ ] `cargo fmt`, `cargo clippy --all`, `cargo nextest`. Open PR with clear motivation + test plan.
+- [ ] **Build**: `crates/eth-consensus/src/signed.rs` — `Signed<T> { tx: T, signature: Signature, hash: OnceLock<B256> }` mirroring `alloy_consensus::Signed`. Reuses `OnceLock` hash cache pattern from Week-4 `eth-primitives`.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 7 — More EIPs + Alloy PR velocity
+### Week 7 — `eth-consensus`: Authorization (EIP-7702), Requests (EIP-7685), EOF + more PRs
 
-**Monday — Address review feedback on PR #1**
-- [ ] Iterate; learn from style suggestions
+**Crate extended**: `eth-consensus` v0.1 → v0.2.
+**Mirror target**: `alloy_eips::eip7702::Authorization`, `alloy_eips::eip7685::Requests`, `revm_primitives::Bytecode` (legacy/EOF dispatch).
+
+**Monday — PR #1 review iteration + EIP-2930 access list**
+- [ ] Address Alloy PR #1 review.
+- [ ] **Build**: `crates/eth-consensus/src/eip2930.rs` — `AccessList(Vec<AccessListItem { address, storage_keys: Vec<B256> }>)`. RLP derive. Wire into `TxEip1559` + `TxEip4844`.
 - [ ] Commit + log
 
-**Tuesday — EIP-7702 + EIP-7685**
-- [ ] Read both specs end-to-end
-- [ ] Notes on authorization list mechanics + execution layer requests
-- [ ] Commit notes
-
-**Wednesday — EOF EIPs batch read**
-- [ ] EIP-3540, 3670, 4200, 4750
-- [ ] Note implications for EVM implementation (revm/exec-vm)
-- [ ] Commit notes
-
-**Thursday — Second Alloy PR**
-- [ ] Pick + implement
+**Tuesday — EIP-7702 `Authorization` + `TxEip7702`**
+- [ ] Read EIP-7702 + EIP-7685 specs end-to-end.
+- [ ] **Build**: `crates/eth-consensus/src/eip7702.rs` — `Authorization { chain_id, address, nonce, y_parity, r, s }`, `SignedAuthorization`, `recover_authority` (delegates to `eth-primitives` `k256` recovery). Mirrors `alloy_eips::eip7702`.
+- [ ] **Build**: `TxEip7702 { ..., authorization_list: Vec<SignedAuthorization> }`.
 - [ ] Commit + log
 
-**Friday — Third Alloy PR (medium difficulty)**
-- [ ] Aim substantive, not typo
+**Wednesday — EIP-7685 + EOF skeleton**
+- [ ] Read EOF EIPs: 3540, 3670, 4200, 4750.
+- [ ] **Build**: `crates/eth-consensus/src/eip7685.rs` — `Request` enum + `requests_root` keccak hashing of RLP-encoded requests. Mirrors `alloy_eips::eip7685`.
+- [ ] **Build**: `crates/eth-consensus/src/bytecode.rs` — `Bytecode` enum (`Legacy(Bytes)`, `LegacyAnalyzed { bytecode: Bytes, jumpdests: Bitvec }`, `Eof(EofBytecode)`) mirroring `revm_primitives::Bytecode`. EOF parser skeleton — at least the EIP-3540 magic prefix `0xEF00 01` + section table parse. Full EOF execution comes Phase 4.
 - [ ] Commit + log
 
-**Saturday — Third Alloy PR done + Foundry intro**
-- [ ] Submit PR #3
-- [ ] Clone foundry-rs/foundry, browse `forge` + `cast` crates
-- [ ] Commit notes
+**Thursday — `TxEnvelope` + Second Alloy PR**
+- [ ] **Build**: `crates/eth-consensus/src/envelope.rs` — `TxEnvelope` enum dispatching across all tx types (`Legacy`, `Eip2930`, `Eip1559`, `Eip4844`, `Eip7702`). Implements `Decodable` to parse the leading type byte (0x01/0x02/0x03/0x04). Mirrors `alloy_consensus::TxEnvelope`.
+- [ ] Pick + implement second Alloy PR.
+- [ ] Commit + log
+
+**Friday — Third Alloy PR (medium)**
+- [ ] Substantive PR — prefer something in `alloy-consensus` or `alloy-eips` since you've built mirrors.
+- [ ] Commit + log
+
+**Saturday — PR #3 submitted + Foundry intro**
+- [ ] Submit PR #3.
+- [ ] Clone foundry-rs/foundry, browse `forge` + `cast` crates. Note `cast` uses `alloy-primitives` directly — your `eth-primitives` could in principle drop into foundry.
+- [ ] Commit notes.
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 8 — Foundry PR + revm familiarization
+### Week 8 — Foundry PR + revm familiarization + `eth-consensus` Receipt/Log
+
+**Crate extended**: `eth-consensus` v0.2 → v0.3.
 
 **Monday — Foundry issue hunt + claim**
-- [ ] Browse Foundry issues, pick good first
-- [ ] Commit notes
+- [ ] Browse Foundry issues, pick good first. Prefer issues touching `cast` (uses alloy primitives, area you know).
+- [ ] Commit notes.
 
 **Tuesday — First Foundry PR**
-- [ ] Implement + submit
-- [ ] Commit + log
+- [ ] Implement + submit.
+- [ ] Commit + log.
 
-**Wednesday — revm overview**
-- [ ] Clone bluealloy/revm, read README + arch doc
-- [ ] Browse crate structure
-- [ ] Commit notes
+**Wednesday — revm overview (read with `exec-vm` Phase 4 in mind)**
+- [ ] Clone bluealloy/revm, read README + arch doc.
+- [ ] Browse crate structure: `revm-primitives`, `revm-interpreter`, `revm-precompile`, `revm`. Note: your Phase 4 `exec-vm` is going to mirror this exact split.
+- [ ] Cross-reference `revm-primitives::Database` trait against your `eth-storage-cache::StateCache` trait (Week 2). Note where they diverge — adjust `StateCache` if needed for Phase-4 compatibility (better to fix the trait now than later).
+- [ ] Commit notes.
 
-**Thursday — revm-primitives + interpreter**
-- [ ] Read revm-primitives, compare with alloy-primitives
-- [ ] Read revm-interpreter — opcode dispatch, gas metering
-- [ ] Trace ADD opcode end-to-end, document in `notes/`
-- [ ] Commit + log
+**Thursday — revm-interpreter + `Receipt` build**
+- [ ] Read revm-primitives, compare with `eth-primitives` (note: revm depends on alloy-primitives — your eth-primitives will need to provide the same surface for exec-vm).
+- [ ] Read revm-interpreter — opcode dispatch, gas metering. Trace ADD opcode end-to-end, document in `notes/`.
+- [ ] **Build**: `crates/eth-consensus/src/receipt.rs` — `Receipt { status: Eip658Value, cumulative_gas_used: u64, logs: Vec<Log> }` mirroring `alloy_consensus::Receipt`. `ReceiptEnvelope` enum dispatching by tx type (Legacy/2930/1559/4844/7702). RLP derive.
+- [ ] Commit + log.
 
-**Friday — Mastering Ethereum ch13 (EVM)**
-- [ ] ME ch13 full chapter
-- [ ] Walk evm.codes top 20 opcodes
-- [ ] Commit notes
+**Friday — ME ch13 + `Log` + `Bloom`**
+- [ ] ME ch13 full chapter. Walk evm.codes top 20 opcodes.
+- [ ] **Build**: `crates/eth-consensus/src/log.rs` — `Log { address, topics: Vec<B256>, data: Bytes }` mirroring alloy. `bloom_filter(logs: &[Log]) -> Bloom` keccak-based bloom (uses `eth-primitives::Bloom = FixedBytes<256>`).
+- [ ] Commit notes.
 
-**Saturday — Outstanding PR cleanup + 4th Alloy PR if time**
-- [ ] Address all reviewer feedback across open PRs
-- [ ] Commit + log
+**Saturday — PR cleanup + tag `eth-consensus v0.3.0`**
+- [ ] Address all reviewer feedback across open PRs.
+- [ ] Tag `eth-consensus v0.3.0`. README documents Header, Tx*, Signed, TxEnvelope, Receipt, Log, fee math.
+- [ ] Commit + log.
 
 **Sunday — Rest + End Month 2 review**
-- [ ] Update North Star M2 metrics
-- [ ] Target check: 3+ Alloy PRs opened (some merged), 1+ Foundry PR
+- [ ] Update North Star M2 metrics.
+- [ ] Target check: 3+ Alloy PRs opened (some merged), 1+ Foundry PR.
+- [ ] Inheritance check: 5 crates production: `eth-primitives v0.2`, `eth-rlp v0.1`, `eth-storage-cache v0.1`, `eth-network-codec v0.1`, `eth-consensus v0.3`. Phase 1 Month 3 now seeds `exec-vm` and `eth-trie` (NOT throwaway).
 
 ---
 
-## Month 3: Deep Practice + Ethereum Protocol (Weeks 9-12)
+## Month 3: `exec-vm` + `eth-trie` seeds (Weeks 9-12)
 
-### Week 9 — Tiny EVM (throwaway learning artifact)
+### Week 9 — `exec-vm` Phase-1 seed (NOT throwaway — same crate ships v1.0 in Phase 4)
 
-**Monday — Tiny EVM stack + arithmetic**
-- [ ] Implement stack + 5 arithmetic opcodes (ADD, SUB, MUL, DIV, MOD)
-- [ ] Commit + log
+**Mirror target**: `revm-interpreter` subset — `Stack`, `SharedMemory`, `Gas`, `instructions/arithmetic.rs`, `instructions/control.rs`, `instructions/host.rs`. Same crate split as revm.
+**Crate created**: `crates/exec-vm/` — Phase 1 establishes the architectural skeleton; Phase 4 expands to full opcode coverage. NO discard.
+**Inherits from**: `eth-primitives` (U256, Address, B256, Bytes), `eth-storage-cache` (StateCache trait for SSTORE/SLOAD), `eth-consensus` (Bytecode, TxEnvelope to source bytecode + tx env).
+**Feeds into**: itself in Phase 4. Receipts written by `exec-vm` are encoded with `eth-rlp`. State reads/writes go through `eth-storage-cache::StateCache`.
 
-**Tuesday — Memory + control flow**
-- [ ] MSTORE, MLOAD, JUMP, JUMPI, JUMPDEST
-- [ ] Comparison/logic opcodes
-- [ ] Commit + log
+> Same module names as revm: `interpreter/`, `instructions/`, `gas/`. When you start Phase 4 you're not creating a new crate — you're filling out modules in this one.
 
-**Wednesday — Storage + finalize**
-- [ ] SSTORE/SLOAD against an in-memory map
-- [ ] 15-20 opcodes total, manual test cases
-- [ ] Commit notes (this is throwaway — do not publish)
+**Monday — `Stack` + arithmetic opcodes**
+- [ ] **Build**: `crates/exec-vm/src/interpreter/stack.rs` — `Stack { data: Vec<U256> }` with 1024-deep limit, mirroring `revm_interpreter::Stack` (same SOA layout, same overflow semantics, same `push_b256`/`pop_b256` API). `push`, `pop`, `peek`, `swap`, `dup`.
+- [ ] **Build**: `crates/exec-vm/src/instructions/arithmetic.rs` — ADD, SUB, MUL, DIV, MOD as separate functions taking `&mut Interpreter`. Wraps via `U256` (eth-primitives). Match revm gas costs (3 gas/op static).
+- [ ] **Build**: `crates/exec-vm/src/interpreter/mod.rs` — `Interpreter { stack, memory, gas, pc, bytecode, return_data }` skeleton + `step()` dispatcher (match on `bytecode[pc]`).
+- [ ] Commit + log.
+
+**Tuesday — `SharedMemory` + control flow**
+- [ ] **Build**: `crates/exec-vm/src/interpreter/memory.rs` — `SharedMemory` mirroring revm (single contiguous Vec shared across calls, with frame offsets). `mload`, `mstore`, `mstore8`, `resize` with quadratic gas calc.
+- [ ] **Build**: `crates/exec-vm/src/instructions/control.rs` — JUMP, JUMPI, JUMPDEST, PC, STOP, INVALID. Valid-jumpdest analysis cached via `Bytecode::LegacyAnalyzed { jumpdests: Bitvec }` (Week 7's `eth-consensus::Bytecode`).
+- [ ] **Build**: `crates/exec-vm/src/instructions/comparison.rs` — LT, GT, SLT, SGT, EQ, ISZERO, AND, OR, XOR, NOT.
+- [ ] Commit + log.
+
+**Wednesday — `Gas` + SSTORE/SLOAD against `StateCache`**
+- [ ] **Build**: `crates/exec-vm/src/interpreter/gas.rs` — `Gas { limit, remaining, refunded }` with `record_cost`, `record_refund`. Mirrors revm.
+- [ ] **Build**: `crates/exec-vm/src/instructions/host.rs` — SSTORE, SLOAD, BALANCE, EXTCODESIZE. These take a generic `Host` parameter. Define `Host` trait minimal subset that delegates to `eth_storage_cache::StateCache` (you wrote the trait Week 2 with this exact use in mind).
+- [ ] 15-20 opcodes total. Test against hand-rolled bytecode programs (`60 01 60 02 01` = PUSH1 1 PUSH1 2 ADD).
+- [ ] Run `cargo test -p exec-vm`. Tag `exec-vm v0.0.1` (Phase-1 seed marker).
+- [ ] Commit + log.
 
 **Thursday — First revm PR**
-- [ ] Browse issues, pick good first, implement, submit
-- [ ] Commit + log
+- [ ] Browse revm issues, pick good first, implement, submit. (Now you read revm with your `exec-vm` already in your head.)
+- [ ] Commit + log.
 
-**Friday — RLP**
-- [ ] Read RLP spec
-- [ ] Exercise: implement RLP encoder/decoder (throwaway)
-- [ ] Read alloy-rlp source for comparison
-- [ ] Commit + log
+**Friday — `eth-rlp` extension: typed envelopes**
+- [ ] You ALREADY have `eth-rlp` from Week 5 — no throwaway. Today: extend it.
+- [ ] **Extend**: `crates/eth-consensus/src/envelope.rs` — implement RLP for `TxEnvelope` with the leading type byte (0x01/0x02/0x03/0x04) per EIP-2718. Test against mainnet typed-tx test vectors.
+- [ ] **Extend**: same for `ReceiptEnvelope`.
+- [ ] Diff against `alloy-eips::eip2718` to confirm the framing matches.
+- [ ] Commit + log.
 
 **Saturday — More PRs (Alloy/revm)**
-- [ ] Whichever is unblocked, push velocity
-- [ ] Commit + log
+- [ ] Whichever is unblocked, push velocity. Prefer revm issues now that `exec-vm` is bootstrapped — you have shared vocabulary.
+- [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 10 — MPT theory + tiny MPT
+### Week 10 — `eth-trie` Phase-1 seed (NOT throwaway)
 
-**Monday — MPT theory**
-- [ ] ethereum.org MPT docs + 2-3 blog explanations to triangulate
-- [ ] Draw extension/branch/leaf/hash node diagrams in `notes/`
-- [ ] Commit + log
+**Mirror target**: `alloy-trie` subset — `Nibbles`, `Node` enum (Empty/Leaf/Extension/Branch), `HashBuilder`, root hash via keccak. Plus `reth_trie::HashedPostState` (Week 11).
+**Crate created**: `crates/eth-trie/` — Phase 3 `storage-trie` extends THIS crate, no fresh start.
+**Inherits from**: `eth-primitives` (B256, Bytes, Bloom), `eth-rlp` (RLP encoding for trie nodes), `eth-storage-cache` (Week 11 will plug `TrieStorage` into `StateCache`).
+**Feeds into**: `storage-trie` Phase 3 (full MPT with proofs, witnesses, MDBX backing); `consensus-engine` Phase 5 (state root verification on engine_newPayload).
 
-**Tuesday — Tiny MPT: insert + get**
-- [ ] Throwaway MPT — happy path only
-- [ ] Commit + log
+**Monday — MPT theory + `Nibbles`**
+- [ ] ethereum.org MPT docs + 2-3 blog explanations to triangulate.
+- [ ] Draw extension/branch/leaf/hash node diagrams in `notes/`.
+- [ ] **Build**: `crates/eth-trie/src/nibbles.rs` — `Nibbles(SmallVec<[u8; 64]>)` mirroring `alloy_trie::Nibbles`. Pack/unpack from `&[u8]`, convert to/from `B256` keys. Hex-prefix encoding for leaf vs extension nodes (the EIP-1186 nibble compression).
+- [ ] Commit + log.
 
-**Wednesday — Tiny MPT: root hash**
-- [ ] keccak-based root hash
-- [ ] Test against simplest Ethereum trie test vectors
-- [ ] Commit + log
+**Tuesday — `Node` enum + insert/get**
+- [ ] **Build**: `crates/eth-trie/src/node.rs` — `Node` enum: `Empty`, `Leaf(LeafNode { key: Nibbles, value: Bytes })`, `Extension(ExtensionNode { key: Nibbles, child: NodeRef })`, `Branch(BranchNode { children: [NodeRef; 16], value: Option<Bytes> })`. Mirrors alloy-trie shapes.
+- [ ] **Build**: `crates/eth-trie/src/storage.rs` — `TrieStorage` trait: `get_node(&self, hash: B256) -> Result<Node, TrieError>`, `put_node(&mut self, hash: B256, node: Node)`. Initial impl `MemoryStorage(HashMap<B256, Node>)`. (Phase 3 will add an mmap-backed impl that lives in `storage-trie`.)
+- [ ] Insert + get on the trie via the storage trait. Test on `[("do", "verb"), ("dog", "puppy"), ("doge", "coin")]` — matches geth's trie test fixtures.
+- [ ] Commit + log.
+
+**Wednesday — `HashBuilder` + root hash**
+- [ ] **Build**: `crates/eth-trie/src/hash_builder.rs` — `HashBuilder` mirroring `alloy_trie::HashBuilder`. Stream-builds the trie root by accepting sorted `(key, value)` pairs and emitting node hashes incrementally (keccak256 of RLP-encoded nodes via `eth-rlp`).
+- [ ] Test against EIP-1186 simplest vectors + alloy-trie's test fixtures.
+- [ ] Tag `eth-trie v0.0.1` (Phase-1 seed marker).
+- [ ] Commit + log.
 
 **Thursday — Second revm PR**
-- [ ] Pick, implement, submit
-- [ ] Commit + log
+- [ ] Pick, implement, submit.
+- [ ] Commit + log.
 
-**Friday — Reth passive exposure**
-- [ ] Clone paradigmxyz/reth, `cargo build --release` (30-60 min first time)
-- [ ] Browse structure, run `reth --help`, read 5 recent merged PRs for style
-- [ ] Commit notes
+**Friday — Reth passive exposure (read with `eth-trie` mental model)**
+- [ ] Clone paradigmxyz/reth, `cargo build --release`.
+- [ ] Browse `reth/crates/trie`. Identify `HashBuilder`, `TrieWalker`, `HashedPostState`, `TrieUpdates`. Note where YOUR `eth-trie` will plug into the `MerkleStage` in Phase 3.
+- [ ] Read 5 recently merged trie or storage PRs for style.
+- [ ] Commit notes.
 
-**Saturday — Custom Future state machine exercise**
-- [ ] Build a small async state machine (e.g., leader election heartbeat) using custom Futures + tokio
-- [ ] Property tests with `proptest` or `quickcheck`
-- [ ] Commit + log
+**Saturday — `peer-keepalive` state machine on `eth-network-codec`**
+- [ ] Custom-Future state machine, but applied: build `peer-keepalive` ping/pong oscillator inside `eth-network-codec` (a `Future` that periodically sends `Ping` and times out the peer if no `Pong` within N seconds). Same shape as reth-eth-wire's keepalive.
+- [ ] Property tests with `proptest` over the state transitions.
+- [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 11 — Type-state + advanced trait patterns + reth survey
+### Week 11 — Type-state on `eth-network-codec` + `HashedPostState` on `eth-trie` + reth survey
 
-**Monday — Advanced trait patterns**
-- [ ] Type-state pattern, sealed trait pattern, extension traits
-- [ ] Refactor `backpressure-net` to use type-state for connection lifecycle
-- [ ] Commit + log
+**Mirror targets**: `reth_eth_wire::EthStream` (type-state lifecycle), `reth_trie::HashedPostState`.
 
-**Tuesday — Erigon staged sync**
-- [ ] Read Erigon staged sync design doc
-- [ ] Browse `reth/crates/stages`
-- [ ] Map: headers → bodies → senders → execution → hashing → merkle
-- [ ] Commit notes
+**Monday — Type-state pattern applied to `eth-network-codec`**
+- [ ] Type-state, sealed trait, extension trait reading.
+- [ ] **Refactor**: `crates/eth-network-codec/src/connection.rs` — introduce `Connection<S>` parameterized by phantom state types `Disconnected`, `Handshaking { hello_received: bool }`, `Established { protocol_version: u8 }`. Methods only available in correct states (e.g., `send_message` only on `Established`). Same type-state pattern reth-eth-wire uses for `P2PStream` ↔ `EthStream` lifecycle.
+- [ ] Commit + log.
 
-**Wednesday — reth-trie + reth-db survey (passive)**
-- [ ] Browse `reth/crates/trie` + `reth/crates/storage`
-- [ ] Identify key abstractions; do not deep dive yet
-- [ ] Commit notes
+**Tuesday — Erigon staged sync (read with your crates as the substrate)**
+- [ ] Read Erigon staged sync design doc.
+- [ ] Browse `reth/crates/stages`. Map: headers → bodies → senders → execution → hashing → merkle.
+- [ ] For each stage, name the `eth-*` crate of yours that would feed it: `headers/bodies` → eth-network-codec (data ingestion) + eth-consensus (Header/Body types); `senders` → eth-consensus signature recovery; `execution` → exec-vm + eth-storage-cache; `hashing/merkle` → eth-trie + eth-storage-cache.
+- [ ] Commit notes — this map is the Phase 3-5 wiring diagram.
+
+**Wednesday — `HashedPostState` + `TrieUpdates`**
+- [ ] Browse `reth/crates/trie` source for `HashedPostState`, `TrieUpdates`.
+- [ ] **Build**: `crates/eth-trie/src/hashed_state.rs` — `HashedPostState { accounts: HashMap<B256, Option<Account>>, storages: HashMap<B256, HashedStorage> }` mirroring `reth_trie::HashedPostState`. The "Option<Account>" represents deletion (None = self-destructed account).
+- [ ] **Build**: `TrieUpdates { account_nodes: HashMap<Nibbles, BranchNodeCompact>, storage_tries: HashMap<B256, StorageTrieUpdates>, removed_nodes: HashSet<Nibbles> }`.
+- [ ] These are the data structures `MerkleStage` consumes in reth — your Phase 3 `storage-trie` will produce them.
+- [ ] Commit + log.
 
 **Thursday — Third revm PR (medium difficulty)**
-- [ ] Pick substantive issue, implement
-- [ ] Commit + log
+- [ ] Pick substantive issue, implement.
+- [ ] Commit + log.
 
 **Friday — Twitter + GitHub presence warm-up**
-- [ ] First thoughtful technical reply on a reth/paradigm tweet
-- [ ] Star key repos (reth, revm, alloy, foundry, ethers-rs, erigon)
-- [ ] Watch reth repo for notifications
-- [ ] Follow 20 more Ethereum infra engineers
-- [ ] Commit notes
+- [ ] First thoughtful technical reply on a reth/paradigm tweet.
+- [ ] Star key repos (reth, revm, alloy, foundry, ethers-rs, erigon). Watch reth.
+- [ ] Follow 20 more Ethereum infra engineers.
+- [ ] Commit notes.
 
-**Saturday — Outstanding PR cleanup**
-- [ ] Address all reviewer feedback across open PRs
-- [ ] Commit + log
+**Saturday — Outstanding PR cleanup + tag**
+- [ ] Address all reviewer feedback across open PRs.
+- [ ] Tag `eth-trie v0.1.0` (Nibbles + Node + HashBuilder + HashedPostState shipped). `eth-network-codec v0.2.0` (type-state Connection).
+- [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
 
@@ -478,40 +633,42 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 
 ### Week 12 — Phase 1 close + Phase 2 prep
 
-**Monday — MDBX overview**
-- [ ] Read libmdbx high-level README + libmdbx-rs crate skim
-- [ ] Commit notes
+**Monday — MDBX overview (read with `eth-storage-cache` already in head)**
+- [ ] Read libmdbx high-level README + libmdbx-rs crate skim.
+- [ ] Note: your `eth-storage-cache` is the in-memory layer; MDBX in Phase 3 becomes the persistent backing for `storage-trie`. Sketch the layering: `StateCache` trait → `MdbxStateCache` (Phase 3 impl) → MDBX env.
+- [ ] Commit notes.
 
 **Tuesday — Reth architecture talk + consensus background**
-- [ ] Watch any gakonst reth architecture talk on YouTube
-- [ ] Mastering Ethereum consensus chapter; understand The Merge at high level
-- [ ] Commit notes
+- [ ] Watch any gakonst reth architecture talk on YouTube.
+- [ ] Mastering Ethereum consensus chapter; understand The Merge at high level.
+- [ ] Commit notes.
 
 **Wednesday — Final Alloy/revm PR for Phase 1**
-- [ ] Push one more PR over the finish line
-- [ ] Commit + log
+- [ ] Push one more PR over the finish line.
+- [ ] Commit + log.
 
 **Thursday — Maintainer tracker**
-- [ ] Note which maintainers reviewed which PRs of yours
-- [ ] Identify mentor candidate (likely Matthias Seitz)
-- [ ] Commit notes
+- [ ] Note which maintainers reviewed which PRs of yours.
+- [ ] Identify mentor candidate (likely Matthias Seitz).
+- [ ] Commit notes.
 
 **Friday — Reth Telegram + Discord**
-- [ ] Join reth Telegram, observe (don't post yet)
-- [ ] Commit notes
+- [ ] Join reth Telegram, observe (don't post yet).
+- [ ] Commit notes.
 
 **Saturday — Phase 1 review**
-- [ ] Verify: 3-5 Alloy PRs, 2-3 revm PRs, 1-2 Foundry PRs (some merged)
-- [ ] Verify: `shardkv` + `backpressure-net` both at v0.1.0 with bench, tests, README
-- [ ] Verify: notes/01-07 all written
-- [ ] Phase 1 reflection in `progress.md`
-- [ ] Commit + log
+- [ ] Verify shipped crates: `eth-primitives v0.2`, `eth-rlp v0.1`, `eth-storage-cache v0.1`, `eth-network-codec v0.2`, `eth-consensus v0.3`, `exec-vm v0.0.1` (seed), `eth-trie v0.1`, `eth-primitives-derive v0.1`. All with bench (where applicable), tests, README.
+- [ ] Verify: 3-5 Alloy PRs, 2-3 revm PRs, 1-2 Foundry PRs (some merged).
+- [ ] Verify: notes/01-07 all written, grounded in your real crate code (no toy programs).
+- [ ] Verify: workspace `cargo test --workspace` is green; `cargo clippy --workspace -- -D warnings` is clean; `cargo +nightly miri test -p eth-primitives` clean.
+- [ ] Phase 1 reflection in `progress.md`.
+- [ ] Commit + log.
 
 **Sunday — End Phase 1 ritual**
-- [ ] Full Phase 1 assessment
-- [ ] Update North Star M3 metrics
-- [ ] **Note**: you enter Phase 2 already with 6+ ecosystem PRs; the original Phase 2 plan below assumes you're starting from zero. Skim Phase 2 and consider compressing Weeks 13-16 — Phase 2 should now begin with revm depth + Foundry velocity rather than first Alloy PRs.
-- [ ] Phase 2 starts tomorrow
+- [ ] Full Phase 1 assessment.
+- [ ] Update North Star M3 metrics.
+- [ ] **Note**: you enter Phase 2 with 6+ ecosystem PRs AND 8 production crates. The "Tiny EVM" and "Tiny MPT" tasks in Phase 2 (Weeks 17, 20) are NOT throwaways anymore — they become EXPANSION of `exec-vm` and `eth-trie`. Phase 2 should focus on revm depth + Foundry velocity + extending the existing crates.
+- [ ] Phase 2 starts tomorrow.
 
 ---
 
@@ -519,432 +676,454 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 
 ## Month 4: Ethereum Protocol + Alloy PRs
 
-### Week 13 — Ethereum fundamentals
+### Week 13 — Ethereum fundamentals + `eth-consensus` deepening (`SealedHeader`, signer recovery, Account)
 
-**Monday — Ethereum developer docs + Mastering Ethereum ch3**
-- [ ] Ethereum.org developer docs: "Intro to Ethereum"
-- [ ] Mastering Ethereum Chapter 3 (Ethereum Clients)
-- [ ] Setup: run `reth` node on Sepolia testnet
-- [ ] Observe sync logs
-- [ ] Commit notes
+**Note**: most of Phase 1 Month 2 already covered Mastering Ethereum ch3-6 + Yellow Paper §4/§6 in passing. This week deepens those reads and converts each into an `eth-consensus` extension instead of a re-read.
 
-**Tuesday — Mastering Ethereum ch4 (Cryptography)**
-- [ ] Mastering Ethereum Chapter 4 (Cryptography)
-- [ ] Understand keccak256, secp256k1
-- [ ] Exercise: implement simple keypair generator using k256 crate
-- [ ] Commit + log
+**Monday — ME ch3 + `SealedHeader` finalize**
+- [ ] ME ch3 (Clients) + ethereum.org "Intro to Ethereum" (skim).
+- [ ] Run `reth` on Sepolia, observe sync logs.
+- [ ] **Build**: `crates/eth-consensus/src/sealed.rs` — `SealedHeader { header: Header, hash: OnceLock<B256> }` mirroring `reth_primitives::SealedHeader`. Reuses `OnceLock` pattern from Week-4 `eth-primitives::Sealable`. `SealedHeader::hash_ref(&self) -> &B256` lazy-computes via `keccak256(rlp(header))`.
+- [ ] Test: hash matches mainnet block hashes pulled via alloy-provider.
+- [ ] Commit + log.
 
-**Wednesday — Mastering Ethereum ch5 (Wallets) + ch6 (Transactions)**
-- [ ] Mastering Ethereum Chapter 5 (Wallets)
-- [ ] Mastering Ethereum Chapter 6 (Transactions)
-- [ ] Understand legacy vs EIP-1559 vs EIP-4844 tx types
-- [ ] Exercise: build and sign each tx type using Alloy
-- [ ] Commit + log
+**Tuesday — ME ch4 + signer recovery**
+- [ ] ME ch4 (Cryptography). Understand keccak256, secp256k1.
+- [ ] **Build**: `crates/eth-consensus/src/recovery.rs` — `recover_signer(signature: &Signature, hash: B256) -> Result<Address, RecoveryError>` using `k256` directly (not via alloy-signer). Test against alloy-signer's output to confirm identical.
+- [ ] **Build**: `Signed<T: Transaction>::recover_signer()` method on the `Signed` wrapper from Week 6.
+- [ ] Commit + log.
 
-**Thursday — Mastering Ethereum ch7 (Smart Contracts)**
-- [ ] Mastering Ethereum Chapter 7 (Smart Contracts Solidity)
-- [ ] Deploy simple contract on Sepolia using Foundry
-- [ ] Interact with it using Alloy
-- [ ] Commit + log
+**Wednesday — ME ch5-6 + `Block` + `Body`**
+- [ ] ME ch5 (Wallets) + ch6 (Transactions).
+- [ ] **Build**: `crates/eth-consensus/src/block.rs` — `Block { header: Header, body: BlockBody }`, `BlockBody { transactions: Vec<TxEnvelope>, ommers: Vec<Header>, withdrawals: Option<Vec<Withdrawal>> }`. Mirrors `alloy_consensus::Block` + `BlockBody`.
+- [ ] **Build**: `SealedBlock` analogous to `SealedHeader`.
+- [ ] Sign each tx type using your `eth-consensus::TxEip1559::signature_hash()` then alloy-signer; assert recovered address matches.
+- [ ] Commit + log.
 
-**Friday — Yellow Paper: World State section**
-- [ ] Read Ethereum Yellow Paper Section 4 (Block, State, Account)
-- [ ] Note concepts: state trie, account trie, storage trie
-- [ ] Start drawing Ethereum state diagrams in notes/
-- [ ] Commit + log
+**Thursday — ME ch7 + `encode_tx` round-trip**
+- [ ] ME ch7 (Smart Contracts Solidity).
+- [ ] Deploy simple contract on Sepolia using Foundry.
+- [ ] **Build**: `crates/eth-consensus/src/encode_tx.rs` — `encode_signed_tx(signed: &Signed<TxEnvelope>) -> Bytes` produces the raw bytes Foundry would broadcast. Send a tx using ONLY your bytes via `eth_sendRawTransaction` against Sepolia. Assert it lands on-chain.
+- [ ] Commit + log.
 
-**Saturday — Yellow Paper: Transactions section**
-- [ ] Read Yellow Paper Section 6 (Transaction Execution)
-- [ ] Understand intrinsic gas, execution gas
-- [ ] Commit notes
+**Friday — Yellow Paper §4 + `Account` + `StorageEntry`**
+- [ ] Yellow Paper §4 (Block, State, Account). Understand state trie / account trie / storage trie distinction.
+- [ ] **Build**: `crates/eth-consensus/src/account.rs` — `Account { nonce: u64, balance: U256, code_hash: B256, storage_root: B256 }` mirroring `alloy_consensus::TrieAccount`. RLP derive (this is the leaf value of the state trie).
+- [ ] **Build**: `StorageEntry { key: B256, value: U256 }`.
+- [ ] Note: this `Account` is the on-disk RLP form; the `Account` in `eth-storage-cache` (Week 2) is the in-memory form WITH inline code. Add `From`/`To` conversions between them.
+- [ ] Draw state diagrams in `notes/`.
+- [ ] Commit + log.
 
-**Sunday — Rest + Weekly Ritual**
-
----
-
-### Week 14 — EIPs deep dive + Alloy PR hunt
-
-**Monday — EIP-1559**
-- [ ] Read EIP-1559 full specification
-- [ ] Understand base fee, priority fee mechanics
-- [ ] Read Paradigm's analysis blog posts on 1559
-- [ ] Commit notes
-
-**Tuesday — EIP-4844 (blobs)**
-- [ ] Read EIP-4844 full specification
-- [ ] Understand blob transactions, KZG commitments at high level
-- [ ] Read Proto-Danksharding roadmap
-- [ ] Commit notes
-
-**Wednesday — EIP-7702 (account abstraction)**
-- [ ] Read EIP-7702 full specification
-- [ ] Understand authorization list mechanics
-- [ ] Commit notes
-
-**Thursday — Alloy issues scan**
-- [ ] Browse alloy-rs/alloy issues
-- [ ] Filter `good first issue`, `help wanted`, `docs`
-- [ ] Identify 3-5 candidate issues
-- [ ] Pick one, comment claiming
-- [ ] Commit notes
-
-**Friday — First Alloy PR work**
-- [ ] Read CONTRIBUTING.md carefully
-- [ ] Fork alloy repo
-- [ ] Create branch with convention
-- [ ] Start implementation for chosen issue
-- [ ] Commit + log
-
-**Saturday — First Alloy PR complete**
-- [ ] Finish implementation
-- [ ] Run `cargo fmt`, `cargo clippy --all`, `cargo nextest`
-- [ ] Write clear PR description with context
-- [ ] Open PR
-- [ ] Commit + log
+**Saturday — Yellow Paper §6 + intrinsic gas calculator**
+- [ ] Yellow Paper §6 (Transaction Execution).
+- [ ] **Build**: `crates/eth-consensus/src/gas.rs` — `intrinsic_gas(tx: &TxEnvelope, is_contract_creation: bool) -> u64`. 21000 base + zero/non-zero byte calldata + access list cost (EIP-2930) + auth list cost (EIP-7702). Test against revm's `validate_initial_tx_gas`.
+- [ ] Tag `eth-consensus v0.4.0`.
+- [ ] Commit notes.
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 15 — More Alloy PRs + EOF EIPs
+### Week 14 — EIP deep dives via `eth-eips` extraction + medium Alloy PRs
+
+**Note**: you already wrote EIP-1559/4844/7702 fee math + structures in Phase 1 (Weeks 6-7). This week pulls them into a dedicated `eth-eips` crate so they can be consumed independently of `eth-consensus` (mirrors how alloy splits `alloy-eips` from `alloy-consensus`).
+
+**Crate created**: `crates/eth-eips/` — re-homes EIP fee math + structures.
+**Mirror target**: `alloy-eips` (eip1559, eip2930, eip4844, eip7685, eip7702 modules).
+
+**Monday — EIP-1559 deep + extract `eth-eips/eip1559`**
+- [ ] Re-read EIP-1559 full spec + Paradigm's analysis posts (depth, not skim).
+- [ ] **Refactor**: move `eth-consensus/src/eip1559.rs` to `crates/eth-eips/src/eip1559.rs`. Add `BaseFeeParams { max_change_denominator, elasticity_multiplier }` for chain-specific overrides (Optimism, Base differ). `eth-consensus` re-exports from `eth-eips`.
+- [ ] Test base fee against mainnet, Optimism, Base genesis params.
+- [ ] Commit + log.
+
+**Tuesday — EIP-4844 (blobs) deep + KZG**
+- [ ] Read EIP-4844 spec + Proto-Danksharding roadmap.
+- [ ] **Refactor**: move blob fee math to `crates/eth-eips/src/eip4844.rs`. Add `BlobTransactionSidecar { blobs, commitments, proofs }` (mirrors alloy). Skeleton `KzgSettings` placeholder; full KZG verification deferred to Phase 5.
+- [ ] Commit notes.
+
+**Wednesday — EIP-7702 deep + `eth-eips/eip7702`**
+- [ ] Re-read EIP-7702 spec.
+- [ ] **Refactor**: move `Authorization` + `SignedAuthorization` from `eth-consensus` to `eth-eips/src/eip7702.rs`. Implement `recover_authority` using `eth-consensus::recovery`.
+- [ ] Tag `eth-eips v0.1.0`.
+- [ ] Commit notes.
+
+**Thursday — Alloy issues scan (target `alloy-eips` now)**
+- [ ] Browse alloy-rs/alloy issues. Filter `good first issue`, `help wanted`. PREFER issues in `alloy-eips` — you've now mirrored it module-for-module.
+- [ ] Identify 3-5 candidate issues, pick one, claim.
+- [ ] Commit notes.
+
+**Friday — Medium-difficulty Alloy PR work**
+- [ ] You're past the "first PR" phase — push for substantive change in `alloy-eips` or `alloy-consensus` (you have your own mirrors of both, so you can confidently propose API changes).
+- [ ] Commit + log.
+
+**Saturday — Alloy PR submitted**
+- [ ] Finish implementation. `cargo fmt`, `cargo clippy --all`, `cargo nextest`. Open PR with motivation referencing your `eth-eips` design notes.
+- [ ] Commit + log.
+
+**Sunday — Rest + Weekly Ritual**
+
+---
+
+### Week 15 — EIP-7685 + EOF parser in `exec-vm` + more PRs
 
 **Monday — Respond to Alloy PR reviews**
-- [ ] Address any reviewer feedback on first PR
-- [ ] Learn from suggestions
-- [ ] Iterate until merge or close
-- [ ] Commit + log
+- [ ] Address reviewer feedback on prior PR; iterate until merge or close.
+- [ ] Commit + log.
 
-**Tuesday — EIP-7685 (execution layer requests)**
-- [ ] Read EIP-7685 specification
-- [ ] Understand request/receipt mechanism
-- [ ] Commit notes
+**Tuesday — EIP-7685 finalize in `eth-eips`**
+- [ ] Re-read EIP-7685 spec.
+- [ ] **Refactor**: move `Requests` from `eth-consensus` to `crates/eth-eips/src/eip7685.rs`. Add `compute_requests_hash(requests: &[Request]) -> B256`.
+- [ ] Tag `eth-eips v0.2.0`.
+- [ ] Commit notes.
 
-**Wednesday — EOF EIPs batch**
-- [ ] Read EIP-3540 (EVM Object Format)
-- [ ] Read EIP-3670 (Code Validation)
-- [ ] Read EIP-4200 (Static Relative Jumps)
-- [ ] Read EIP-4750 (Functions)
-- [ ] Note EOF implications for EVM implementation
-- [ ] Commit notes
+**Wednesday — EOF parser deepening in `exec-vm`**
+- [ ] Re-read EIP-3540, 3670, 4200, 4750.
+- [ ] **Build**: `crates/exec-vm/src/eof/parser.rs` — full EOF container parser: magic bytes (0xEF00 01), version, type section, code sections, data section, container sections. Mirrors revm's `EofBody`.
+- [ ] **Build**: `crates/exec-vm/src/eof/validate.rs` — EIP-3670 code validation pass (no truncated PUSH, no invalid opcodes in EOF, function ID range checks per EIP-4750).
+- [ ] Test against revm's EOF test vectors.
+- [ ] Commit notes.
 
 **Thursday — Second Alloy PR**
-- [ ] Pick next candidate issue
-- [ ] Implement
-- [ ] Commit + log
+- [ ] Pick next candidate issue, implement.
+- [ ] Commit + log.
 
-**Friday — Third Alloy PR work**
-- [ ] Pick and work on medium-difficulty issue
-- [ ] Aim for substantive contribution not just typo fix
-- [ ] Commit + log
+**Friday — Third Alloy PR work (medium)**
+- [ ] Substantive contribution.
+- [ ] Commit + log.
 
 **Saturday — Third Alloy PR complete**
-- [ ] Finish, submit
-- [ ] Commit + log
+- [ ] Finish, submit.
+- [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 16 — Alloy PR velocity + Foundry intro
+### Week 16 — Alloy/Foundry PRs + `eth-rpc-types` extraction
 
-**Monday — Fourth Alloy PR**
-- [ ] Pick and implement
-- [ ] Commit + log
+**Crate created**: `crates/eth-rpc-types/` — JSON-RPC request/response types over `eth-consensus`.
+**Mirror target**: `alloy-rpc-types-eth` (Block, Transaction, TransactionRequest, Filter, Log).
+
+**Monday — `eth-rpc-types` + 4th Alloy PR**
+- [ ] **Build**: `crates/eth-rpc-types/src/block.rs` — RPC `Block` (with hex-encoded fields via serde), `Transaction` (RPC view of `Signed<TxEnvelope>` with from/blockHash/blockNumber). Mirrors `alloy_rpc_types_eth::Block`. Used Phase 5 by `consensus-engine` for `eth_getBlockByHash`.
+- [ ] Pick + implement 4th Alloy PR.
+- [ ] Commit + log.
 
 **Tuesday — Foundry codebase intro**
-- [ ] Clone foundry-rs/foundry
-- [ ] Read Foundry Book (book.getfoundry.sh) for user perspective
-- [ ] Browse forge crate source
-- [ ] Commit notes
+- [ ] Clone foundry-rs/foundry. Read Foundry Book briefly for user perspective.
+- [ ] Browse `forge` crate source. Note: forge uses revm + alloy throughout — your `exec-vm` could in principle drop in.
+- [ ] Commit notes.
 
-**Wednesday — Foundry cast crate**
-- [ ] Read cast crate source
-- [ ] Understand CLI tool structure
-- [ ] Commit notes
+**Wednesday — Foundry cast + `eth-rpc-types/filter`**
+- [ ] Read cast crate source.
+- [ ] **Build**: `crates/eth-rpc-types/src/filter.rs` — `Filter`, `FilterBlockOption`, `Topic`. Mirrors alloy. Used by `eth_getLogs` calls.
+- [ ] Commit notes.
 
 **Thursday — First Foundry PR**
-- [ ] Browse Foundry issues, pick good first
-- [ ] Implement
-- [ ] Commit + log
+- [ ] Browse Foundry issues, pick good first. Prefer cast issues (now you know the surface).
+- [ ] Implement.
+- [ ] Commit + log.
 
-**Friday — Foundry PR complete + respond to reviews**
-- [ ] Finish Foundry PR
-- [ ] Address any outstanding Alloy review feedback
-- [ ] Commit + log
+**Friday — Foundry PR complete + Alloy review responses**
+- [ ] Finish Foundry PR. Address Alloy review feedback.
+- [ ] Commit + log.
 
-**Saturday — Fifth Alloy PR or consolidation**
-- [ ] Either pick one more Alloy PR or polish existing ones
-- [ ] Commit + log
+**Saturday — `eth-rpc-types/transaction_request` + 5th Alloy PR**
+- [ ] **Build**: `crates/eth-rpc-types/src/transaction_request.rs` — `TransactionRequest` (the loose-typed builder for `eth_sendTransaction` / `eth_call`). Mirrors alloy.
+- [ ] Tag `eth-rpc-types v0.1.0`.
+- [ ] Either submit 5th Alloy PR or polish existing.
+- [ ] Commit + log.
 
 **Sunday — Rest + End Month 4 review**
-- [ ] Update North Star M4 metrics
-- [ ] Target check: 5+ Alloy PRs opened, some merged
+- [ ] Update North Star M4 metrics.
+- [ ] Target check: 5+ Alloy PRs opened, some merged. `eth-eips v0.2`, `eth-rpc-types v0.1`, `eth-consensus v0.4` in workspace.
 
 ---
 
 ## Month 5: EVM Deep Dive + revm PRs
 
-### Week 17 — Mastering Ethereum ch13 (EVM)
+### Week 17 — `exec-vm` expansion (Phase 1 seeded the crate; this week DOUBLES opcode coverage)
 
-**Monday — Mastering Ethereum ch13 part 1**
-- [ ] Mastering Ethereum Chapter 13 (EVM) first half
-- [ ] Understand EVM as stack machine
-- [ ] Memorize top 20 opcodes from evm.codes
-- [ ] Commit notes
+**This was "Tiny EVM throwaway" — now it's `exec-vm` Month-5 expansion.**
 
-**Tuesday — Mastering Ethereum ch13 part 2**
-- [ ] Mastering Ethereum Chapter 13 (EVM) second half
-- [ ] Understand gas metering basics
-- [ ] Understand storage vs memory vs stack
-- [ ] Commit notes
+**Mirror target**: `revm-interpreter` `instructions/system.rs`, `instructions/host.rs`, `instructions/contract.rs`, `revm::context::evm_context`.
+**Crate extended**: `exec-vm` v0.0.1 → v0.1.0.
+**Inherits from**: Week 9 stack/memory/gas + Week 7 `Bytecode` + Week 13 `eth-consensus::Block`/`TxEnvelope` + Week 2 `eth-storage-cache::StateCache`.
+**Feeds into**: itself in Phase 4 (full opcode coverage + journaling); `consensus-engine` Phase 5 for state transition.
 
-**Wednesday — evm.codes deep practice**
-- [ ] Go through every opcode on evm.codes
-- [ ] Practice reading bytecode
-- [ ] Exercise: manually trace simple contract execution
-- [ ] Commit notes
+**Monday — ME ch13 part 1 + `Env` types**
+- [ ] ME ch13 first half. Understand EVM as stack machine. Memorize top 20 opcodes from evm.codes.
+- [ ] **Build**: `crates/exec-vm/src/env.rs` — `Env { cfg, block, tx }`, `BlockEnv { number, timestamp, gas_limit, basefee, prevrandao, blob_excess_gas_and_price, beneficiary }`, `TxEnv { caller, gas_limit, gas_price, transact_to, value, data, nonce, access_list, blob_hashes, max_fee_per_blob_gas, authorization_list }`, `CfgEnv { chain_id, spec_id, ... }`. Mirrors `revm_primitives::Env`.
+- [ ] **Build**: `From<&TxEnvelope> for TxEnv`, `From<&Header> for BlockEnv` — these conversions are why you needed `eth-consensus` first.
+- [ ] Commit notes.
 
-**Thursday — Tiny EVM exercise start**
-- [ ] Start toy EVM implementation: stack + 5 arithmetic opcodes only
-- [ ] This is throwaway learning — NOT production
-- [ ] Write interpreter loop
-- [ ] Commit + log
+**Tuesday — ME ch13 part 2 + `instructions/system.rs`**
+- [ ] ME ch13 second half. Understand gas metering basics + storage vs memory vs stack.
+- [ ] **Build**: `crates/exec-vm/src/instructions/system.rs` — RETURN, REVERT, INVALID, SELFDESTRUCT (skeleton; full impl Phase 4 needs journal). Stack/memory glue around `return_data`.
+- [ ] Commit notes.
 
-**Friday — Tiny EVM: more opcodes**
-- [ ] Add memory operations (MSTORE, MLOAD)
-- [ ] Add control flow (JUMP, JUMPI, JUMPDEST)
-- [ ] Add comparison/logic opcodes
-- [ ] Commit + log
+**Wednesday — evm.codes deep + `instructions/stack.rs`**
+- [ ] Walk every opcode on evm.codes. Practice reading bytecode.
+- [ ] **Build**: `crates/exec-vm/src/instructions/stack.rs` — PUSH0..PUSH32, DUP1..DUP16, SWAP1..SWAP16, POP. All 96 stack opcodes.
+- [ ] Manual trace simple contracts (`PUSH1 1 PUSH1 2 ADD MSTORE` etc.) through your interpreter — assert end memory + gas match revm.
+- [ ] Commit + log.
 
-**Saturday — Tiny EVM: wrap up**
-- [ ] 15-20 opcodes total
-- [ ] Pass a few manual test cases
-- [ ] Discard without publishing (learning artifact only)
-- [ ] Commit notes on learnings
-- [ ] Commit + log
+**Thursday — `instructions/contract.rs` (CALL family)**
+- [ ] **Build**: `crates/exec-vm/src/instructions/contract.rs` — CALL, CALLCODE, DELEGATECALL, STATICCALL, RETURN. Per EIP-150 63/64ths gas rule. Re-entrancy through the existing `Interpreter::step` dispatch (no journaling yet — that's Phase 4 Week 55).
+- [ ] **Build**: `crates/exec-vm/src/instructions/create.rs` — CREATE, CREATE2 with init code analysis (EIP-3860 limit).
+- [ ] Test: simple call-with-return via two hand-rolled bytecode programs.
+- [ ] Commit + log.
 
-**Sunday — Rest + Weekly Ritual**
+**Friday — `instructions/host.rs` extension against `StateCache`**
+- [ ] **Build**: extend `crates/exec-vm/src/instructions/host.rs` with BALANCE, EXTCODESIZE, EXTCODEHASH, EXTCODECOPY (needing `Bytes` clone — uses your `eth-primitives::Bytes`), BLOCKHASH, COINBASE, TIMESTAMP, NUMBER, DIFFICULTY/PREVRANDAO, GASLIMIT, CHAINID, SELFBALANCE, BASEFEE, BLOBHASH, BLOBBASEFEE.
+- [ ] All routed through the `Host` trait → `eth-storage-cache::StateCache`.
+- [ ] Commit + log.
 
----
-
-### Week 18 — revm exploration
-
-**Monday — revm overview**
-- [ ] Clone bluealloy/revm
-- [ ] Read README, architecture doc
-- [ ] Browse crate structure
-- [ ] Commit notes
-
-**Tuesday — revm-primitives**
-- [ ] Read revm-primitives source
-- [ ] Compare with alloy-primitives
-- [ ] Note Database, Host traits
-- [ ] Commit notes
-
-**Wednesday — revm-interpreter**
-- [ ] Read revm-interpreter source
-- [ ] Study opcode dispatch mechanism
-- [ ] Note gas calculation patterns
-- [ ] Commit notes
-
-**Thursday — revm-interpreter hot path**
-- [ ] Trace execution of a simple opcode (ADD) end-to-end
-- [ ] Note every function call
-- [ ] Document in notes/
-- [ ] Commit + log
-
-**Friday — revm handler, precompiles**
-- [ ] Read revm handler abstraction
-- [ ] Read precompiles crate
-- [ ] Commit notes
-
-**Saturday — First revm PR**
-- [ ] Browse revm issues
-- [ ] Pick good first issue
-- [ ] Implement, submit
-- [ ] Commit + log
+**Saturday — `instructions/log.rs` + ethereum-tests subset green**
+- [ ] **Build**: `crates/exec-vm/src/instructions/log.rs` — LOG0..LOG4. Emits `Log` (`eth-consensus::Log`) into the interpreter's pending log buffer.
+- [ ] **Total opcode count**: 60+ now. Pass `ethereum/tests/GeneralStateTests/stArithmetic` + `stMemoryTest` subsets.
+- [ ] Tag `exec-vm v0.1.0`. Update README documenting opcode coverage matrix.
+- [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 19 — revm PRs velocity
+### Week 18 — revm deep-read (now diffing against your `exec-vm`)
+
+**Monday — revm overview + diff to `exec-vm`**
+- [ ] Re-clone bluealloy/revm latest (you cloned earlier in Week 8).
+- [ ] Read README, architecture doc fresh — now with 60+ opcodes implemented.
+- [ ] **Diff log**: for each revm crate (revm-primitives, revm-interpreter, revm-precompile, revm), name 3 specific design choices that differ from your `exec-vm`. For each, decide: port revm's choice, keep yours, or document the trade. Save to `notes/08_revm_diff.md`.
+- [ ] Commit notes.
+
+**Tuesday — revm-primitives + `Database` trait alignment**
+- [ ] Read revm-primitives source. Compare with `eth-primitives` AND `eth-storage-cache`.
+- [ ] Critical alignment task: confirm your `StateCache` trait can be a `Database` for the unmodified revm. Adjust if not — this lets you swap revm in/out for `exec-vm` in benchmarks.
+- [ ] Commit notes.
+
+**Wednesday — revm-interpreter dispatch**
+- [ ] Read revm-interpreter source. Study opcode dispatch mechanism (their match-on-byte vs your match-on-byte). Note gas calculation patterns.
+- [ ] Identify the perf optimizations revm has that your `exec-vm` doesn't (instruction table indexing, gas precomputation, unsafe stack push). Add to a `EXEC_VM_PERF_BACKLOG.md` for Phase 4.
+- [ ] Commit notes.
+
+**Thursday — revm hot path + ADD trace**
+- [ ] Trace ADD end-to-end through revm AND through your `exec-vm`. Note every function call in both. Compare overhead (revm has fewer indirection layers).
+- [ ] Document in `notes/`.
+- [ ] Commit + log.
+
+**Friday — revm handler + precompile reading**
+- [ ] Read revm `Handler` trait and `precompile` crate.
+- [ ] Sketch in `notes/`: where would `Handler` plug into your `exec-vm`? Phase 4 Week 53 will add it.
+- [ ] Commit notes.
+
+**Saturday — First revm PR informed by the diff**
+- [ ] Browse revm issues. Pick something where your `exec-vm` work gives you informed perspective (gas accounting, instruction edge cases).
+- [ ] Implement, submit.
+- [ ] Commit + log.
+
+**Sunday — Rest + Weekly Ritual**
+
+---
+
+### Week 19 — revm PR velocity + `exec-vm` precompile skeleton
 
 **Monday — Second revm PR**
-- [ ] Pick and implement
-- [ ] Commit + log
+- [ ] Pick and implement.
+- [ ] Commit + log.
 
-**Tuesday — revm PR review response**
-- [ ] Address any reviewer feedback
-- [ ] Iterate
-- [ ] Commit + log
+**Tuesday — revm PR review response + `exec-vm` precompile registry**
+- [ ] Address reviewer feedback.
+- [ ] **Build**: `crates/exec-vm/src/precompile/mod.rs` — `Precompile` trait (`fn run(input: &[u8], gas_limit: u64) -> Result<PrecompileOutput, PrecompileError>`), `PrecompileRegistry` map by `Address`. Mirror revm-precompile crate shape. Implement ECRECOVER first (uses `eth-consensus::recovery`). Other precompiles in Phase 4 Week 54.
+- [ ] Commit + log.
 
-**Wednesday — Third revm PR**
-- [ ] Pick medium-difficulty issue
-- [ ] Implement
-- [ ] Commit + log
+**Wednesday — Third revm PR (medium)**
+- [ ] Pick medium-difficulty issue, implement.
+- [ ] Commit + log.
 
-**Thursday — EVM comparison study**
-- [ ] Read geth's core/vm package (as Go, but compare design)
-- [ ] Note differences in opcode dispatch
-- [ ] Commit notes
+**Thursday — geth core/vm comparison**
+- [ ] Read geth's core/vm package (as Go, but compare design with your exec-vm + revm).
+- [ ] Add geth-specific design notes to `notes/08_revm_diff.md`.
+- [ ] Commit notes.
 
 **Friday — evmone comparison**
-- [ ] Read evmone README and architecture
-- [ ] Note C++ optimization techniques
-- [ ] Commit notes
+- [ ] Read evmone README + architecture.
+- [ ] Note C++ optimization techniques (computed-goto dispatch, instruction stream pre-decode). Add to `EXEC_VM_PERF_BACKLOG.md`.
+- [ ] Commit notes.
 
 **Saturday — Continue revm PRs**
-- [ ] Work on outstanding PRs or start new
-- [ ] Commit + log
+- [ ] Work on outstanding PRs or start new.
+- [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 20 — MPT deep dive begins
+### Week 20 — `eth-trie` expansion (Phase 1 seeded the crate; this week adds storage abstraction, walker, proofs)
 
-**Monday — MPT theory**
-- [ ] Ethereum.org docs on Merkle Patricia Trie
-- [ ] Read multiple blog post explanations to triangulate
-- [ ] Commit notes
+**This was "Tiny MPT throwaway" — now it's `eth-trie` Month-5 expansion.**
 
-**Tuesday — MPT structure deep**
-- [ ] Understand extension, branch, leaf, hash nodes
-- [ ] Draw diagrams showing insertions
-- [ ] Commit notes
+**Mirror target**: `alloy-trie` `proof::ProofRetainer`, `walker::TrieWalker`, `storage_root` helpers, `BranchNodeCompact`. Plus `reth_trie::StateRoot` orchestrator.
+**Crate extended**: `eth-trie` v0.1 → v0.2.
+**Inherits from**: Week 10 (Nibbles, Node, HashBuilder, MemoryStorage) + Week 11 (HashedPostState, TrieUpdates).
+**Feeds into**: `storage-trie` Phase 3 (mmap-backed `TrieStorage` impl, full proof generation, witness building); `consensus-engine` Phase 5 (state root verification).
 
-**Wednesday — Tiny MPT start**
-- [ ] Start throwaway MPT implementation
-- [ ] Support insert only (happy path, no pruning)
-- [ ] Commit + log
+**Monday — MPT deeper theory + `BranchNodeCompact`**
+- [ ] Re-read ethereum.org MPT docs + 2-3 blog explanations.
+- [ ] **Build**: `crates/eth-trie/src/branch_compact.rs` — `BranchNodeCompact { state_mask, tree_mask, hash_mask, hashes, root_hash }` mirroring `reth_trie::BranchNodeCompact` (the on-disk-friendly compact branch representation reth uses for the intermediate trie state).
+- [ ] Commit notes.
 
-**Thursday — Tiny MPT: get**
-- [ ] Add get operation
-- [ ] Add simple test cases
-- [ ] Commit + log
+**Tuesday — `TrieStorage` abstraction over `StateCache`**
+- [ ] **Refactor**: `crates/eth-trie/src/storage.rs` — split `TrieStorage` into `HashedNodeStorage` (storage-trie nodes by keccak-hash address) and `IntermediateStorage` (compacted nodes by Nibbles path, the reth pattern).
+- [ ] **Build**: `CachedStorage<C: StateCache>` impl that delegates to `eth-storage-cache::StateCache` — proves the wiring works. Phase 3 swaps in MDBX.
+- [ ] Commit + log.
 
-**Friday — Tiny MPT: root hash**
-- [ ] Implement root hash computation
-- [ ] Test against known Ethereum test vectors (simplest ones)
-- [ ] Commit + log
+**Wednesday — `TrieWalker` cursor**
+- [ ] **Build**: `crates/eth-trie/src/walker.rs` — `TrieWalker<S: TrieStorage>` for streaming traversal. Yields `(Nibbles, Node)` in sorted order. Mirrors `reth_trie::TrieWalker`. Used Phase 3 by `MerkleStage` for incremental root computation.
+- [ ] Commit + log.
 
-**Saturday — Tiny MPT: finish**
-- [ ] Polish to pass basic vectors
-- [ ] Discard as learning artifact (the real production MPT comes in Phase 3)
-- [ ] Commit notes on learnings
-- [ ] Commit + log
+**Thursday — `ProofRetainer` + EIP-1186 proofs**
+- [ ] **Build**: `crates/eth-trie/src/proof/retainer.rs` — `ProofRetainer { targets: Vec<Nibbles>, proof_nodes: Vec<Bytes> }` that hooks into `HashBuilder` to capture nodes along target paths. Mirrors `alloy_trie::proof::ProofRetainer`.
+- [ ] **Build**: `crates/eth-trie/src/proof/verify.rs` — `verify_proof(root: B256, key: &[u8], expected_value: Option<&[u8]>, proof: &[Bytes]) -> Result<(), ProofError>`. Mirrors alloy.
+- [ ] Test against EIP-1186 test vectors and a captured mainnet `eth_getProof` response.
+- [ ] Commit + log.
+
+**Friday — `StateRoot` orchestrator**
+- [ ] **Build**: `crates/eth-trie/src/state_root.rs` — `StateRoot<S: TrieStorage> { hashed_state: HashedPostState, prefix_set: PrefixSet, ... }` with `compute() -> Result<(B256, TrieUpdates), TrieError>`. Mirrors `reth_trie::StateRoot`. This is the heart of the `MerkleStage` — computing the post-block state root incrementally from the Week 11 `HashedPostState`.
+- [ ] Test: reconstruct block 1 mainnet state root from the genesis state + block 1 changes.
+- [ ] Commit + log.
+
+**Saturday — `StorageRoot` + tag**
+- [ ] **Build**: `crates/eth-trie/src/storage_root.rs` — `StorageRoot<S>` for per-account storage tries. Same pattern as `StateRoot` but scoped to one account's storage slots.
+- [ ] Pass the simplest Ethereum trie test vectors end-to-end.
+- [ ] Tag `eth-trie v0.2.0`. README documents the trie abstraction layers.
+- [ ] Commit + log.
 
 **Sunday — Rest + End Month 5 review**
-- [ ] Update North Star M5 metrics
+- [ ] Update North Star M5 metrics.
+- [ ] Inheritance check: `exec-vm v0.1` (60+ opcodes, precompile registry skeleton); `eth-trie v0.2` (Walker, ProofRetainer, StateRoot, StorageRoot). Phase 3 starts in Month 7 but the plumbing is ready.
 
 ---
 
 ## Month 6: MPT Understanding + First Maintainer Interactions
 
-### Week 21 — RLP encoding + more revm PRs
+### Week 21 — `eth-rlp` extension + maintainer engagement (NO throwaway RLP)
 
-**Monday — RLP specification**
-- [ ] Read RLP spec (Recursive Length Prefix)
-- [ ] Understand encoding rules
-- [ ] Exercise: implement RLP encoder/decoder (throwaway)
-- [ ] Commit + log
+**Note**: you ALREADY shipped `eth-rlp v0.1` in Week 5 + extended it through Phase 1. The original "throwaway RLP exercise" is REMOVED. Instead this week extends `eth-rlp` with reth-specific patterns and pushes more PRs.
 
-**Tuesday — Reth RLP implementation**
-- [ ] Read reth's RLP usage patterns
-- [ ] Read alloy-rlp source
-- [ ] Commit notes
+**Monday — `eth-rlp` extension: trie-friendly encoding**
+- [ ] Re-read RLP spec sections relevant to trie nodes (the `[ ... ]` framing of branch nodes).
+- [ ] **Build**: `crates/eth-rlp/src/trie.rs` — `encode_branch_node`, `encode_extension_node`, `encode_leaf_node` helpers that produce the RLP form `eth-trie::HashBuilder` needs. Mirrors `alloy_trie` internal RLP helpers.
+- [ ] **Build**: `EipTransactionRlp` helper for typed-tx envelope framing (already exists in `eth-consensus::envelope` — refactor to use `eth-rlp` helpers consistently).
+- [ ] Commit + log.
 
-**Wednesday — More revm PR**
-- [ ] Fourth revm PR
-- [ ] Commit + log
+**Tuesday — Reth RLP usage patterns + `eth-rlp` derive enhancements**
+- [ ] Read reth's RLP usage patterns + `alloy-rlp` source freshly.
+- [ ] **Extend**: `eth-rlp-derive` to support `#[rlp(trailing)]` (optional trailing fields, EIP-1559 → EIP-4844 backward compat). Mirrors alloy-rlp-derive.
+- [ ] Tag `eth-rlp v0.2.0`.
+- [ ] Commit + log.
 
-**Thursday — Review Foundry PRs + submit another**
-- [ ] Second Foundry PR
-- [ ] Commit + log
+**Wednesday — Fourth revm PR**
+- [ ] Pick + implement.
+- [ ] Commit + log.
+
+**Thursday — Second Foundry PR**
+- [ ] Pick + implement.
+- [ ] Commit + log.
 
 **Friday — Maintainer engagement**
-- [ ] Identify patterns of which maintainers review which areas
-- [ ] Engage thoughtfully in an issue discussion
-- [ ] Do NOT pester — substantive only
-- [ ] Commit notes
+- [ ] Identify which maintainers review which areas (alloy-eips: gakonst/yash; revm: rakita; reth-trie: rakita/mattsse).
+- [ ] Engage thoughtfully in an issue discussion (substantive, NOT pester) — ideally referencing your `eth-eips` or `eth-trie` design as a counterpoint or supporting detail.
+- [ ] Commit notes.
 
 **Saturday — Consolidation**
-- [ ] Review all open PRs
-- [ ] Close out review comments
-- [ ] Commit + log
+- [ ] Review all open PRs across alloy/revm/foundry. Close out review comments.
+- [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 22 — Staged sync architecture
+### Week 22 — Staged sync architecture + `eth-stage` trait skeleton
 
-**Monday — Erigon staged sync**
-- [ ] Read Erigon staged sync design doc
-- [ ] Understand stage concept, unwind
-- [ ] Commit notes
+**Crate created**: `crates/eth-stage/` — `Stage` trait + `Pipeline` skeleton mirroring `reth-stages-api`.
+**Mirror target**: `reth_stages_api::Stage` trait, `reth_stages::Pipeline`.
+**Feeds into**: Phase 3 `storage-trie` provides `MerkleStage` impl on top; `consensus-engine` Phase 5 may run stages live during sync.
 
-**Tuesday — Reth stages**
-- [ ] Browse reth/crates/stages
-- [ ] Identify all stages in pipeline
-- [ ] Commit notes
+**Monday — Erigon staged sync (deeper this time)**
+- [ ] Re-read Erigon staged sync design doc with implementation eye.
+- [ ] Understand stage concept, unwind, checkpoints.
+- [ ] Commit notes.
 
-**Wednesday — Stage dependencies**
-- [ ] Map out: headers → bodies → senders → execution → hashing → merkle
-- [ ] Draw diagram in notes/
-- [ ] Commit + log
+**Tuesday — Reth stages source dive**
+- [ ] Browse `reth/crates/stages` thoroughly. Read `Stage` trait signature exactly.
+- [ ] **Build**: `crates/eth-stage/src/lib.rs` — `Stage` trait:
+  ```
+  trait Stage {
+      fn id(&self) -> StageId;
+      async fn execute(&mut self, input: ExecInput) -> Result<ExecOutput, StageError>;
+      async fn unwind(&mut self, input: UnwindInput) -> Result<UnwindOutput, StageError>;
+  }
+  ```
+  Exact shape match with reth (so reth could in principle plug in your stages later).
+- [ ] **Build**: `Pipeline` runner that drives stages in order with checkpoint persistence (delegates checkpoints to `eth-storage-cache::StateCache` for now; Phase 3 swaps in MDBX).
+- [ ] Commit + log.
+
+**Wednesday — Stage dependency map**
+- [ ] Map: headers → bodies → senders → execution → hashing → merkle. Draw diagram in `notes/`.
+- [ ] **Build**: `crates/eth-stage/src/stages/headers.rs` — skeleton `HeaderStage` consuming `eth-network-codec::MessageStream`. Just the type wiring; Phase 3+ fills in.
+- [ ] Commit + log.
 
 **Thursday — More revm or Alloy PRs**
-- [ ] Keep PR velocity up
-- [ ] Commit + log
+- [ ] Keep PR velocity up.
+- [ ] Commit + log.
 
 **Friday — Reth Telegram + Discord**
-- [ ] Join reth main Telegram if haven't
-- [ ] Observe discussion style for a week before posting
-- [ ] Commit notes
+- [ ] Join reth main Telegram if haven't. Observe discussion style for a week before posting.
+- [ ] Commit notes.
 
-**Saturday — Tiny RLP + consolidation**
-- [ ] Polish or discard experimental code
-- [ ] Review Month 6 progress
-- [ ] Commit + log
+**Saturday — `eth-stage` consolidation + tag**
+- [ ] Skeleton stages for `senders`, `execution`, `hashing`, `merkle` — each just calling the right downstream crate (execution → exec-vm; hashing/merkle → eth-trie).
+- [ ] Tag `eth-stage v0.0.1`.
+- [ ] Review Month 6 progress.
+- [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 23 — Ready up for Phase 3
+### Week 23 — Ready up for Phase 3 (`storage-trie` scaffold pre-wiring)
 
-**Monday — Reth storage crate survey**
-- [ ] Browse reth/crates/storage
-- [ ] Identify sub-crates: db, provider, etc.
-- [ ] Commit notes (passive reading, not deep yet)
+**Monday — Reth storage crate survey + `storage-trie` workspace setup**
+- [ ] Browse reth/crates/storage (db, provider, codecs, api).
+- [ ] **Build**: `crates/storage-trie/Cargo.toml` workspace member with deps on `eth-primitives`, `eth-rlp`, `eth-storage-cache`, `eth-trie`, `eth-consensus`. Empty `lib.rs` for now — full impl starts Week 25.
+- [ ] Confirm `cargo build --workspace` succeeds with the empty crate.
+- [ ] Commit notes + scaffold.
 
-**Tuesday — MDBX first look**
-- [ ] Read libmdbx high-level README
-- [ ] Understand what MDBX is (mmap B-tree)
-- [ ] Commit notes
+**Tuesday — MDBX first look + `Database` trait sketch**
+- [ ] Read libmdbx high-level README.
+- [ ] **Sketch**: in `storage-trie/src/lib.rs`, define `Database` trait shape (mirrors `reth_db::Database`) — to be implemented Week 25-28 over libmdbx-rs.
+- [ ] Commit notes.
 
 **Wednesday — More Alloy/revm PRs**
-- [ ] Keep contribution streak
-- [ ] Commit + log
+- [ ] Keep contribution streak.
+- [ ] Commit + log.
 
 **Thursday — Conference research**
-- [ ] Research EthCC Paris 2027 dates
-- [ ] Research Devcon 2027 dates
-- [ ] Start budgeting
-- [ ] Commit notes
+- [ ] Research EthCC Paris 2027 + Devcon 2027 dates.
+- [ ] Start budgeting.
+- [ ] Commit notes.
 
 **Friday — Relationship review**
-- [ ] Update maintainer tracker
-- [ ] Note who has reviewed your PRs
-- [ ] Identify target mentor (likely Matthias Seitz)
-- [ ] Commit notes
+- [ ] Update maintainer tracker. Note who has reviewed your PRs.
+- [ ] Identify target mentor (likely Matthias Seitz).
+- [ ] Commit notes.
 
 **Saturday — Month 6 consolidation**
-- [ ] Review all PRs merged / in review across Paradigm ecosystem
-- [ ] Check target: 5+ Alloy, 3+ revm, 2+ Foundry
-- [ ] Commit + log
+- [ ] Review all PRs merged / in review across Paradigm ecosystem.
+- [ ] Check target: 5+ Alloy, 3+ revm, 2+ Foundry.
+- [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
 
@@ -952,47 +1131,74 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 
 ### Week 24 — Phase 2 close + Phase 3 prep
 
-**Monday — Mastering Ethereum consensus chapter**
-- [ ] Mastering Ethereum on consensus (for background)
-- [ ] Understand The Merge at high level
-- [ ] Commit notes
+**Monday — Mastering Ethereum consensus + `consensus-engine` placeholder crate**
+- [ ] ME consensus chapter. Understand The Merge at high level.
+- [ ] **Build**: `crates/consensus-engine/Cargo.toml` workspace member with deps on `eth-primitives`, `eth-consensus`, `eth-network-codec`, `eth-rpc-types`, `eth-storage-cache`, `eth-trie`, `exec-vm`. Empty `lib.rs` for Phase 5 to fill.
+- [ ] Confirms `cargo build --workspace` is green with all 12 crates.
+- [ ] Commit notes.
 
 **Tuesday — Reth architecture talk/video**
-- [ ] Watch any available gakonst reth architecture talk on YouTube
-- [ ] Watch any Paradigm Frontiers talk
-- [ ] Commit notes
+- [ ] Watch any available gakonst reth architecture talk on YouTube + any Paradigm Frontiers talk.
+- [ ] Map every component you saw in the talks to one of YOUR workspace crates. Anything that doesn't map is something Phase 3-5 will need to add.
+- [ ] Commit notes.
 
-**Wednesday — Deep breath + planning**
-- [ ] Read Phase 3 section of this plan carefully
-- [ ] Understand scope of `storage-trie` crate
-- [ ] Outline approach for Month 7
-- [ ] Commit notes
+**Wednesday — Phase 3 scope + outline**
+- [ ] Read Phase 3 section of this plan carefully (note: the README later in this file will need Phase 3 inheritance annotations added — schedule that for Week 24 Saturday).
+- [ ] Outline approach for Month 7: `storage-trie` builds the MDBX-backed `Database`, wires it up as the persistent layer behind `eth-storage-cache::StateCache` and `eth-trie::TrieStorage`.
+- [ ] Commit notes.
 
-**Thursday — Setup Phase 3 repo scaffolding**
-- [ ] Create crate `storage-trie`
-- [ ] Setup CI (GitHub Actions with fmt, clippy, test, bench)
-- [ ] Initial README with vision
-- [ ] Commit + log
+**Thursday — Phase 3 scaffolding + CI**
+- [ ] `storage-trie` already created Week 23. Today: set up CI in `.github/workflows/ci.yml` running `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`, `cargo nextest run --workspace`, `cargo +nightly miri test -p eth-primitives` weekly. Single CI for the whole workspace.
+- [ ] README at workspace root listing all crates + their relationships (the dependency graph).
+- [ ] Commit + log.
 
 **Friday — Final Phase 2 PRs**
-- [ ] Wrap up any outstanding PRs
-- [ ] Commit + log
+- [ ] Wrap up any outstanding PRs.
+- [ ] Commit + log.
 
-**Saturday — Phase 2 review**
-- [ ] Full assessment against Phase 2 exit criteria
-- [ ] Update progress.md with Phase 2 summary
-- [ ] Commit + log
+**Saturday — Phase 2 review + (todo) annotate later phases**
+- [ ] Full assessment against Phase 2 exit criteria.
+- [ ] **Verify shipped crates**: `eth-primitives v0.2`, `eth-rlp v0.2`, `eth-storage-cache v0.1`, `eth-network-codec v0.2`, `eth-consensus v0.4`, `eth-eips v0.2`, `eth-rpc-types v0.1`, `eth-trie v0.2`, `eth-stage v0.0.1`, `exec-vm v0.1`, `eth-primitives-derive v0.1`, `storage-trie` scaffold, `consensus-engine` scaffold.
+- [ ] **TODO carry-forward to Phase 3 README pass**: when the Phase 3 plan still says "create crate `storage-trie`" it means "fill out the existing crate" — the scaffolding is already done.
+- [ ] Update `progress.md` with Phase 2 summary.
+- [ ] Commit + log.
 
 **Sunday — End Phase 2 + Phase 3 prep**
-- [ ] Full rest
-- [ ] Mentally prepare for Phase 3 intensity
-- [ ] Phase 3 starts tomorrow
+- [ ] Full rest.
+- [ ] Mentally prepare for Phase 3 intensity.
+- [ ] Phase 3 starts tomorrow with all 12 workspace crates green.
 
 ---
 
 # PHASE 3: STORAGE + TRIE DEEP DIVE (Month 7-12)
 
-**Deliverable**: `storage-trie` production crate
+**Deliverable**: `storage-trie` v1.0 — MDBX-backed persistent state DB.
+
+**Crate extended (NOT created)**: `storage-trie` was scaffolded Week 23; this phase fills out the implementation. Wherever older text below says "Create crate `storage-trie`" or "scaffold," read it as "extend the existing crate."
+
+### Phase 3 inheritance map
+
+`storage-trie` consumes the seed crates from Phase 1-2 and provides:
+- a `Database` (MDBX-backed) that implements `eth-storage-cache::StateCache`
+- a `TrieStorage` impl on top, replacing `MemoryStorage` from `eth-trie` Week 10
+- the `MerkleStage` impl plugging into `eth-stage::Stage` from Week 22
+
+| Module in `storage-trie` | Upstream mirror | Seed crate it leans on |
+|--------------------------|-----------------|------------------------|
+| `mdbx::env` (W25-27) | `reth-db::DatabaseEnv` over libmdbx-rs | reuses `eth-storage-cache::Page` (W2 Mon) for in-memory cache layer above MDBX |
+| `mdbx::tx`, `mdbx::cursor` (W28-29) | `reth-db::Tx`, `reth-db::Cursor` | wraps libmdbx-rs |
+| `tables::*` (W26, W30) | `reth-db-api::tables` | uses `eth-rlp` (W5) + `eth-consensus::*` (W6-13) for value codecs |
+| `mpt::storage` (W31-32) | `reth-trie` MDBX backing | extends `eth-trie::TrieStorage` (W10) — NOT a fresh MPT |
+| `mpt::pruning` (W34) | `reth-prune-types` | uses `eth-trie::HashedPostState` (W11) |
+| `state_root::orchestrator` (W35) | `reth-trie::StateRoot` | extends `eth-trie::StateRoot` (W20) with persistent backing |
+| `snapshot` (W36) | `reth-snapshot` | uses `eth-rlp` |
+| `merkle_stage` (W39+) | `reth-stages::MerkleStage` | implements `eth-stage::Stage` (W22) |
+
+**Reused upward**: every Phase 4-5 module that needs persistence pulls `storage-trie`. `exec-vm` Phase 4 calls into it via `eth-storage-cache::StateCache`. `consensus-engine` Phase 5 calls into it for chain head + canonical block lookup.
+
+**Read existing daily tasks below with this lens**: when a day says "Implement Page" / "Implement node abstraction" / "Implement MPT," check whether the seed crate already provides it (it usually does) and the day's real work is "extend the seed implementation with persistent / mmap / proof-aware behavior." Cross-references are added inline at key weeks.
+
+---
 
 ## Month 7: MDBX Foundation + First Reth Storage PRs
 
@@ -1071,34 +1277,35 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 
 ---
 
-### Week 27 — `storage-trie` crate: mmap scaffold
+### Week 27 — `storage-trie::mdbx`: mmap scaffold (extends `eth-storage-cache::Page` from W2)
+
+**Inheritance**: `Page` already exists (`eth-storage-cache/src/page.rs`, W2 Mon). This week wraps libmdbx-rs and adds an mmap-backed page provider that yields `Page`s from a memory-mapped file.
 
 **Monday — Research mmap in Rust**
 - [ ] Read memmap2 crate docs
 - [ ] Read about Rust + mmap safety considerations
 - [ ] Commit notes
 
-**Tuesday — mmap B-tree research**
+**Tuesday — mmap B-tree research (decide: thin wrapper vs from-scratch)**
 - [ ] Research B-tree on mmap techniques
 - [ ] Review academic papers if applicable
 - [ ] AI-assisted research on MDBX design decisions
+- [ ] **Decision**: thin wrapper over `libmdbx-rs` (ship faster, mirror reth-db) vs from-scratch B-tree (slower, deeper learning). Default to the wrapper unless you explicitly want a re-implementation milestone — record the choice in `notes/`.
 - [ ] Commit notes
 
-**Wednesday — Crate structure**
-- [ ] Design crate module structure
-- [ ] Define page abstraction
-- [ ] Define transaction abstraction
+**Wednesday — Crate structure (extending the W23 scaffold)**
+- [ ] Lay out `storage-trie/src/{mdbx,tables,mpt,state_root,merkle_stage,lib.rs}` — `mpt` and `state_root` will *re-export* from `eth-trie` (W10, W20) plus add persistent-backing impls.
+- [ ] Sketch `Tx` / `Cursor` traits matching `reth-db-api`. NOTE: `Page` already exists in `eth-storage-cache`; do NOT redefine it here — import it.
 - [ ] Commit + log
 
-**Thursday — Page manager skeleton**
-- [ ] Implement Page struct with fixed size
-- [ ] Implement PageManager for allocation
+**Thursday — Page provider over mmap**
+- [ ] Implement `MmapPageProvider` that returns `eth_storage_cache::Page` views over the mmap region (or a `MmapPage<'a>` borrowed variant if zero-copy reads are wanted).
+- [ ] Allocation strategy: free-list backed by a header page.
 - [ ] Unit tests
 - [ ] Commit + log
 
-**Friday — mmap wrapper**
-- [ ] Implement mmap-backed file wrapper
-- [ ] Support growth
+**Friday — mmap wrapper + growth**
+- [ ] Implement mmap-backed file wrapper with safe `remap` on growth (read memmap2's `MmapMut::flush_range` semantics).
 - [ ] Unit tests
 - [ ] Commit + log
 
@@ -1223,31 +1430,31 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 
 ---
 
-### Week 31 — MPT in `storage-trie`
+### Week 31 — Persistent MPT in `storage-trie::mpt` (extends `eth-trie` W10/W20)
 
-**Monday — MPT design in crate**
-- [ ] Design MPT module structure
-- [ ] Leverage B-tree as backing storage
+**Inheritance**: `Nibbles`, `Node` enum, `HashBuilder`, `TrieStorage`, `StateRoot`, `ProofRetainer` all exist in `eth-trie` (W10-11, W20). This week adds the **persistent** backing — a `MdbxTrieStorage` that implements `eth-trie::TrieStorage` against the W27-29 MDBX env. Do NOT reimplement nodes or hash builder.
+
+**Monday — `MdbxTrieStorage` design**
+- [ ] Design table layout for trie nodes (state nodes by hash, intermediate nodes by `Nibbles` path — same split reth uses).
+- [ ] Implement `eth_trie::TrieStorage for MdbxTrieStorage` skeleton.
 - [ ] Commit + log
 
-**Tuesday — MPT nodes**
-- [ ] Implement extension node
-- [ ] Implement branch node
-- [ ] Implement leaf node
+**Tuesday — Wire `eth-trie::Node` to the table layout**
+- [ ] RLP-encode/decode `Node` variants (Extension/Branch/Leaf) using `eth-rlp` from W5 — already in place via `eth-trie`. This week's job: cursor-based read path + dirty-set write path against MDBX.
 - [ ] Commit + log
 
-**Wednesday — MPT insert**
-- [ ] Implement MPT insert
-- [ ] Test against simple vectors
+**Wednesday — Persistent insert via existing HashBuilder**
+- [ ] Drive `eth_trie::HashBuilder` with `MdbxTrieStorage` as the read source. Persist new nodes through a write tx.
+- [ ] Test: round-trip a small trie through MDBX and assert root matches the W10/W20 in-memory equivalent.
 - [ ] Commit + log
 
-**Thursday — MPT get**
-- [ ] Implement get with path traversal
+**Thursday — Persistent get via existing walker**
+- [ ] Drive `eth_trie::TrieWalker` against `MdbxTrieStorage` for path traversal.
+- [ ] Range scans via MDBX cursor.
 - [ ] Commit + log
 
-**Friday — MPT root hash**
-- [ ] Implement keccak-based root hash
-- [ ] Test against Ethereum test vectors
+**Friday — Root hash regression suite against `eth-trie` v0.2 fixtures**
+- [ ] Re-run W20's Ethereum test vectors but with the persistent backing — assert byte-identical roots.
 - [ ] Commit + log
 
 **Saturday — Reth trie second PR**
@@ -1781,9 +1988,8 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 - [ ] Any bug fixes on storage-trie
 - [ ] Commit + log
 
-**Saturday — Prep Phase 4 scaffolding**
-- [ ] Create `exec-vm` crate scaffold
-- [ ] Initial README
+**Saturday — Phase 4 prep (exec-vm already scaffolded — review state)**
+- [ ] `exec-vm` was seeded W9 + extended W17. Today: re-read its README + opcode coverage matrix. Identify the gap between current state and Phase 4 v1.0 (full opcodes, journal, full precompiles, EOF, perf). Write a Phase 4 outline in `notes/`.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -1829,7 +2035,26 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 
 # PHASE 4: EXECUTION DEEP DIVE (Month 13-18)
 
-**Deliverable**: `exec-vm` production crate
+**Deliverable**: `exec-vm` v1.0 — full revm-equivalent EVM with journal, all precompiles, EOF, perf-tuned dispatch.
+
+**Crate extended (NOT created)**: `exec-vm` was seeded W9 (stack/memory/gas + 20 opcodes) and extended W17 (60+ opcodes, BlockEnv/TxEnv, precompile registry skeleton, ECRECOVER). It now exists at `~v0.1`. Wherever older text below says "scaffold exec-vm" or "Setup crate structure," read it as "extend the existing crate." Wherever older text says "implement arithmetic opcodes," check the W9/W17 coverage matrix first — those weeks may already be done.
+
+### Phase 4 inheritance map
+
+| Module in `exec-vm` | Upstream mirror | Existing seed |
+|---------------------|-----------------|---------------|
+| `interpreter::stack`, `memory`, `gas` | `revm-interpreter` core | shipped W9 |
+| `instructions/{arithmetic,control,comparison,host,system,contract,create,log,stack}` | revm `instructions/` | W9 + W17 cover ~60 opcodes; Phase 4 finishes the set + tunes |
+| `env::{BlockEnv,TxEnv,CfgEnv}` | `revm_primitives::Env` | shipped W17 Mon (uses `eth-consensus` conversions) |
+| `eof::{parser,validate}` | revm EOF | shipped W15 (parser + validation skeleton) — Phase 4 adds full EIP-4750 control flow |
+| `precompile::*` | `revm-precompile` | ECRECOVER shipped W19; Phase 4 adds sha256, ripemd, modexp, BN256, blake2f, KZG |
+| `journal::{account,storage,checkpoint}` | `revm` journal | NEW in Phase 4 (the missing piece for nested calls + revert) |
+| `dispatch::{match,jump_table}` | `revm-interpreter` instruction table | NEW in Phase 4 (perf milestone) |
+| `Database` impl | `revm::Database` trait | shipped W2 as `eth-storage-cache::StateCache`; Phase 4 wires through `storage-trie::MdbxStateCache` from Phase 3 for end-to-end execution |
+
+**Reused upward**: `consensus-engine` Phase 5 calls `exec-vm::Evm::transact` to execute payloads under `engine_newPayload`.
+
+**Read existing daily tasks below with this lens**: any task labeled "Implement X opcode" should first check the W9/W17 coverage matrix; if X is already done, the day's real work is perf tuning, gas-schedule fork variants, or filling Cancun/Prague-only behavior. The Month 14 "complete opcode set" weeks become "fill the residual Cancun + Prague + EOF residual."
 
 ## Month 13: Revm Full Codebase + First revm Perf PRs
 
@@ -1889,46 +2114,47 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 - [ ] Another contribution
 - [ ] Commit + log
 
-**Friday — `exec-vm` scaffold**
-- [ ] Setup crate structure
-- [ ] Host trait, Database trait (mirroring revm)
+**Friday — `exec-vm`: align traits with revm `Database`/`Host`**
+- [ ] `exec-vm` and its `Host` trait already exist (W9). Today: refactor signatures so that any `impl Database for T` from revm Just Works as `Host` for `exec-vm` (or vice versa). Goal: swap revm in/out of your exec-vm's tests with one type alias change.
 - [ ] Commit + log
 
-**Saturday — `exec-vm` main loop**
-- [ ] Implement core interpreter loop
-- [ ] Match-based dispatch first
+**Saturday — Interpreter loop refactor (consolidate W9/W17 dispatch)**
+- [ ] The match-based dispatch from W9 + W17 is split across files; today consolidate into `interpreter/dispatch.rs` to set up Week 58's jump-table swap. Don't add new opcodes — refactor for clean perf swap.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
 
 ---
 
-### Week 51 — `exec-vm` basic opcodes
+### Week 51 — Opcode coverage gap-fill (W9 + W17 already shipped ~60; complete the residual)
 
-**Monday — Arithmetic opcodes**
-- [ ] ADD, MUL, SUB, DIV, SDIV, MOD, SMOD, ADDMOD, MULMOD, EXP, SIGNEXTEND
-- [ ] Unit tests for each
+**Inheritance**: most basic opcodes are DONE (W9 Mon: ADD/SUB/MUL/DIV/MOD; W9 Tue: MSTORE/MLOAD/JUMP/JUMPI/JUMPDEST + comparison; W9 Wed: SSTORE/SLOAD; W17 Mon: env conversions; W17 Wed: PUSH0..PUSH32, DUP, SWAP, POP; W17 Thu: CALL family + CREATE; W17 Fri: BALANCE/EXTCODE*/BLOCKHASH/COINBASE/TIMESTAMP/NUMBER/CHAINID/SELFBALANCE/BASEFEE/BLOBHASH/BLOBBASEFEE; W17 Sat: LOG0..LOG4). This week fills only the missing arithmetic/bitwise pieces and Cancun-specific opcodes.
+
+**Monday — Missing arithmetic: SDIV, SMOD, ADDMOD, MULMOD, EXP, SIGNEXTEND**
+- [ ] These are NOT in W9. Implement now. Unit tests against revm's outputs for edge cases (negative wrap, overflow, EXP gas).
 - [ ] Commit + log
 
-**Tuesday — Comparison and logic**
-- [ ] LT, GT, SLT, SGT, EQ, ISZERO, AND, OR, XOR, NOT, BYTE, SHL, SHR, SAR
+**Tuesday — Missing bitwise: BYTE, SHL, SHR, SAR**
+- [ ] Not in W9. Implement against revm fixtures.
 - [ ] Commit + log
 
-**Wednesday — SHA3, environmental**
-- [ ] KECCAK256, ADDRESS, BALANCE, ORIGIN, CALLER, CALLVALUE, CALLDATALOAD, CALLDATASIZE, CALLDATACOPY, CODESIZE, CODECOPY, GASPRICE
+**Wednesday — KECCAK256 + missing call-frame envs**
+- [ ] KECCAK256 (uses `eth-primitives::keccak256` already wired).
+- [ ] CALLDATALOAD, CALLDATASIZE, CALLDATACOPY, CODESIZE, CODECOPY, RETURNDATASIZE, RETURNDATACOPY, GASPRICE, ORIGIN, CALLER, CALLVALUE — anything missing from W17 Fri's host pass.
 - [ ] Commit + log
 
-**Thursday — Block info opcodes**
-- [ ] BLOCKHASH, COINBASE, TIMESTAMP, NUMBER, PREVRANDAO, GASLIMIT, CHAINID, SELFBALANCE, BASEFEE, BLOBHASH, BLOBBASEFEE
+**Thursday — PREVRANDAO + DIFFICULTY post-Merge handling**
+- [ ] Same opcode byte (0x44) — semantics differ pre/post-Merge based on `CfgEnv::spec_id`. Add fork-aware behavior.
+- [ ] PC, MSIZE, GAS, JUMPDEST coverage check (mostly done in W9).
 - [ ] Commit + log
 
-**Friday — Stack/memory opcodes**
-- [ ] POP, MLOAD, MSTORE, MSTORE8, JUMP, JUMPI, PC, MSIZE, GAS, JUMPDEST, PUSH0-PUSH32, DUP1-DUP16, SWAP1-SWAP16
+**Friday — TLOAD/TSTORE (EIP-1153, Cancun)**
+- [ ] Transient storage scoped to the call frame. NEW in Phase 4 — adds a `transient: HashMap<Address, HashMap<U256, U256>>` to the call-frame state; cleared on call exit. This is groundwork for the W55 journal.
 - [ ] Commit + log
 
-**Saturday — Storage opcodes**
-- [ ] SLOAD, SSTORE, TLOAD, TSTORE
-- [ ] Integrate with Database trait
+**Saturday — MCOPY (EIP-5656, Cancun) + opcode-coverage matrix audit**
+- [ ] MCOPY copies memory regions. Quadratic memory gas already in W17 Tue.
+- [ ] Run a script that diffs your opcode coverage table against revm's instruction table — every gap goes into the W53 follow-up.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2514,9 +2740,9 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 - [ ] Browse reth/crates/consensus
 - [ ] Commit notes
 
-**Saturday — Phase 5 scaffolding**
-- [ ] Create `consensus-engine` crate scaffold
-- [ ] Initial README
+**Saturday — Phase 5 prep (consensus-engine already scaffolded W24 Mon)**
+- [ ] `consensus-engine` is a workspace member with deps wired since W24. Today: re-read its empty `lib.rs`, sketch the module layout for Phase 5 in `notes/` (engine_api, fork_choice, payload_builder, jwt, builder_api, state_root_validator).
+- [ ] Identify which `eth-*` crates each module will import. Confirm the dependency graph builds.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2590,7 +2816,27 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 
 # PHASE 5: CONSENSUS + ENGINE API (Month 19-24)
 
-**Deliverable**: `consensus-engine` production crate + three-crate integration
+**Deliverable**: `consensus-engine` v1.0 + end-to-end integration of all 13 workspace crates capable of syncing Sepolia.
+
+**Crate extended (NOT created)**: `consensus-engine` was scaffolded W24 Mon with deps on `eth-primitives`, `eth-consensus`, `eth-network-codec`, `eth-rpc-types`, `eth-storage-cache`, `eth-trie`, `exec-vm`. Phase 5 fills out the impl. Wherever older text below says "Create `consensus-engine` crate scaffold" or "Start crate skeleton," read it as "extend the existing crate."
+
+### Phase 5 inheritance map
+
+| Module in `consensus-engine` | Upstream mirror | Existing seed it composes |
+|------------------------------|-----------------|---------------------------|
+| `engine_api::server` (W74-75) | `reth-rpc-engine-api` | `eth-network-codec::Codec` (W3) for JSON-RPC framing; `eth-rpc-types` (W16) for request/response types |
+| `engine_api::jwt` (W74) | `reth-rpc-builder` JWT layer | new this phase |
+| `engine_api::new_payload` (W75) | reth `EngineApiHandler` | calls `exec-vm::Evm::transact` (Phase 4) + `storage-trie::MdbxStateCache` (Phase 3) |
+| `state_root_validator` (W77) | `reth-engine-tree::StateRootProvider` | uses `eth-trie::StateRoot` (W20) on persistent backing |
+| `fork_choice` (W78) | `reth-engine-primitives::ForkchoiceState` | uses `eth-primitives::ChainHead` SeqLock (W4) for hot-read tracking |
+| `block_tree` (W80) | `reth-engine-tree::tree` | uses `eth-storage-cache::ShardedCache` (W2) for branch caching |
+| `reorg::rollback` (W79) | `reth-blockchain-tree::reorg` | uses `eth-trie::HashedPostState` (W11) reverse-applied |
+| `builder_api::*` (W82-83) | `reth-mev-rpc` / `mev-boost` Builder API | uses `eth-rpc-types` (W16) |
+| `pipeline_runtime` (W85) | `reth-stages::Pipeline` | uses `eth-stage::Pipeline` (W22) |
+
+**Three-crate integration target (W85 Sepolia sync)**: `consensus-engine` orchestrates `eth-network-codec` → block ingestion → `eth-stage::Pipeline` (driving `exec-vm` for execution + `storage-trie` for persistence + `eth-trie::StateRoot` for verification) → `engine_api` for CL coordination. The Sepolia sync is the proof that all 13 crates compose.
+
+**Read existing daily tasks below with this lens**: tasks like "consensus-engine scaffold" (W74 Fri) are already done. "Wire up with storage-trie" (W75 Fri) really means "write the adapter from `consensus-engine::PayloadStore` to `storage-trie::MdbxStateCache`," not new crate creation.
 
 ## Month 19: Engine API Deep Dive
 
@@ -2644,13 +2890,13 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 - [ ] Find docs or small fix
 - [ ] Commit + log
 
-**Friday — `consensus-engine` scaffold**
-- [ ] Start crate skeleton
-- [ ] Engine API trait
+**Friday — `consensus-engine::engine_api` module skeleton (crate already exists)**
+- [ ] Create `consensus-engine/src/engine_api/{mod.rs,server.rs,types.rs}`. Define the `EngineApi` trait with the V1-V4 method signatures. Wire `eth-network-codec::Codec` for JSON-RPC framing.
+- [ ] Re-export `eth-rpc-types` request/response types where applicable.
 - [ ] Commit + log
 
-**Saturday — JWT implementation**
-- [ ] Implement JWT auth in crate
+**Saturday — JWT auth in `consensus-engine::engine_api::jwt`**
+- [ ] Implement HS256 JWT auth middleware (per Engine API spec). Test against a fixture token from a Lighthouse deployment.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
