@@ -91,9 +91,9 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [ ] Commit + log
 
 **Tuesday — Book ch4 + `FixedBytes<const N: usize>`**
-- [ ] Book ch4.1 (Ownership) — read twice
-- [ ] Book ch4.2 (References and Borrowing) — read twice
-- [ ] Book ch4.3 (Slices)
+- [X] Book ch4.1 (Ownership) — read twice
+- [X] Book ch4.2 (References and Borrowing) — read twice
+- [X] Book ch4.3 (Slices)
 - [ ] Rustlings `move_semantics` (all 6)
 - [ ] **Build**: `crates/eth-primitives/src/fixed_bytes.rs` — `FixedBytes<const N: usize>([u8; N])` with `Copy`, `Default`, `From<[u8; N]>`, `AsRef<[u8]>`, `AsMut<[u8]>`, `Deref<Target=[u8; N]>`, `PartialEq`, `Hash`. `repr(transparent)` so it's ABI-compatible with `[u8; N]` (same as alloy).
 - [ ] Test: zero-init, equality, slice access, hash stability. Match alloy-primitives FixedBytes test cases.
@@ -101,7 +101,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [ ] Commit + log
 
 **Wednesday — Lifetimes + `Bytes` + `BytesView<'a>`**
-- [ ] Book ch10.3 (Lifetimes) — read twice
+- [X] Book ch10.3 (Lifetimes) — read twice
 - [ ] Watch Crust of Rust: Lifetime Annotations (full)
 - [ ] **Build**: `crates/eth-primitives/src/bytes.rs` — `Bytes(Arc<[u8]>)` cheap-clone wrapper mirroring `alloy_primitives::Bytes`. Methods: `new()`, `from_static(&'static [u8])`, `slice(range) -> Bytes`, `len`, `is_empty`, `as_ref`.
 - [ ] **Build**: `BytesView<'a>(&'a [u8])` for borrowed views — this is where lifetime annotations earn their keep. Add `Bytes::view(&self) -> BytesView<'_>`.
@@ -110,7 +110,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [ ] Commit + log
 
 **Thursday — Traits + `Address` + `B256` + sealed-trait pattern**
-- [ ] Book ch10.1 + ch10.2 (Generics, Traits)
+- [X] Book ch10.1 + ch10.2 (Generics, Traits)
 - [ ] Rustlings `generics`, `traits` — all
 - [ ] Read about orphan rule, coherence, sealed traits
 - [ ] **Build**: `crates/eth-primitives/src/address.rs` — `pub type Address = FixedBytes<20>;` + impl block with `Address::from_word(B256)`, `Address::with_last_byte(u8)`, `Address::ZERO`. EIP-55 checksum encoding via `to_checksum(chain_id: Option<u64>) -> String`.
@@ -121,7 +121,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [ ] Commit + log
 
 **Friday — Error handling + iterators via `PrimitivesError` + hex parsing**
-- [ ] Book ch9 + ch13.1 + ch13.2
+- [X] Book ch9 + ch13.1 + ch13.2
 - [ ] Rustlings `error_handling`, `options`, `iterators` — all
 - [ ] Read `thiserror` and `anyhow` docs end-to-end
 - [ ] **Build**: `crates/eth-primitives/src/error.rs` — `PrimitivesError` enum (`InvalidLength { expected, got }`, `InvalidHex(String)`, `InvalidChecksum`, `Overflow`) with `thiserror::Error`. Match alloy's variants where they overlap.
@@ -132,7 +132,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [ ] Commit + log
 
 **Saturday — Closures + Fn/FnMut/FnOnce + `U256` + R4R**
-- [ ] Book ch13.1 (Closures) — focus on FnOnce/FnMut/Fn semantics (Kotlin lambdas don't distinguish)
+- [X] Book ch13.1 (Closures) — focus on FnOnce/FnMut/Fn semantics (Kotlin lambdas don't distinguish)
 - [ ] **Build**: `crates/eth-primitives/src/uint.rs` — `pub use ruint::aliases::U256;` + extension trait `U256Ext` adding `from_be_slice`, `to_be_bytes_trimmed_vec`, `bit_len`. Mirrors alloy-primitives' U256 surface.
 - [ ] Closure exercise via real use: `Bytes::map_chunks<F: FnMut(&[u8]) -> Bytes>(&self, chunk_size, f) -> Bytes` — used Week 5 by RLP encoder for length-prefixed framing.
 - [ ] Read Rust for Rustaceans ch1-2 (Foundations, Types).
@@ -155,14 +155,14 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 > The `StateCache` trait you build this week is the same trait `exec-vm` will require to read account state during opcode execution. Get the shape right.
 
 **Monday — Box, Deref, Drop via `Page` primitive**
-- [ ] Book ch15.1-15.4
+- [X] Book ch15.1-15.4
 - [ ] **Build**: `crates/eth-storage-cache/src/page.rs` — `Page(Box<[u8; 4096]>)` with `Deref<Target=[u8; 4096]>`, `DerefMut`, `Drop` instrumented via `tracing::trace!` to learn drop order. This 4 KiB page is the actual primitive `storage-trie` Phase 3 reuses for its mmap-backed layout.
 - [ ] Implement `MyBox<T>` exercise but apply it: write a `PageBox<T: ?Sized>` that uses `Page` as backing storage for `T` (single-allocation deserialize-in-place). This is the shape MDBX cursors use.
 - [ ] Single-linked list of `Page`s as a free-list allocator (`PageAllocator`). Attempt a doubly-linked free list to feel the pain → motivates Rc/Weak Tuesday.
 - [ ] Commit + log
 
 **Tuesday — RefCell, Rc, Arc via `Account` cache**
-- [ ] Book ch15.5-15.6
+- [X] Book ch15.5-15.6
 - [ ] Watch Crust of Rust: Smart Pointers and Interior Mutability
 - [ ] **Build**: `crates/eth-storage-cache/src/account.rs` — `Account { nonce: u64, balance: U256, code_hash: B256, code: Option<Bytes> }` mirroring `revm_primitives::Account`. Use `eth-primitives` types.
 - [ ] **Build**: `LocalAccountCache(HashMap<Address, Rc<RefCell<Account>>>)` first — single-threaded. Add `get_or_load`, `commit`. Use `RefCell::borrow_mut` and observe the runtime panic when you double-borrow — the borrow-checker lesson moves to runtime.
@@ -170,7 +170,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [ ] Commit + log
 
 **Wednesday — Threads, channels, Mutex via `StateCache` trait**
-- [ ] Book ch16 (whole chapter)
+- [X] Book ch16 (whole chapter)
 - [ ] Watch Crust of Rust: Channels — implement bounded MPSC from scratch
 - [ ] **Build**: `crates/eth-storage-cache/src/database.rs` — `StateCache` trait shaped like revm's `Database`:
   ```
@@ -187,7 +187,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [ ] Commit + log
 
 **Thursday — Send/Sync via `ShardedCache`**
-- [ ] Book ch16.4 (Send and Sync)
+- [X] Book ch16.4 (Send and Sync)
 - [ ] Read `std::marker` docs carefully
 - [ ] **Build**: `ShardedCache<const N: usize>` — `[parking_lot::RwLock<HashMap<Address, Account>>; N]` hash-routed by `Address::word()[0] % N`. Implement `StateCache` for it. Same sharding scheme reth's tx pool uses.
 - [ ] Send/!Sync + !Send/Sync exercises grounded in the cache: prove `Rc<RefCell<Account>>` is `!Send` (compile error) and `Arc<RwLock<Account>>` is `Send + Sync`. Document the trait bounds your `StateCache` impls need.
