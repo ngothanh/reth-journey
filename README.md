@@ -87,14 +87,14 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [X] Write `notes/01_kotlin_to_rust_delta.md`: 1-page diff between Kotlin and Rust mental models
 - [X] Create workspace `Cargo.toml` (resolver = "2", `[workspace] members = ["crates/*"]`)
 - [X] Create `crates/eth-primitives` with `Cargo.toml`, `src/lib.rs`, `src/error.rs` skeleton
-- [ ] Read alloy-primitives top-level `lib.rs` + map the 8 types you'll build this week (Bytes, FixedBytes, Address, B256, B64, U256, Bloom, PrimitivesError)
-- [ ] Commit + log
+- [X] Read alloy-primitives top-level `lib.rs` + map the 8 types you'll build this week (Bytes, FixedBytes, Address, B256, B64, U256, Bloom, PrimitivesError)
+- [X] Commit + log
 
 **Tuesday — Book ch4 + `FixedBytes<const N: usize>`**
 - [X] Book ch4.1 (Ownership) — read twice
 - [X] Book ch4.2 (References and Borrowing) — read twice
 - [X] Book ch4.3 (Slices)
-- [ ] Rustlings `move_semantics` (all 6)
+- [X] Rustlings `move_semantics` (all 6)
 - [ ] **Build**: `crates/eth-primitives/src/fixed_bytes.rs` — `FixedBytes<const N: usize>([u8; N])` with `Copy`, `Default`, `From<[u8; N]>`, `AsRef<[u8]>`, `AsMut<[u8]>`, `Deref<Target=[u8; N]>`, `PartialEq`, `Hash`. `repr(transparent)` so it's ABI-compatible with `[u8; N]` (same as alloy).
 - [ ] Test: zero-init, equality, slice access, hash stability. Match alloy-primitives FixedBytes test cases.
 - [ ] Borrow-checker drill: try to write a method `fn split(&mut self) -> (&mut [u8], &mut [u8])` and resolve it the right way (`split_at_mut`). Document the lesson in `notes/02_borrow_checker_errors.md` from real code, not contrived programs.
@@ -102,7 +102,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 
 **Wednesday — Lifetimes + `Bytes` + `BytesView<'a>`**
 - [X] Book ch10.3 (Lifetimes) — read twice
-- [ ] Watch Crust of Rust: Lifetime Annotations (full)
+- [X] Watch Crust of Rust: Lifetime Annotations (full)
 - [ ] **Build**: `crates/eth-primitives/src/bytes.rs` — `Bytes(Arc<[u8]>)` cheap-clone wrapper mirroring `alloy_primitives::Bytes`. Methods: `new()`, `from_static(&'static [u8])`, `slice(range) -> Bytes`, `len`, `is_empty`, `as_ref`.
 - [ ] **Build**: `BytesView<'a>(&'a [u8])` for borrowed views — this is where lifetime annotations earn their keep. Add `Bytes::view(&self) -> BytesView<'_>`.
 - [ ] Implement `From<Vec<u8>>`, `From<&'static [u8]>`, `Display` (lowercase hex with 0x prefix).
@@ -111,7 +111,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 
 **Thursday — Traits + `Address` + `B256` + sealed-trait pattern**
 - [X] Book ch10.1 + ch10.2 (Generics, Traits)
-- [ ] Rustlings `generics`, `traits` — all
+- [X] Rustlings `generics`, `traits` — all
 - [ ] Read about orphan rule, coherence, sealed traits
 - [ ] **Build**: `crates/eth-primitives/src/address.rs` — `pub type Address = FixedBytes<20>;` + impl block with `Address::from_word(B256)`, `Address::with_last_byte(u8)`, `Address::ZERO`. EIP-55 checksum encoding via `to_checksum(chain_id: Option<u64>) -> String`.
 - [ ] **Build**: `crates/eth-primitives/src/aliases.rs` — `pub type B256 = FixedBytes<32>;`, `B64 = FixedBytes<8>`. Match alloy aliases exactly.
