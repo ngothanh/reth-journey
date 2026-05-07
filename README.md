@@ -85,8 +85,8 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [X] Speed-read Book ch5-9 (~90 min): structs, enums, modules, collections, error handling — note differences from Kotlin (Result vs exceptions, sealed classes vs enums-with-data, no inheritance)
 - [X] Skip all Rustlings: `intro`, `variables`, `functions`, `if`, `primitive_types`, `strings`, `vecs`, `hashmaps`, `modules`
 - [X] Write `notes/01_kotlin_to_rust_delta.md`: 1-page diff between Kotlin and Rust mental models
-- [ ] Create workspace `Cargo.toml` (resolver = "2", `[workspace] members = ["crates/*"]`)
-- [ ] Create `crates/eth-primitives` with `Cargo.toml`, `src/lib.rs`, `src/error.rs` skeleton
+- [X] Create workspace `Cargo.toml` (resolver = "2", `[workspace] members = ["crates/*"]`)
+- [X] Create `crates/eth-primitives` with `Cargo.toml`, `src/lib.rs`, `src/error.rs` skeleton
 - [ ] Read alloy-primitives top-level `lib.rs` + map the 8 types you'll build this week (Bytes, FixedBytes, Address, B256, B64, U256, Bloom, PrimitivesError)
 - [ ] Commit + log
 
