@@ -122,7 +122,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 
 **Friday — Error handling + iterators via `PrimitivesError` + hex parsing**
 - [X] Book ch9 + ch13.1 + ch13.2
-- [ ] Rustlings `error_handling`, `options`, `iterators` — all
+- [X] Rustlings `error_handling`, `options`, `iterators` — all
 - [ ] Read `thiserror` and `anyhow` docs end-to-end
 - [ ] **Build**: `crates/eth-primitives/src/error.rs` — `PrimitivesError` enum (`InvalidLength { expected, got }`, `InvalidHex(String)`, `InvalidChecksum`, `Overflow`) with `thiserror::Error`. Match alloy's variants where they overlap.
 - [ ] **Build**: `FromStr` for `Address`, `B256`, `Bytes` — accept both `0x`-prefixed and bare hex. Iterator-driven byte-pair decoder (no `hex` crate dep — write it yourself, then compare to `const-hex`).
