@@ -95,10 +95,10 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [X] Book ch4.2 (References and Borrowing) — read twice
 - [X] Book ch4.3 (Slices)
 - [X] Rustlings `move_semantics` (all 6)
-- [ ] **Build**: `crates/eth-primitives/src/fixed_bytes.rs` — `FixedBytes<const N: usize>([u8; N])` with `Copy`, `Default`, `From<[u8; N]>`, `AsRef<[u8]>`, `AsMut<[u8]>`, `Deref<Target=[u8; N]>`, `PartialEq`, `Hash`. `repr(transparent)` so it's ABI-compatible with `[u8; N]` (same as alloy).
-- [ ] Test: zero-init, equality, slice access, hash stability. Match alloy-primitives FixedBytes test cases.
-- [ ] Borrow-checker drill: try to write a method `fn split(&mut self) -> (&mut [u8], &mut [u8])` and resolve it the right way (`split_at_mut`). Document the lesson in `notes/02_borrow_checker_errors.md` from real code, not contrived programs.
-- [ ] Commit + log
+- [X] **Build**: `crates/eth-primitives/src/fixed_bytes.rs` — `FixedBytes<const N: usize>([u8; N])` with `Copy`, `Default`, `From<[u8; N]>`, `AsRef<[u8]>`, `AsMut<[u8]>`, `Deref<Target=[u8; N]>`, `PartialEq`, `Hash`. `repr(transparent)` so it's ABI-compatible with `[u8; N]` (same as alloy).
+- [X] Test: zero-init, equality, slice access, hash stability. Match alloy-primitives FixedBytes test cases.
+- [X] Borrow-checker drill: try to write a method `fn split(&mut self) -> (&mut [u8], &mut [u8])` and resolve it the right way (`split_at_mut`). Document the lesson in `notes/02_borrow_checker_errors.md` from real code, not contrived programs.
+- [X] Commit + log
 
 **Wednesday — Lifetimes + `Bytes` + `BytesView<'a>`**
 - [X] Book ch10.3 (Lifetimes) — read twice
