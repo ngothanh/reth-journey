@@ -1,12 +1,13 @@
 use alloc::sync::Arc;
 use core::ops::Bound;
+use core::ops::Deref;
 use core::ops::RangeBounds;
-use std::ops::Deref;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Bytes(pub Arc<[u8]>);
 
-pub struct BytesView<'a>(&'a [u8]);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct BytesView<'a>(pub &'a [u8]);
 
 impl<'a> BytesView<'a> {
     pub const fn len(&self) -> usize {
@@ -17,7 +18,7 @@ impl<'a> BytesView<'a> {
         self.0.is_empty()
     }
 
-    pub fn slice(&self, range: impl RangeBounds<usize>) -> BytesView<'_> {
+    pub fn slice(&self, range: impl RangeBounds<usize>) -> BytesView<'a> {
         let len = self.len();
         let start = match range.start_bound() {
             Bound::Included(&x) => x,
@@ -64,7 +65,11 @@ impl AsRef<[u8]> for Bytes {
     }
 }
 impl Bytes {
-    pub fn new(bytes: Vec<u8>) -> Self {
+    pub fn new() -> Self {
+        Self(Arc::from([]))
+    }
+
+    pub fn from_vec(bytes: Vec<u8>) -> Self {
         Self(bytes.into())
     }
 
@@ -90,15 +95,15 @@ impl Bytes {
         Self(Arc::from(&self.0[start..end]))
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    fn view(&self) -> BytesView<'_> {
+    pub fn view(&self) -> BytesView<'_> {
         BytesView(&self.0)
     }
 }
