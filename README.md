@@ -105,9 +105,9 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [X] Watch Crust of Rust: Lifetime Annotations (full)
 - [X] **Build**: `crates/eth-primitives/src/bytes.rs` — `Bytes(Arc<[u8]>)` cheap-clone wrapper mirroring `alloy_primitives::Bytes`. Methods: `new()`, `from_static(&'static [u8])`, `slice(range) -> Bytes`, `len`, `is_empty`, `as_ref`.
 - [X] **Build**: `BytesView<'a>(&'a [u8])` for borrowed views — this is where lifetime annotations earn their keep. Add `Bytes::view(&self) -> BytesView<'_>`.
-- [ ] Implement `From<Vec<u8>>`, `From<&'static [u8]>`, `Display` (lowercase hex with 0x prefix).
-- [ ] Document lifetime elision rules in `notes/03_lifetimes.md` using the actual `Bytes::slice` and `BytesView::split_at` signatures as examples.
-- [ ] Commit + log
+- [X] Implement `From<Vec<u8>>`, `From<&'static [u8]>`, `Display` (lowercase hex with 0x prefix).
+- [X] Document lifetime elision rules in `notes/03_lifetimes.md` using the actual `Bytes::slice` and `BytesView::split_at` signatures as examples.
+- [X] Commit + log
 
 **Thursday — Traits + `Address` + `B256` + sealed-trait pattern**
 - [X] Book ch10.1 + ch10.2 (Generics, Traits)

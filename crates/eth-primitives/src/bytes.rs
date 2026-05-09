@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use core::fmt::{Display, Formatter};
 use core::ops::{Bound, Deref, RangeBounds};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -47,6 +48,28 @@ impl Bytes {
     }
 }
 
+impl From<Vec<u8>> for Bytes {
+    fn from(bytes: Vec<u8>) -> Self {
+        Bytes::from_vec(bytes)
+    }
+}
+
+impl From<&'static [u8]> for Bytes {
+    fn from(bytes: &'static [u8]) -> Self {
+        Bytes::from_static(bytes)
+    }
+}
+
+impl Display for Bytes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "0x")?;
+        for b in self.0.iter() {
+            write!(f, "{:02x}", b)?;
+        }
+        Ok(())
+    }
+}
+
 impl AsRef<[u8]> for Bytes {
     fn as_ref(&self) -> &[u8] {
         &self.0
@@ -92,6 +115,30 @@ impl<'a> BytesView<'a> {
         assert!(start <= end, "slice: start ({start}) > end ({end})");
         assert!(end <= len, "slice: end ({end}) > len ({len})");
         BytesView(&self.0[start..end])
+    }
+
+    fn split_at(self, mid: usize) -> (BytesView<'a>, BytesView<'a>) {
+        assert!(mid <= self.len());
+
+        let (left, right) = self.0.split_at(mid);
+        (BytesView::new(left), BytesView::new(right))
+    }
+}
+
+impl<'a> From<&'a [u8]> for BytesView<'a> {
+    fn from(bytes: &'a [u8]) -> Self {
+        BytesView::new(bytes)
+    }
+}
+
+impl Display for BytesView<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "0x")?;
+        for b in self.0.iter() {
+            write!(f, "{:02x}", b)?;
+        }
+
+        Ok(())
     }
 }
 
