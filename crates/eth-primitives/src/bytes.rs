@@ -1,15 +1,74 @@
 use alloc::sync::Arc;
-use core::ops::Bound;
-use core::ops::Deref;
-use core::ops::RangeBounds;
+use core::ops::{Bound, Deref, RangeBounds};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Bytes(pub Arc<[u8]>);
+
+impl Bytes {
+    pub fn new() -> Self {
+        Self(Arc::from([]))
+    }
+
+    pub fn from_vec(bytes: Vec<u8>) -> Self {
+        Self(bytes.into())
+    }
+
+    pub fn from_static(bytes: &'static [u8]) -> Self {
+        Self(Arc::from(bytes))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
+        let len = self.len();
+        let start = match range.start_bound() {
+            Bound::Included(&x) => x,
+            Bound::Excluded(&x) => x + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(&x) => x + 1,
+            Bound::Excluded(&x) => x,
+            Bound::Unbounded => len,
+        };
+        assert!(start <= end, "slice: start ({start}) > end ({end})");
+        assert!(end <= len, "slice: end ({end}) > len ({len})");
+        Self(Arc::from(&self.0[start..end]))
+    }
+
+    pub fn view(&self) -> BytesView<'_> {
+        BytesView(&self.0)
+    }
+}
+
+impl AsRef<[u8]> for Bytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Deref for Bytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BytesView<'a>(pub &'a [u8]);
 
 impl<'a> BytesView<'a> {
+    pub const fn new(slice: &'a [u8]) -> Self {
+        Self(slice)
+    }
+
     pub const fn len(&self) -> usize {
         self.0.len()
     }
@@ -32,7 +91,6 @@ impl<'a> BytesView<'a> {
         };
         assert!(start <= end, "slice: start ({start}) > end ({end})");
         assert!(end <= len, "slice: end ({end}) > len ({len})");
-
         BytesView(&self.0[start..end])
     }
 }
@@ -48,62 +106,5 @@ impl Deref for BytesView<'_> {
 
     fn deref(&self) -> &Self::Target {
         self.0
-    }
-}
-
-impl Deref for Bytes {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl AsRef<[u8]> for Bytes {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-impl Bytes {
-    pub fn new() -> Self {
-        Self(Arc::from([]))
-    }
-
-    pub fn from_vec(bytes: Vec<u8>) -> Self {
-        Self(bytes.into())
-    }
-
-    pub fn from_static(bytes: &'static [u8]) -> Self {
-        Self(Arc::from(bytes))
-    }
-
-    pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
-        let len = self.len();
-        let start = match range.start_bound() {
-            Bound::Included(&x) => x,
-            Bound::Excluded(&x) => x + 1,
-            Bound::Unbounded => 0,
-        };
-        let end = match range.end_bound() {
-            Bound::Included(&x) => x + 1,
-            Bound::Excluded(&x) => x,
-            Bound::Unbounded => len,
-        };
-        assert!(start <= end, "slice: start ({start}) > end ({end})");
-        assert!(end <= len, "slice: end ({end}) > len ({len})");
-
-        Self(Arc::from(&self.0[start..end]))
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn view(&self) -> BytesView<'_> {
-        BytesView(&self.0)
     }
 }
