@@ -1,5 +1,6 @@
+use crate::aliases::B256;
 use crate::keccak::keccak256;
-use crate::{FixedBytes, B256};
+use crate::FixedBytes;
 
 pub type Address = FixedBytes<20>;
 

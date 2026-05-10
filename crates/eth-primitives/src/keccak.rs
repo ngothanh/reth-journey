@@ -1,4 +1,5 @@
-use crate::{FixedBytes, B256};
+use crate::aliases::B256;
+use crate::FixedBytes;
 use tiny_keccak::{Hasher, Keccak};
 
 pub fn keccak256(bytes: impl AsRef<[u8]>) -> B256 {
