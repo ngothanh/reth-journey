@@ -35,7 +35,7 @@ impl Address {
             None => addr_hex.clone(),
         };
 
-        let hash = keccak256(&hash_input.as_bytes());
+        let hash = keccak256(hash_input.as_bytes());
         let mut res = String::with_capacity(42);
         res.push_str("0x");
         for (i, ch) in addr_hex.chars().enumerate() {
