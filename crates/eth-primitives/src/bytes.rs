@@ -17,6 +17,14 @@ impl Bytes {
         Self(bytes.into())
     }
 
+    pub fn concat(parts: impl IntoIterator<Item = impl AsRef<[u8]>>) -> Self {
+        let mut out = Vec::new();
+        for part in parts {
+            out.extend_from_slice(part.as_ref());
+        }
+        Self::from_vec(out)
+    }
+
     pub fn from_static(bytes: &'static [u8]) -> Self {
         Self(Arc::from(bytes))
     }

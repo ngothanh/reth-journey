@@ -126,9 +126,9 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [X] Read `thiserror` and `anyhow` docs end-to-end
 - [X] **Build**: `crates/eth-primitives/src/error.rs` — `PrimitivesError` enum (`InvalidLength { expected, got }`, `InvalidHex(String)`, `InvalidChecksum`, `Overflow`) with `thiserror::Error`. Match alloy's variants where they overlap.
 - [X] **Build**: `FromStr` for `Address`, `B256`, `Bytes` — accept both `0x`-prefixed and bare hex. Iterator-driven byte-pair decoder (no `hex` crate dep — write it yourself, then compare to `const-hex`).
-- [ ] Three rewrites of `parse_address`: panic, Result+thiserror, anyhow — keep Result+thiserror in the crate; document the trade in `notes/04_traits.md`.
+- [X] Three rewrites of `parse_address`: panic, Result+thiserror, anyhow — keep Result+thiserror in the crate; document the trade in `notes/04_traits.md`.
 - [ ] Watch Crust of Rust: Iterators (full).
-- [ ] Implement `flatten()` from scratch — but apply it: write a `Bytes::concat(parts: impl IntoIterator<Item = impl AsRef<[u8]>>) -> Bytes` using only `Iterator` trait. This is the same shape `alloy_rlp::encode` will need next week.
+- [X] Implement `flatten()` from scratch — but apply it: write a `Bytes::concat(parts: impl IntoIterator<Item = impl AsRef<[u8]>>) -> Bytes` using only `Iterator` trait. This is the same shape `alloy_rlp::encode` will need next week.
 - [ ] Commit + log
 
 **Saturday — Closures + Fn/FnMut/FnOnce + `U256` + R4R**
