@@ -1,4 +1,4 @@
-use std::ops::{Deref, DerefMut};
+use core::ops::{Deref, DerefMut};
 use tracing::trace;
 
 pub struct Page(Box<[u8; 4096]>);
