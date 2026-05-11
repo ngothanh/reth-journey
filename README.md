@@ -116,9 +116,9 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [X] **Build**: `crates/eth-primitives/src/address.rs` — `pub type Address = FixedBytes<20>;` + impl block with `Address::from_word(B256)`, `Address::with_last_byte(u8)`, `Address::ZERO`. EIP-55 checksum encoding via `to_checksum(chain_id: Option<u64>) -> String`.
 - [X] **Build**: `crates/eth-primitives/src/aliases.rs` — `pub type B256 = FixedBytes<32>;`, `B64 = FixedBytes<8>`. Match alloy aliases exactly.
 - [X] **Build**: sealed-trait pattern for a future `Encodable` placeholder — `mod private { pub trait Sealed {} }`. impl `Sealed` for `Address`, `B256`, `Bytes`. This blocks downstream crates from extending the trait — same pattern reth uses on `BlockHashOrNumber`.
-- [ ] Write 4 functions (one each for `&dyn Encodable`, `Box<dyn Encodable>`, `impl Encodable`, `<T: Encodable>`) over the sealed trait — observe what compiles and why.
-- [ ] Notes in `notes/04_traits.md`: static vs dynamic dispatch tradeoffs.
-- [ ] Commit + log
+- [X] Write 4 functions (one each for `&dyn Encodable`, `Box<dyn Encodable>`, `impl Encodable`, `<T: Encodable>`) over the sealed trait — observe what compiles and why.
+- [X] Notes in `notes/04_traits.md`: static vs dynamic dispatch tradeoffs.
+- [X] Commit + log
 
 **Friday — Error handling + iterators via `PrimitivesError` + hex parsing**
 - [X] Book ch9 + ch13.1 + ch13.2
