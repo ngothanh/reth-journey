@@ -40,7 +40,11 @@ impl<const N: usize> core::ops::Deref for FixedBytes<N> {
 
 impl<const N: usize> core::fmt::Debug for FixedBytes<N> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        write!(f, "0x")?;
+        for byte in &self.0 {
+            write!(f, "{:02x}", byte)?;
+        }
+        Ok(())
     }
 }
 

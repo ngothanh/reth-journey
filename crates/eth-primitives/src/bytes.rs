@@ -57,6 +57,13 @@ impl Bytes {
     pub fn view(&self) -> BytesView<'_> {
         BytesView(&self.0)
     }
+
+    pub fn map_chunks<F>(&self, chunk_size: usize, f: F) -> Self
+    where
+        F: FnMut(&[u8]) -> Bytes,
+    {
+        Self::concat(self.0.chunks(chunk_size).map(f))
+    }
 }
 
 impl From<Vec<u8>> for Bytes {

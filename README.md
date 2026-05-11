@@ -133,15 +133,15 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 
 **Saturday — Closures + Fn/FnMut/FnOnce + `U256` + R4R**
 - [X] Book ch13.1 (Closures) — focus on FnOnce/FnMut/Fn semantics (Kotlin lambdas don't distinguish)
-- [ ] **Build**: `crates/eth-primitives/src/uint.rs` — `pub use ruint::aliases::U256;` + extension trait `U256Ext` adding `from_be_slice`, `to_be_bytes_trimmed_vec`, `bit_len`. Mirrors alloy-primitives' U256 surface.
-- [ ] Closure exercise via real use: `Bytes::map_chunks<F: FnMut(&[u8]) -> Bytes>(&self, chunk_size, f) -> Bytes` — used Week 5 by RLP encoder for length-prefixed framing.
-- [ ] Read Rust for Rustaceans ch1-2 (Foundations, Types).
-- [ ] `cargo clippy --all -- -D warnings`, `cargo test`, tag `eth-primitives v0.1.0-week1`.
-- [ ] Commit + log
+- [X] **Build**: `crates/eth-primitives/src/uint.rs` — `pub use ruint::aliases::U256;` + extension trait `U256Ext` adding `from_be_slice`, `to_be_bytes_trimmed_vec`, `bit_len`. Mirrors alloy-primitives' U256 surface.
+- [X] Closure exercise via real use: `Bytes::map_chunks<F: FnMut(&[u8]) -> Bytes>(&self, chunk_size, f) -> Bytes` — used Week 5 by RLP encoder for length-prefixed framing.
+- [X] Read Rust for Rustaceans ch1-2 (Foundations, Types).
+- [X] `cargo clippy --all -- -D warnings`, `cargo test`, tag `eth-primitives v0.1.0-week1`.
+- [X] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
-- [ ] "Can I explain ownership/borrowing/lifetimes using `Bytes::slice` and `FixedBytes` examples without looking up?" — if no, redo Tue/Wed.
-- [ ] Inheritance check: `eth-primitives` exports Address, B256, Bytes, FixedBytes, U256, PrimitivesError. Every later week imports from this.
+- [X] "Can I explain ownership/borrowing/lifetimes using `Bytes::slice` and `FixedBytes` examples without looking up?" — if no, redo Tue/Wed.
+- [X] Inheritance check: `eth-primitives` exports Address, B256, Bytes, FixedBytes, U256, PrimitivesError. Every later week imports from this.
 
 ---
 
