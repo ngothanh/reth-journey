@@ -157,7 +157,7 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 **Monday — Box, Deref, Drop via `Page` primitive**
 - [X] Book ch15.1-15.4
 - [X] **Build**: `crates/eth-storage-cache/src/page.rs` — `Page(Box<[u8; 4096]>)` with `Deref<Target=[u8; 4096]>`, `DerefMut`, `Drop` instrumented via `tracing::trace!` to learn drop order. This 4 KiB page is the actual primitive `storage-trie` Phase 3 reuses for its mmap-backed layout.
-- [ ] Implement `MyBox<T>` exercise but apply it: write a `PageBox<T: ?Sized>` that uses `Page` as backing storage for `T` (single-allocation deserialize-in-place). This is the shape MDBX cursors use.
+- [X] Implement `MyBox<T>` exercise but apply it: write a `PageBox<T: ?Sized>` that uses `Page` as backing storage for `T` (single-allocation deserialize-in-place). This is the shape MDBX cursors use.
 - [ ] Single-linked list of `Page`s as a free-list allocator (`PageAllocator`). Attempt a doubly-linked free list to feel the pain → motivates Rc/Weak Tuesday.
 - [ ] Commit + log
 
