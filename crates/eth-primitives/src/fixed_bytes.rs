@@ -1,4 +1,7 @@
+use core::str::FromStr;
 use std::fmt::Formatter;
+
+use crate::PrimitivesError;
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct FixedBytes<const N: usize>(pub [u8; N]);
@@ -44,6 +47,16 @@ impl<const N: usize> core::fmt::Debug for FixedBytes<N> {
 impl<const N: usize> FixedBytes<N> {
     pub fn split(&mut self) -> (&mut [u8], &mut [u8]) {
         self.0.split_at_mut(N / 2)
+    }
+}
+
+impl<const N: usize> FromStr for FixedBytes<N> {
+    type Err = PrimitivesError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut buf = [0u8; N];
+        crate::hex::decode_into(s, &mut buf)?;
+        Ok(FixedBytes(buf))
     }
 }
 

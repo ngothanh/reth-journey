@@ -1,8 +1,12 @@
 use crate::aliases::B256;
 use crate::keccak::keccak256;
-use crate::FixedBytes;
+use crate::{FixedBytes, PrimitivesError};
 
 pub type Address = FixedBytes<20>;
+
+pub fn parse_address(s: &str) -> Result<Address, PrimitivesError> {
+    s.parse()
+}
 
 impl Address {
     pub const ZERO: Self = FixedBytes([0u8; 20]);

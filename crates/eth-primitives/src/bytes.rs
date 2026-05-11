@@ -1,6 +1,9 @@
 use alloc::sync::Arc;
 use core::fmt::{Display, Formatter};
 use core::ops::{Bound, Deref, RangeBounds};
+use core::str::FromStr;
+
+use crate::PrimitivesError;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Bytes(pub Arc<[u8]>);
@@ -153,5 +156,13 @@ impl Deref for BytesView<'_> {
 
     fn deref(&self) -> &Self::Target {
         self.0
+    }
+}
+
+impl FromStr for Bytes {
+    type Err = PrimitivesError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        crate::hex::decode_to_vec(s).map(Bytes::from_vec)
     }
 }
