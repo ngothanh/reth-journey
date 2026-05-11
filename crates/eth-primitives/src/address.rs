@@ -6,19 +6,19 @@ pub type Address = FixedBytes<20>;
 
 impl Address {
     pub const ZERO: Self = FixedBytes([0u8; 20]);
-    fn from_word(word: B256) -> Self {
+    pub fn from_word(word: B256) -> Self {
         let mut addr = [0u8; 20];
         addr.copy_from_slice(&word.0[12..32]);
         FixedBytes(addr)
     }
 
-    fn with_last_byte(b: u8) -> Self {
+    pub fn with_last_byte(b: u8) -> Self {
         let mut addr = [0u8; 20];
         addr[19] = b;
         FixedBytes(addr)
     }
 
-    fn to_checksum(&self, chain_id: Option<u64>) -> String {
+    pub fn to_checksum(&self, chain_id: Option<u64>) -> String {
         use core::fmt::Write;
 
         let mut addr_hex = String::with_capacity(40);

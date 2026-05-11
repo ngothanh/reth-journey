@@ -42,7 +42,7 @@ impl<const N: usize> core::fmt::Debug for FixedBytes<N> {
 }
 
 impl<const N: usize> FixedBytes<N> {
-    fn split(&mut self) -> (&mut [u8], &mut [u8]) {
+    pub fn split(&mut self) -> (&mut [u8], &mut [u8]) {
         self.0.split_at_mut(N / 2)
     }
 }

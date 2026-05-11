@@ -117,7 +117,7 @@ impl<'a> BytesView<'a> {
         BytesView(&self.0[start..end])
     }
 
-    fn split_at(self, mid: usize) -> (BytesView<'a>, BytesView<'a>) {
+    pub fn split_at(self, mid: usize) -> (BytesView<'a>, BytesView<'a>) {
         assert!(mid <= self.len());
 
         let (left, right) = self.0.split_at(mid);
