@@ -159,8 +159,8 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [X] Book ch15.1-15.4
 - [X] **Build**: `crates/eth-storage-cache/src/page.rs` — `Page(Box<[u8; 4096]>)` with Deref, DerefMut, Drop instrumented via tracing::trace!. This 4 KiB page is reused for mmap-backed layout in Phase 3.
 - [X] Implement `MyBox<T>` exercise applied as `PageBox<T: ?Sized>` — single-allocation deserialize-in-place. Shape MDBX cursors use.
-- [ ] Single-linked list of Pages as a free-list allocator (`PageAllocator`). Attempt doubly-linked free list to feel the pain → motivates Rc/Weak Tuesday.
-- [ ] Commit + log
+- [X] Single-linked list of Pages as a free-list allocator (`PageAllocator`). Attempt doubly-linked free list to feel the pain → motivates Rc/Weak Tuesday.
+- [X] Commit + log
 
 **Tuesday — RefCell, Rc, Arc via `Account` cache**
 - [X] Book ch15.5-15.6
