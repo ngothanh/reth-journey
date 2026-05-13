@@ -31,7 +31,6 @@
 //!   W4 will replace the runtime check with `Layout`-based static guarantees.
 
 use core::marker::PhantomData;
-use core::mem;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 

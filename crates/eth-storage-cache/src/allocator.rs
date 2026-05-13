@@ -43,6 +43,12 @@ impl PageAllocator {
     }
 }
 
+impl Default for PageAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
