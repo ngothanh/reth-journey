@@ -166,9 +166,9 @@ If you ever feel an exercise is "just to learn the syntax," stop — find the ma
 - [X] Book ch15.5-15.6
 - [X] Watch Crust of Rust: Smart Pointers and Interior Mutability
 - [X] **Build**: `crates/eth-storage-cache/src/account.rs` — `Account { nonce: u64, balance: U256, code_hash: B256, code: Option<Bytes> }` mirroring revm_primitives::Account.
-- [ ] **Build**: `LocalAccountCache(HashMap<Address, Rc<RefCell<Account>>>)` first — single-threaded. Add get_or_load, commit. Use RefCell::borrow_mut and observe the runtime panic when you double-borrow.
-- [ ] **Migrate**: clone the file to `SharedAccountCache(HashMap<Address, Arc<RwLock<Account>>>)`. Document the diff in `notes/05_smart_pointers.md`.
-- [ ] Commit + log
+- [X] **Build**: `LocalAccountCache(HashMap<Address, Rc<RefCell<Account>>>)` first — single-threaded. Add get_or_load, commit. Use RefCell::borrow_mut and observe the runtime panic when you double-borrow.
+- [X] **Migrate**: clone the file to `SharedAccountCache(HashMap<Address, Arc<RwLock<Account>>>)`. Document the diff in `notes/05_smart_pointers.md`.
+- [X] Commit + log
 
 **Wednesday — Threads, channels, Mutex via `StateCache` trait**
 - [X] Book ch16 (whole chapter)
