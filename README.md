@@ -1,6 +1,6 @@
 # The Inheritance Plan — Reth Core + HFT Depth + Tempo Application Layer (36-Month Daily Plan)
 
-> **Start**: 2026-04-25
+> **Start**: 2026-04-27
 > **Horizon**: 36 months, decision gates at M12 / M24 / M30 / M36
 > **Commitment**: 5h/day × 6 days/week = 30h/week
 > **Schedule**: Mon-Sat work, Sunday rest + weekly ritual
