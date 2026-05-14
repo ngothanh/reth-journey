@@ -414,7 +414,7 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Wednesday — Threads, channels, Mutex via `StateCache` trait**
 - [X] Book ch16 (whole chapter)
 - [X] Watch Crust of Rust: Channels — implement bounded MPSC from scratch
-- [ ] **Build**: `crates/eth-storage-cache/src/database.rs` — `StateCache` trait shaped like revm's `Database` (basic, code_by_hash, storage, block_hash).
+- [X] **Build**: `crates/eth-storage-cache/src/database.rs` — `StateCache` trait shaped like revm's `Database` (basic, code_by_hash, storage, block_hash).
 - [ ] Implement `MutexCache` and `RwLockCache`. Apply bounded-MPSC as write-batch queue.
 - [ ] Read `parking_lot::Mutex` vs std — keep parking_lot (reth uses it).
 - [ ] Commit + log

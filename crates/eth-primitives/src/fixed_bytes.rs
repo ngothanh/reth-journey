@@ -48,6 +48,12 @@ impl<const N: usize> core::fmt::Debug for FixedBytes<N> {
     }
 }
 
+impl<const N: usize> core::fmt::Display for FixedBytes<N> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        core::fmt::Debug::fmt(self, f)
+    }
+}
+
 impl<const N: usize> FixedBytes<N> {
     pub fn split(&mut self) -> (&mut [u8], &mut [u8]) {
         self.0.split_at_mut(N / 2)

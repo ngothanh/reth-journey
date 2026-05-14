@@ -11,6 +11,7 @@ repository.workspace = true
 tracing = "0.1.44"
 parking_lot = "0.12.5"
 eth-primitives = { workspace = true }
+thiserror = "2.0.18"
 
 [lints]
 workspace = true

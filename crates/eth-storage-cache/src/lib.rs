@@ -4,6 +4,7 @@ mod page;
 mod page_box;
 mod local_cache;
 mod shared_cache;
+mod database;
 
 pub use account::{Account, EMPTY_CODE_HASH};
 pub use allocator::PageAllocator;
