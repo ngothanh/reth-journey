@@ -11,13 +11,23 @@
 
 This plan integrates three tracks that share a single substrate of low-level primitives:
 
-- **Reth core (M1–M18 primary, M19–M36 maintenance)** — the original 24-month Reth contributor plan: workspace crates mirroring alloy / reth / revm, scaling to three flagship deliverables (`storage-trie` v1.0, `exec-vm` v1.0, `consensus-engine` v1.0).
-- **HFT depth (M15 scaffold, M19–M34 primary)** — matching engine, deterministic ledger, kernel-bypass market data, ARIES-style WAL/recovery, Aeron-style messaging, BFT consensus, mini-LSM database, HNSW vector index. All built on the same primitives as the Reth track.
-- **Tempo application layer (additive throughout)** — `tempo-tx-envelope`, `tempo-evm-ext`, `tempo-payment-lane`. Layer 7 on top of everything below. Tempo remains optionality; Path D at M24 is conditional on the three-condition test (≥15 Tempo PRs merged, ≥2 maintainer relationships, upstream substantively engaged with `tempo-payment-lane`).
+- **Reth core (M1–M18 primary, M19–M36 maintenance)** — the original 24-month Reth contributor plan: workspace crates
+  mirroring alloy / reth / revm, scaling to three flagship deliverables (`storage-trie` v1.0, `exec-vm` v1.0,
+  `consensus-engine` v1.0).
+- **HFT depth (M15 scaffold, M19–M34 primary)** — matching engine, deterministic ledger, kernel-bypass market data,
+  ARIES-style WAL/recovery, Aeron-style messaging, BFT consensus, mini-LSM database, HNSW vector index. All built on the
+  same primitives as the Reth track.
+- **Tempo application layer (additive throughout)** — `tempo-tx-envelope`, `tempo-evm-ext`, `tempo-payment-lane`. Layer
+  7 on top of everything below. Tempo remains optionality; Path D at M24 is conditional on the three-condition test (≥15
+  Tempo PRs merged, ≥2 maintainer relationships, upstream substantively engaged with `tempo-payment-lane`).
 
-**The principle**: no primitive is built twice. A `wal` crate ships once at W26 and is consumed by `storage-trie` (Reth), `ledger-deterministic` (HFT), `mini-db` (databases), and downstream by `consensus-raft` snapshots and `matching-engine` durable command logging. Same for `bufpool`, `time`, `txn`, `p2p`, `consensus-raft`, `consensus-bft`. Layer-5 products inherit ~70% of their components; Tempo at Layer 7 inherits ~85%.
+**The principle**: no primitive is built twice. A `wal` crate ships once at W26 and is consumed by `storage-trie` (
+Reth), `ledger-deterministic` (HFT), `mini-db` (databases), and downstream by `consensus-raft` snapshots and
+`matching-engine` durable command logging. Same for `bufpool`, `time`, `txn`, `p2p`, `consensus-raft`, `consensus-bft`.
+Layer-5 products inherit ~70% of their components; Tempo at Layer 7 inherits ~85%.
 
 **Final-phase deliverables**:
+
 - `storage-trie` v1.0 (W44) — reth storage + trie re-implementation
 - `exec-vm` v1.0 (W68) — revm + reth evm re-implementation
 - `consensus-engine` v1.0 (W91) — reth consensus + engine API re-implementation
@@ -25,10 +35,12 @@ This plan integrates three tracks that share a single substrate of low-level pri
 - `ledger-deterministic` v0.5 (W83) — deterministic SM + double-entry bookkeeping + journal
 - `messaging-aeron` v0.5 (W79) — term-buffer + flow control + NAK gap recovery
 - `marketdata-kernelbypass` v0.5 (W90) — epoll + io_uring + AF_XDP
-- `mini-db` v1.0 (W100) — full LSM database (CAPSTONE: assembles `wal` + `recovery` + `txn` + `bufpool` + `storage-trie` + `bloom`)
+- `mini-db` v1.0 (W100) — full LSM database (CAPSTONE: assembles `wal` + `recovery` + `txn` + `bufpool` +
+  `storage-trie` + `bloom`)
 - `vector-db` v0.5 (W104) — HNSW + SQ/PQ + filtered search
 
 **Tempo crate deliverables (additive, optionality preserved)**:
+
 - `tempo-tx-envelope` v0.1.0 — W66
 - `tempo-evm-ext` scaffold W54 → v0.1.0 W91
 - `tempo-payment-lane` scaffold W83 → v0.1.0 W91
@@ -39,20 +51,30 @@ This plan integrates three tracks that share a single substrate of low-level pri
 
 These were the open questions; the answers below are baked into the plan.
 
-1. **Three concurrent tracks from M15** — Reth core remains primary M1–M18; HFT begins as scaffold at W58 (matching-engine v0.0) and becomes primary M19–M34; Tempo is additive throughout.
-2. **Inheritance discipline** — every Layer-5 product crate explicitly lists which Layer-0–Layer-4 primitives it inherits and which 3–5 components are net-new. No primitive built twice.
-3. **Layer-1 primitives ship before products** — `time` (W6), `backpressure` (W11), `bufpool` (W14), `wal` (W26), `recovery` (W29–W30), `txn` (W42 v0.5, W72 v1.0 with 2PC), `p2p` (W52–W55), `consensus-raft` (W56–W67), `consensus-bft` (W64–W73), `messaging-aeron` (W76–W79), `marketdata-kernelbypass` (W85–W90).
-4. **`mini-db` is the CAPSTONE** — W95–W100. It is the integration moment where five years of "build the primitive once" pays off in a single product where ≥70% of LOC is wired-up inheritance.
-5. **`vector-db` stops at v0.5** — W101–W104, single-node, HNSW + SQ/PQ + filtered search. Not pursued to distributed because Raft and sharding are already covered by `matching-engine` v1.0 (W74) and `mini-db` (W100); reuse, don't rebuild.
+1. **Three concurrent tracks from M15** — Reth core remains primary M1–M18; HFT begins as scaffold at W58 (
+   matching-engine v0.0) and becomes primary M19–M34; Tempo is additive throughout.
+2. **Inheritance discipline** — every Layer-5 product crate explicitly lists which Layer-0–Layer-4 primitives it
+   inherits and which 3–5 components are net-new. No primitive built twice.
+3. **Layer-1 primitives ship before products** — `time` (W6), `backpressure` (W11), `bufpool` (W14), `wal` (W26),
+   `recovery` (W29–W30), `txn` (W42 v0.5, W72 v1.0 with 2PC), `p2p` (W52–W55), `consensus-raft` (W56–W67),
+   `consensus-bft` (W64–W73), `messaging-aeron` (W76–W79), `marketdata-kernelbypass` (W85–W90).
+4. **`mini-db` is the CAPSTONE** — W95–W100. It is the integration moment where five years of "build the primitive once"
+   pays off in a single product where ≥70% of LOC is wired-up inheritance.
+5. **`vector-db` stops at v0.5** — W101–W104, single-node, HNSW + SQ/PQ + filtered search. Not pursued to distributed
+   because Raft and sharding are already covered by `matching-engine` v1.0 (W74) and `mini-db` (W100); reuse, don't
+   rebuild.
 6. **Operations-hours target**: 2000+ runtime hours by M30; 4000+ by M36. Live deployment begins W106 (M25 mid).
-7. **M24 decision is five-pathed** — Path A (extend Reth), Path B (post-Reth systems), Path C (catch-up), Path D (Tempo pivot, conditional), Path E (HFT destination-tier IC track, new default if signals strong).
-8. **Destination landing in Phase 7** — applications start W125; interview prep W119; flagship blog post W121; offer decision W131; resignation + relocation W132; arrival W134; first month at new firm W135–W144.
+7. **M24 decision is five-pathed** — Path A (extend Reth), Path B (post-Reth systems), Path C (catch-up), Path D (Tempo
+   pivot, conditional), Path E (HFT destination-tier IC track, new default if signals strong).
+8. **Destination landing in Phase 7** — applications start W125; interview prep W119; flagship blog post W121; offer
+   decision W131; resignation + relocation W132; arrival W134; first month at new firm W135–W144.
 
 ---
 
 ## Workspace Layout (Seven Layers, Built Incrementally)
 
-Every crate below sits in `crates/<name>/` of a single Cargo workspace. Builds proceed bottom-up; each layer is fully usable in isolation.
+Every crate below sits in `crates/<name>/` of a single Cargo workspace. Builds proceed bottom-up; each layer is fully
+usable in isolation.
 
 ```
 LAYER 0 — bootstrap primitives (W1-W11)
@@ -158,15 +180,19 @@ LAYER 7 — Tempo application layer (additive throughout)
                          W91 v0.1 INHERITS: consensus-engine, matching-engine (priority queue idea)
 ```
 
-If you ever feel a crate is "just to learn syntax," stop — find a mirror target in alloy / reth / revm / TigerBeetle / mini-lsm / Qdrant / Aeron / Chronicle. The 13 + 9 + 3 = 25 crates of this workspace are the deliverable. Everything else is means.
+If you ever feel a crate is "just to learn syntax," stop — find a mirror target in alloy / reth / revm / TigerBeetle /
+mini-lsm / Qdrant / Aeron / Chronicle. The 13 + 9 + 3 = 25 crates of this workspace are the deliverable. Everything else
+is means.
 
 ---
 
 ## How to Use
 
-Check off tasks as completed. One day = one section. If you fall behind, adjust forward — don't delete. Sunday ritual reviews the week.
+Check off tasks as completed. One day = one section. If you fall behind, adjust forward — don't delete. Sunday ritual
+reviews the week.
 
 **Daily 5h block structure**:
+
 - 15 min warm-up (review notes, set intent)
 - 90 min deep work 1
 - 10 min break
@@ -174,19 +200,27 @@ Check off tasks as completed. One day = one section. If you fall behind, adjust 
 - 15 min wrap-up (commit, log, questions)
 
 **Track markers**:
+
 - `[Tempo]` — Tempo-track bullets, additive on top of primary
 - `[HFT]` — HFT-track bullets, primary M19–M34; scaffold M15–M18
-- `[NEW]` — bullets new to this revision (Layer-1 primitive extractions, new products), not in the original 24-month Reth plan
+- `[NEW]` — bullets new to this revision (Layer-1 primitive extractions, new products), not in the original 24-month
+  Reth plan
 
-If a Reth (primary M1–M18) task is over time budget, drop the `[Tempo]` bullet for the day. From M19, if an HFT track task is over budget, drop the Reth maintenance bullet. The plan never delegates the critical-path day to the secondary track.
+If a Reth (primary M1–M18) task is over time budget, drop the `[Tempo]` bullet for the day. From M19, if an HFT track
+task is over budget, drop the Reth maintenance bullet. The plan never delegates the critical-path day to the secondary
+track.
 
 ---
 
 ## Curriculum Principle: Inherited Exercises
 
-**No throwaways.** Every exercise builds a real component in a workspace crate that mirrors a specific upstream module AND is reused in a later phase. The inheritance discipline isn't aspirational — it is enforced by the workspace structure. If a crate isn't being consumed by a downstream crate within 6 months, it is over-scoped and should be pruned.
+**No throwaways.** Every exercise builds a real component in a workspace crate that mirrors a specific upstream module
+AND is reused in a later phase. The inheritance discipline isn't aspirational — it is enforced by the workspace
+structure. If a crate isn't being consumed by a downstream crate within 6 months, it is over-scoped and should be
+pruned.
 
 Inheritance ratio target by crate type:
+
 - Layer-0 mirror crates: 100% net-new (they are the foundation)
 - Layer-1 primitive crates: 100% net-new but immediately inherited 3+ ways
 - Layer-2/3 primitives: ≥30% inherited from Layer-0/1
@@ -202,117 +236,127 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Reth track (primary)
 
-| Metric | M6 | M12 | M18 | M24 | M30 | M36 |
-|--------|----|----|----|----|----|----|
-| Paradigm ecosystem PRs merged | 10 | 25 | 50 | 80 | 100 | 110 |
-| Reth PRs merged | 0 | 15 | 35 | 60 | 75 | 85 |
-| Storage/Trie PRs | 0 | 10 | 20 | 30 | 35 | 40 |
-| Execution PRs (revm + reth evm) | 0 | 3 | 10 | 20 | 25 | 28 |
-| Consensus/Engine PRs | 0 | 0 | 3 | 10 | 12 | 15 |
-| PR reviews given (substantive) | 0 | 10 | 40 | 100 | 150 | 200 |
-| Features led end-to-end | 0 | 0 | 1 | 3 | 5 | 7 |
-| Reth-side production crates shipped | 0 | 1 | 2 | 3 | 3 | 3 |
-| Direct relationships with Reth maintainers | 1 | 3 | 5 | 8 | 9 | 10 |
-| Conferences attended | 0 | 0 | 0 | 2 | 3 | 4 |
+| Metric                                     | M6 | M12 | M18 | M24 | M30 | M36 |
+|--------------------------------------------|----|-----|-----|-----|-----|-----|
+| Paradigm ecosystem PRs merged              | 10 | 25  | 50  | 80  | 100 | 110 |
+| Reth PRs merged                            | 0  | 15  | 35  | 60  | 75  | 85  |
+| Storage/Trie PRs                           | 0  | 10  | 20  | 30  | 35  | 40  |
+| Execution PRs (revm + reth evm)            | 0  | 3   | 10  | 20  | 25  | 28  |
+| Consensus/Engine PRs                       | 0  | 0   | 3   | 10  | 12  | 15  |
+| PR reviews given (substantive)             | 0  | 10  | 40  | 100 | 150 | 200 |
+| Features led end-to-end                    | 0  | 0   | 1   | 3   | 5   | 7   |
+| Reth-side production crates shipped        | 0  | 1   | 2   | 3   | 3   | 3   |
+| Direct relationships with Reth maintainers | 1  | 3   | 5   | 8   | 9   | 10  |
+| Conferences attended                       | 0  | 0   | 0   | 2   | 3   | 4   |
 
 ### HFT track (begins M15)
 
-| Metric | M18 | M24 | M30 | M36 |
-|--------|----|----|----|----|
-| HFT-side production crates shipped | 1 | 5 | 8 | 9 |
-| matching-engine version | scaf | v1.0 | v1.0 | v1.0 |
-| ledger-deterministic version | — | v0.5 | v0.7 | v1.0 |
-| messaging-aeron version | — | v0.5 | v0.7 | v1.0 |
-| marketdata-kernelbypass version | — | v0.5 | v0.7 | v1.0 |
-| mini-db version | — | — | v1.0 | v1.0 |
-| vector-db version | — | — | v0.5 | v0.5 |
-| Runtime hours on chaos-tested rig | 0 | 200 | 2000 | 4000 |
-| P99 matching latency (single-symbol, 1M orders) | — | <5μs | <2μs | <1μs |
-| P99 marketdata fan-out latency (IPC) | — | <10μs | <5μs | <2μs |
-| Public blog posts shipped | 0 | 1 | 4 | 7 |
+| Metric                                          | M18  | M24   | M30  | M36  |
+|-------------------------------------------------|------|-------|------|------|
+| HFT-side production crates shipped              | 1    | 5     | 8    | 9    |
+| matching-engine version                         | scaf | v1.0  | v1.0 | v1.0 |
+| ledger-deterministic version                    | —    | v0.5  | v0.7 | v1.0 |
+| messaging-aeron version                         | —    | v0.5  | v0.7 | v1.0 |
+| marketdata-kernelbypass version                 | —    | v0.5  | v0.7 | v1.0 |
+| mini-db version                                 | —    | —     | v1.0 | v1.0 |
+| vector-db version                               | —    | —     | v0.5 | v0.5 |
+| Runtime hours on chaos-tested rig               | 0    | 200   | 2000 | 4000 |
+| P99 matching latency (single-symbol, 1M orders) | —    | <5μs  | <2μs | <1μs |
+| P99 marketdata fan-out latency (IPC)            | —    | <10μs | <5μs | <2μs |
+| Public blog posts shipped                       | 0    | 1     | 4    | 7    |
 
 ### Tempo track (additive; runway optionality)
 
-| Metric | M6 | M12 | M18 | M24 | M30 | M36 |
-|--------|----|----|----|----|----|----|
-| Tempo orientation depth (0-5) | 1 | 3 | 4 | 5 | 5 | 5 |
-| Tempo PRs merged | 0 | 0 | 10 | 25 | 32 | 38 |
-| TIP specs read end-to-end | 1 | 5 | 10 | all | all | all |
-| TIP discussions participated in (substantive) | 0 | 1 | 3 | 8 | 12 | 16 |
-| Tempo-flavored workspace crates shipped | 0 | 0 | 2 | 3 | 3 | 3 |
-| Direct relationships with Tempo maintainers | 0 | 1 | 2 | 4 | 5 | 6 |
-| Tempo design-partner-facing feature shipped | 0 | 0 | 0 | 1 | 1 | 2 |
+| Metric                                        | M6 | M12 | M18 | M24 | M30 | M36 |
+|-----------------------------------------------|----|-----|-----|-----|-----|-----|
+| Tempo orientation depth (0-5)                 | 1  | 3   | 4   | 5   | 5   | 5   |
+| Tempo PRs merged                              | 0  | 0   | 10  | 25  | 32  | 38  |
+| TIP specs read end-to-end                     | 1  | 5   | 10  | all | all | all |
+| TIP discussions participated in (substantive) | 0  | 1   | 3   | 8   | 12  | 16  |
+| Tempo-flavored workspace crates shipped       | 0  | 0   | 2   | 3   | 3   | 3   |
+| Direct relationships with Tempo maintainers   | 0  | 1   | 2   | 4   | 5   | 6   |
+| Tempo design-partner-facing feature shipped   | 0  | 0   | 0   | 1   | 1   | 2   |
 
 ### Runway / lifestyle
 
-| Metric | M6 | M12 | M18 | M24 | M30 | M36 |
-|--------|----|----|----|----|----|----|
-| Months of runway remaining | 30 | 24 | 18 | 12 | 6 | (employed) |
-| Sleep ≥7h average | yes | yes | yes | yes | yes | yes |
-| Fitness sessions/week | 3 | 3 | 3 | 3 | 3 | 3 |
-| Public visibility (followers, talks given) | none | warm | warm | active | strong | strong |
+| Metric                                     | M6   | M12  | M18  | M24    | M30    | M36        |
+|--------------------------------------------|------|------|------|--------|--------|------------|
+| Months of runway remaining                 | 30   | 24   | 18   | 12     | 6      | (employed) |
+| Sleep ≥7h average                          | yes  | yes  | yes  | yes    | yes    | yes        |
+| Fitness sessions/week                      | 3    | 3    | 3    | 3      | 3      | 3          |
+| Public visibility (followers, talks given) | none | warm | warm | active | strong | strong     |
 
-**Not goals**: "core maintainer of X" or "lead of all current maintainers" or "youngest Tempo contributor." Status is the OUTPUT of shipped code, reviews, and design engagement — not a directly addressable target.
+**Not goals**: "core maintainer of X" or "lead of all current maintainers" or "youngest Tempo contributor." Status is
+the OUTPUT of shipped code, reviews, and design engagement — not a directly addressable target.
 
 ---
 
 ## Risk Register
 
-| Risk | Prob | Mitigation | Status |
-|------|------|-----------|--------|
-| Rust foundations extend Phase 1 | 70% | Budget +4 wk, weekly monitor | — |
-| Reth PR cycles slow | 80% | Many small PRs in parallel | — |
-| Reth major arch change | 60% | Telegram presence, release notes | — |
-| Day-job demand spike | 70% | Coast mode, 4h floor | — |
-| Burnout M8-14 | 80% | Rest weeks, energy monitor | — |
-| Conference budget delay | 30% | Year 1 savings earmarked | — |
-| Family emergency | 40% | Accept slip, adjust | — |
-| Motivation dip M12-14 | 70% | Pre-commit to Phase 4 | — |
-| Crypto winter | 40% | Storage/exec/HFT portable | — |
-| Crate scope creep | 60% | Lock scope at phase start | — |
-| Tempo closes-sources or becomes Paradigm-internal | 25% | Reth contributions remain floor; Tempo time falls back to upstream revm/reth | — |
-| Tempo design-partner walks | 15% | Same as above; Tempo skills still transfer to other Reth-SDK chains | — |
-| Tempo PRs crowd out Reth PRs | 50% | Hour cap enforced; Reth velocity primary metric reviewed monthly | — |
-| You like Tempo and abandon Reth core | 30% | 70/30 Reth/Tempo ratio enforced through M18; revisit at M22 only | — |
-| Tempo TIPs evolve faster than you can track | 60% | Weekly Sunday ritual skim; don't aim to know all TIPs | — |
-| Tempo's compliance/KYC features pull you toward business work you don't want | 30% | Reject contribution paths requiring KYC implementation; stay in execution + consensus + storage | — |
-| HFT track scope balloons (esp. options/exotic features) | 60% | Strict scope lock at W58; options/exotics dropped if behind schedule | — |
-| matching-engine doesn't reach v1.0 by W74 | 40% | Drop perp features first, keep spot matching + raft replication | — |
-| mini-db CAPSTONE inheritance ratio falls below 70% | 35% | Audit at W98; cut scope rather than reimplement primitives | — |
-| Operations rig (W106 onward) hardware failure | 40% | Two-machine cluster; spare drive; off-site git mirror | — |
-| Destination-tier interview cycle saturates Phase 7 | 70% | Apply early (W125), space interviews, drop weakest opportunities | — |
-| Relocation paperwork slips | 50% | Start visa research W120; have backup employer | — |
-| Day-job exit lacks 30-day notice grace | 30% | Negotiate notice in advance W125; offer transition help | — |
+| Risk                                                                         | Prob | Mitigation                                                                                      | Status |
+|------------------------------------------------------------------------------|------|-------------------------------------------------------------------------------------------------|--------|
+| Rust foundations extend Phase 1                                              | 70%  | Budget +4 wk, weekly monitor                                                                    | —      |
+| Reth PR cycles slow                                                          | 80%  | Many small PRs in parallel                                                                      | —      |
+| Reth major arch change                                                       | 60%  | Telegram presence, release notes                                                                | —      |
+| Day-job demand spike                                                         | 70%  | Coast mode, 4h floor                                                                            | —      |
+| Burnout M8-14                                                                | 80%  | Rest weeks, energy monitor                                                                      | —      |
+| Conference budget delay                                                      | 30%  | Year 1 savings earmarked                                                                        | —      |
+| Family emergency                                                             | 40%  | Accept slip, adjust                                                                             | —      |
+| Motivation dip M12-14                                                        | 70%  | Pre-commit to Phase 4                                                                           | —      |
+| Crypto winter                                                                | 40%  | Storage/exec/HFT portable                                                                       | —      |
+| Crate scope creep                                                            | 60%  | Lock scope at phase start                                                                       | —      |
+| Tempo closes-sources or becomes Paradigm-internal                            | 25%  | Reth contributions remain floor; Tempo time falls back to upstream revm/reth                    | —      |
+| Tempo design-partner walks                                                   | 15%  | Same as above; Tempo skills still transfer to other Reth-SDK chains                             | —      |
+| Tempo PRs crowd out Reth PRs                                                 | 50%  | Hour cap enforced; Reth velocity primary metric reviewed monthly                                | —      |
+| You like Tempo and abandon Reth core                                         | 30%  | 70/30 Reth/Tempo ratio enforced through M18; revisit at M22 only                                | —      |
+| Tempo TIPs evolve faster than you can track                                  | 60%  | Weekly Sunday ritual skim; don't aim to know all TIPs                                           | —      |
+| Tempo's compliance/KYC features pull you toward business work you don't want | 30%  | Reject contribution paths requiring KYC implementation; stay in execution + consensus + storage | —      |
+| HFT track scope balloons (esp. options/exotic features)                      | 60%  | Strict scope lock at W58; options/exotics dropped if behind schedule                            | —      |
+| matching-engine doesn't reach v1.0 by W74                                    | 40%  | Drop perp features first, keep spot matching + raft replication                                 | —      |
+| mini-db CAPSTONE inheritance ratio falls below 70%                           | 35%  | Audit at W98; cut scope rather than reimplement primitives                                      | —      |
+| Operations rig (W106 onward) hardware failure                                | 40%  | Two-machine cluster; spare drive; off-site git mirror                                           | —      |
+| Destination-tier interview cycle saturates Phase 7                           | 70%  | Apply early (W125), space interviews, drop weakest opportunities                                | —      |
+| Relocation paperwork slips                                                   | 50%  | Start visa research W120; have backup employer                                                  | —      |
+| Day-job exit lacks 30-day notice grace                                       | 30%  | Negotiate notice in advance W125; offer transition help                                         | —      |
 
 ---
 
 ## Principles
 
 1. Deliverables over hours. 5h target, 4h floor. Done at 3h → rest. Stuck at 6h → diagnose.
-2. The 9 production crates (3 Reth + 5 HFT + 1 vector) plus the 3 Tempo crates are the real output. Everything else is means.
+2. The 9 production crates (3 Reth + 5 HFT + 1 vector) plus the 3 Tempo crates are the real output. Everything else is
+   means.
 3. Depth over breadth. 3 Reth subsystems + 5 HFT products mastered > 12 shallow.
 4. Code reading > code writing in Phase 3+.
 5. Ship imperfect > perfect never.
 6. AI leverage for architecture research; AI cannot substitute for the reading hours.
 7. Blogging optional through M18; expected M19+ (one post per major capstone).
 8. Post-Reth trajectory deferred at M12, not forgotten. Reassessed at M24 and M30.
-9. Conferences non-negotiable Year 2 (EthCC, Devcon) and Year 3 (one HFT-adjacent: e.g. Distributed Systems Conference, QCon).
+9. Conferences non-negotiable Year 2 (EthCC, Devcon) and Year 3 (one HFT-adjacent: e.g. Distributed Systems Conference,
+   QCon).
 10. Day-job is infrastructure. Coast mode. Sleep 7h, fitness 3x/week minimum.
 11. Energy is the only real budget. Track weekly.
 12. M12 / M24 / M30 / M36 are decision points. Each has explicit criteria below.
 13. Scope discipline on crates. No feature creep. v0.5 → v0.7 → v1.0 cadence enforced.
-14. **Tempo is leverage on the Reth bet, not a parallel bet.** Treat it as such in budgeting, framing, and CV positioning through M24. At M24, re-evaluate against Path D criteria.
-15. **Path D at M24 is conditional, not aspirational.** Unlocks only if PRs, relationships, and design engagement are real.
-16. **The deliverable is shipped code on systems that process real production-shape workloads.** Not "core maintainer status." Status is downstream of shipped code.
-17. **The HFT track is the new optionality.** If Reth ecosystem hiring is soft at M24, the HFT crates plus 2000+ hours runtime by M30 (4000+ by M36) is the bridge to destination-tier IC compensation that the Reth track alone may not be.
-18. **No primitive twice.** This is the most-violated principle in ambitious self-directed plans, and the discipline of the workspace layout is what enforces it.
+14. **Tempo is leverage on the Reth bet, not a parallel bet.** Treat it as such in budgeting, framing, and CV
+    positioning through M24. At M24, re-evaluate against Path D criteria.
+15. **Path D at M24 is conditional, not aspirational.** Unlocks only if PRs, relationships, and design engagement are
+    real.
+16. **The deliverable is shipped code on systems that process real production-shape workloads.** Not "core maintainer
+    status." Status is downstream of shipped code.
+17. **The HFT track is the new optionality.** If Reth ecosystem hiring is soft at M24, the HFT crates plus 2000+ hours
+    runtime by M30 (4000+ by M36) is the bridge to destination-tier IC compensation that the Reth track alone may not
+    be.
+18. **No primitive twice.** This is the most-violated principle in ambitious self-directed plans, and the discipline of
+    the workspace layout is what enforces it.
 
 ---
 
 # PHASE 1: RUST MASTERY (Month 1-3)
 
 > **No Tempo entries this phase.** Rust mastery is the prerequisite.
-> Layer-1 primitives extracted as a side effect: `time` (W6), `backpressure` (W11), `bufpool` scaffold (W12). No HFT entries this phase.
+> Layer-1 primitives extracted as a side effect: `time` (W6), `backpressure` (W11), `bufpool` scaffold (W12). No HFT
+> entries this phase.
 
 ## Month 1: Rust Core (Weeks 1-4)
 
@@ -325,9 +369,11 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Pre-week setup**: ✓ already done
 
 **Monday — Skim the Book chs 1-9, write nothing + workspace scaffold**
+
 - [X] Speed-read Book ch1-3 (~30 min)
 - [X] Speed-read Book ch5-9 (~90 min): structs, enums, modules, collections, error handling
-- [X] Skip beginner Rustlings: `intro`, `variables`, `functions`, `if`, `primitive_types`, `strings`, `vecs`, `hashmaps`, `modules`
+- [X] Skip beginner Rustlings: `intro`, `variables`, `functions`, `if`, `primitive_types`, `strings`, `vecs`,
+  `hashmaps`, `modules`
 - [X] Write `notes/01_kotlin_to_rust_delta.md`
 - [X] Create workspace `Cargo.toml` (resolver = "2", members = ["crates/*"])
 - [X] Create `crates/eth-primitives` with Cargo.toml, src/lib.rs, src/error.rs skeleton
@@ -335,29 +381,36 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [X] Commit + log
 
 **Tuesday — Book ch4 + `FixedBytes<const N: usize>`**
+
 - [X] Book ch4.1 (Ownership) — read twice
 - [X] Book ch4.2 (References and Borrowing) — read twice
 - [X] Book ch4.3 (Slices)
 - [X] Rustlings `move_semantics` (all 6)
-- [X] **Build**: `crates/eth-primitives/src/fixed_bytes.rs` — `FixedBytes<const N: usize>([u8; N])` with Copy, Default, From, AsRef, AsMut, Deref, PartialEq, Hash. repr(transparent).
+- [X] **Build**: `crates/eth-primitives/src/fixed_bytes.rs` — `FixedBytes<const N: usize>([u8; N])` with Copy, Default,
+  From, AsRef, AsMut, Deref, PartialEq, Hash. repr(transparent).
 - [X] Test: zero-init, equality, slice access, hash stability. Match alloy-primitives test cases.
-- [X] Borrow-checker drill: `fn split(&mut self) -> (&mut [u8], &mut [u8])` resolved via split_at_mut. Document in `notes/02_borrow_checker_errors.md`.
+- [X] Borrow-checker drill: `fn split(&mut self) -> (&mut [u8], &mut [u8])` resolved via split_at_mut. Document in
+  `notes/02_borrow_checker_errors.md`.
 - [X] Commit + log
 
 **Wednesday — Lifetimes + `Bytes` + `BytesView<'a>`**
+
 - [X] Book ch10.3 (Lifetimes) — read twice
 - [X] Watch Crust of Rust: Lifetime Annotations (full)
-- [X] **Build**: `crates/eth-primitives/src/bytes.rs` — `Bytes(Arc<[u8]>)` cheap-clone wrapper. Methods: new, from_static, slice, len, is_empty, as_ref.
+- [X] **Build**: `crates/eth-primitives/src/bytes.rs` — `Bytes(Arc<[u8]>)` cheap-clone wrapper. Methods: new,
+  from_static, slice, len, is_empty, as_ref.
 - [X] **Build**: `BytesView<'a>(&'a [u8])` borrowed views. Add `Bytes::view(&self) -> BytesView<'_>`.
 - [X] Implement `From<Vec<u8>>`, `From<&'static [u8]>`, `Display` (lowercase hex with 0x prefix).
 - [X] Document lifetime elision rules in `notes/03_lifetimes.md`.
 - [X] Commit + log
 
 **Thursday — Traits + `Address` + `B256` + sealed-trait pattern**
+
 - [X] Book ch10.1 + ch10.2 (Generics, Traits)
 - [X] Rustlings `generics`, `traits` — all
 - [X] Read about orphan rule, coherence, sealed traits
-- [X] **Build**: `crates/eth-primitives/src/address.rs` — `pub type Address = FixedBytes<20>;` + EIP-55 checksum encoding.
+- [X] **Build**: `crates/eth-primitives/src/address.rs` — `pub type Address = FixedBytes<20>;` + EIP-55 checksum
+  encoding.
 - [X] **Build**: `crates/eth-primitives/src/aliases.rs` — `B256 = FixedBytes<32>`, `B64 = FixedBytes<8>`.
 - [X] **Build**: sealed-trait pattern — `mod private { pub trait Sealed {} }`. impl Sealed for Address, B256, Bytes.
 - [X] Write 4 functions over the sealed trait (&dyn, Box<dyn>, impl, <T:>). Observe what compiles.
@@ -365,6 +418,7 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [X] Commit + log
 
 **Friday — Error handling + iterators via `PrimitivesError` + hex parsing**
+
 - [X] Book ch9 + ch13.1 + ch13.2
 - [X] Rustlings `error_handling`, `options`, `iterators` — all
 - [X] Read `thiserror` and `anyhow` docs end-to-end
@@ -376,6 +430,7 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [X] Commit + log
 
 **Saturday — Closures + Fn/FnMut/FnOnce + `U256` + R4R**
+
 - [X] Book ch13.1 (Closures) — FnOnce/FnMut/Fn semantics
 - [X] **Build**: `crates/eth-primitives/src/uint.rs` — `pub use ruint::aliases::U256;` + extension trait `U256Ext`.
 - [X] Closure exercise: `Bytes::map_chunks<F: FnMut(&[u8]) -> Bytes>` — used by RLP encoder Week 5.
@@ -384,6 +439,7 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [X] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [X] "Can I explain ownership/borrowing/lifetimes using `Bytes::slice` and `FixedBytes` without looking up?"
 - [X] Inheritance check: eth-primitives exports complete.
 
@@ -397,49 +453,66 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Feeds into**: `exec-vm` Phase 4; `storage-trie` Phase 3; [NEW] `bufpool` extraction W12.
 
 **Monday — Box, Deref, Drop via `Page` primitive**
+
 - [X] Book ch15.1-15.4
-- [X] **Build**: `crates/eth-storage-cache/src/page.rs` — `Page(Box<[u8; 4096]>)` with Deref, DerefMut, Drop instrumented via tracing::trace!. This 4 KiB page is reused for mmap-backed layout in Phase 3, AND is the primitive that `bufpool` (W12) will own and pool.
-- [X] Implement `MyBox<T>` exercise applied as `PageBox<T: ?Sized>` — single-allocation deserialize-in-place. Shape MDBX cursors use.
-- [X] Single-linked list of Pages as a free-list allocator (`PageAllocator`). Attempt doubly-linked free list to feel the pain → motivates Rc/Weak Tuesday.
+- [X] **Build**: `crates/eth-storage-cache/src/page.rs` — `Page(Box<[u8; 4096]>)` with Deref, DerefMut, Drop
+  instrumented via tracing::trace!. This 4 KiB page is reused for mmap-backed layout in Phase 3, AND is the primitive
+  that `bufpool` (W12) will own and pool.
+- [X] Implement `MyBox<T>` exercise applied as `PageBox<T: ?Sized>` — single-allocation deserialize-in-place. Shape MDBX
+  cursors use.
+- [X] Single-linked list of Pages as a free-list allocator (`PageAllocator`). Attempt doubly-linked free list to feel
+  the pain → motivates Rc/Weak Tuesday.
 - [X] Commit + log
 
 **Tuesday — RefCell, Rc, Arc via `Account` cache**
+
 - [X] Book ch15.5-15.6
 - [X] Watch Crust of Rust: Smart Pointers and Interior Mutability
-- [X] **Build**: `crates/eth-storage-cache/src/account.rs` — `Account { nonce: u64, balance: U256, code_hash: B256, code: Option<Bytes> }` mirroring revm_primitives::Account.
-- [X] **Build**: `LocalAccountCache(HashMap<Address, Rc<RefCell<Account>>>)` first — single-threaded. Add get_or_load, commit. Use RefCell::borrow_mut and observe the runtime panic when you double-borrow.
-- [X] **Migrate**: clone the file to `SharedAccountCache(HashMap<Address, Arc<RwLock<Account>>>)`. Document the diff in `notes/05_smart_pointers.md`.
+- [X] **Build**: `crates/eth-storage-cache/src/account.rs` —
+  `Account { nonce: u64, balance: U256, code_hash: B256, code: Option<Bytes> }` mirroring revm_primitives::Account.
+- [X] **Build**: `LocalAccountCache(HashMap<Address, Rc<RefCell<Account>>>)` first — single-threaded. Add get_or_load,
+  commit. Use RefCell::borrow_mut and observe the runtime panic when you double-borrow.
+- [X] **Migrate**: clone the file to `SharedAccountCache(HashMap<Address, Arc<RwLock<Account>>>)`. Document the diff in
+  `notes/05_smart_pointers.md`.
 - [X] Commit + log
 
 **Wednesday — Threads, channels, Mutex via `StateCache` trait**
+
 - [X] Book ch16 (whole chapter)
 - [X] Watch Crust of Rust: Channels — implement bounded MPSC from scratch
-- [X] **Build**: `crates/eth-storage-cache/src/database.rs` — `StateCache` trait shaped like revm's `Database` (basic, code_by_hash, storage, block_hash).
-- [ ] Implement `MutexCache` and `RwLockCache`. Apply bounded-MPSC as write-batch queue.
-- [ ] Read `parking_lot::Mutex` vs std — keep parking_lot (reth uses it).
-- [ ] Commit + log
+- [X] **Build**: `crates/eth-storage-cache/src/database.rs` — `StateCache` trait shaped like revm's `Database` (basic,
+  code_by_hash, storage, block_hash).
+- [X] Implement `MutexCache` and `RwLockCache`. Apply bounded-MPSC as write-batch queue.
+- [X] Read `parking_lot::Mutex` vs std — keep parking_lot (reth uses it).
+- [X] Commit + log
 
 **Thursday — Send/Sync via `ShardedCache`**
+
 - [X] Book ch16.4 (Send and Sync)
 - [ ] Read `std::marker` docs carefully
-- [ ] **Build**: `ShardedCache<const N: usize>` — `[parking_lot::RwLock<HashMap<Address, Account>>; N]` hash-routed by `Address::word()[0] % N`. Implement StateCache.
+- [ ] **Build**: `ShardedCache<const N: usize>` — `[parking_lot::RwLock<HashMap<Address, Account>>; N]` hash-routed by
+  `Address::word()[0] % N`. Implement StateCache.
 - [ ] Send/!Sync + !Send/Sync exercises grounded in the cache.
 - [ ] Commit + log
 
 **Friday — `EvictionPolicy` + criterion benches**
-- [ ] **Build**: `crates/eth-storage-cache/src/eviction.rs` — `EvictionPolicy` trait. LruEviction + BlockTagEviction. The LRU-K variant gets extracted into `bufpool` at W12.
+
+- [ ] **Build**: `crates/eth-storage-cache/src/eviction.rs` — `EvictionPolicy` trait. LruEviction + BlockTagEviction.
+  The LRU-K variant gets extracted into `bufpool` at W12.
 - [ ] Wire eviction into ShardedCache.
 - [ ] criterion bench: Mutex vs RwLock vs Sharded(N=16, N=64). Plot and commit.
 - [ ] Read parking_lot, dashmap, arc-swap docs — 1-paragraph summary each.
 - [ ] Commit + log
 
 **Saturday — Polish + R4R + tag v0.1.0**
+
 - [ ] thiserror StateCacheError, tracing spans, loom tests on tiny subset.
 - [ ] Read Rust for Rustaceans ch1-2.
 - [ ] README + tag `eth-storage-cache v0.1.0`.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] Inheritance check: StateCache mirrors revm's Database. Page primitive is now the seed for `bufpool` W12.
 
 ---
@@ -448,15 +521,19 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 **Mirror target**: `reth-eth-wire` framing layer + `tokio_util::codec::Framed`.
 **Crate created**: `crates/eth-network-codec/`.
-**[NEW] Side product**: `BackpressureStrategy` enum (Saturday) is the seed for the `backpressure` crate extracted at W11.
+**[NEW] Side product**: `BackpressureStrategy` enum (Saturday) is the seed for the `backpressure` crate extracted at
+W11.
 
 **Monday — Tokio fast track + transport scaffold**
+
 - [ ] Read Tokio tutorial cover-to-cover.
-- [ ] **Build**: `crates/eth-network-codec/src/transport.rs` — TcpStream wrapper + `LengthDelimitedCodec` with 1 MiB max frame.
+- [ ] **Build**: `crates/eth-network-codec/src/transport.rs` — TcpStream wrapper + `LengthDelimitedCodec` with 1 MiB max
+  frame.
 - [ ] Manual TCP echo via framed transport.
 - [ ] Commit + log
 
 **Tuesday — Manual Future + `MessageRequest`**
+
 - [ ] Async Book ch1-7 in one go.
 - [ ] Watch Crust of Rust: Async/Await (full) — implement trivial executor.
 - [ ] **Build**: `crates/eth-network-codec/src/request.rs` — `MessageRequest<R>` future.
@@ -464,27 +541,35 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Commit + log
 
 **Wednesday — Pin/Unpin via `MessageStream`**
+
 - [ ] Watch Crust of Rust: The Drop Check; read `std::pin` docs.
-- [ ] **Build**: `crates/eth-network-codec/src/stream.rs` — `MessageStream<C: Codec, IO>` implementing `tokio_stream::Stream`. Use `pin_project_lite`.
-- [ ] Demonstrate why MessageStream cannot be Unpin. Rewrite once with manual unsafe pin projection, then with pin_project_lite. Compare.
+- [ ] **Build**: `crates/eth-network-codec/src/stream.rs` — `MessageStream<C: Codec, IO>` implementing
+  `tokio_stream::Stream`. Use `pin_project_lite`.
+- [ ] Demonstrate why MessageStream cannot be Unpin. Rewrite once with manual unsafe pin projection, then with
+  pin_project_lite. Compare.
 - [ ] `notes/06_pin_unpin.md` — worked example.
 - [ ] Commit + log
 
 **Thursday — `EthMessage` enum + `Codec` trait**
+
 - [ ] **Build**: `crates/eth-network-codec/src/codec.rs` — `Codec` trait.
-- [ ] **Build**: `crates/eth-network-codec/src/message.rs` — `EthMessage` enum subset: Status, BlockHeaders, BlockBodies, NewBlock, GetBlockHeaders.
+- [ ] **Build**: `crates/eth-network-codec/src/message.rs` — `EthMessage` enum subset: Status, BlockHeaders,
+  BlockBodies, NewBlock, GetBlockHeaders.
 - [ ] RLP placeholder (tagged-byte format; full RLP comes Week 5).
 - [ ] tokio TCP server with graceful shutdown.
 - [ ] Commit + log
 
 **Friday — Token bucket as custom `Future` + per-peer rate limiting**
+
 - [ ] **Build**: `crates/eth-network-codec/src/rate_limit.rs` — `TokenBucket` as custom Future.
 - [ ] **Build**: `RateLimitedStream<S: Stream>`.
 - [ ] Test under load (1k concurrent peers).
 - [ ] Commit + log
 
 **Saturday — `BackpressureStrategy` + observability + tag v0.1.0**
-- [ ] **Build**: `BackpressureStrategy` enum (DropOldest, DropNewest, Block). **[NEW]** Mark this enum with a doc comment: "extracted into `backpressure` crate W11."
+
+- [ ] **Build**: `BackpressureStrategy` enum (DropOldest, DropNewest, Block). **[NEW]** Mark this enum with a doc
+  comment: "extracted into `backpressure` crate W11."
 - [ ] Tracing spans for connection lifecycle.
 - [ ] Prometheus metrics via `metrics` crate.
 - [ ] Load test with 10k concurrent connections.
@@ -492,6 +577,7 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] Inheritance check.
 
 ---
@@ -501,6 +587,7 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate extended**: `eth-primitives` v0.1 → v0.2. Add `crates/eth-primitives-derive/`.
 
 **Monday — Layout audit on existing `eth-primitives`**
+
 - [ ] Rustonomicon ch1, ch2, ch3.
 - [ ] Run size_of/align_of over every type. Verify FixedBytes<N> is repr(transparent).
 - [ ] Add repr(C) to Account in eth-storage-cache.
@@ -508,13 +595,16 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Commit + log
 
 **Tuesday — Atomics via `SealedHeader` + `ChainHead` SeqLock**
+
 - [ ] Watch Crust of Rust: Atomics and Memory Ordering (full).
 - [ ] **Build**: `crates/eth-primitives/src/atomic_hash.rs` — OnceLock<B256> lazy hash cache. `Sealable` trait.
 - [ ] **Build**: `crates/eth-primitives/src/chain_head.rs` — `ChainHead { hash, number }` protected by SeqLock.
-- [ ] Re-read Ryuo disruptor code with fresh atomics eyes. Note: the SeqLock pattern here is identical to the one matching-engine (W58) will use for L1 best-bid/ask publishing.
+- [ ] Re-read Ryuo disruptor code with fresh atomics eyes. Note: the SeqLock pattern here is identical to the one
+  matching-engine (W58) will use for L1 best-bid/ask publishing.
 - [ ] Commit + log
 
 **Wednesday — Variance + PhantomData via `Sealed<T>`**
+
 - [ ] Watch Crust of Rust: Subtyping and Variance.
 - [ ] **Build**: `crates/eth-primitives/src/sealed.rs` — `Sealed<T> { inner, hash: OnceLock<B256> }`.
 - [ ] Make covariant via PhantomData<&'a T> for SealedRef<'a, T>.
@@ -522,25 +612,31 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Commit + log
 
 **Thursday — Unsafe + miri via `BytesMut::reserve`**
+
 - [ ] Read Nomicon chapters on aliasing, UB.
-- [ ] **Build**: `crates/eth-primitives/src/bytes_mut.rs` — `BytesMut`. reserve + extend_from_slice with raw pointer arithmetic. `BytesMut::freeze` to Bytes.
+- [ ] **Build**: `crates/eth-primitives/src/bytes_mut.rs` — `BytesMut`. reserve + extend_from_slice with raw pointer
+  arithmetic. `BytesMut::freeze` to Bytes.
 - [ ] Run `cargo +nightly miri test -p eth-primitives`. Chase every UB report.
 - [ ] Commit + log
 
 **Friday — Macros via `b256!` + `SimpleEncode` derive**
+
 - [ ] Read R4R ch7 + Little Book of Rust Macros.
 - [ ] **Build**: `crates/eth-primitives/src/macros.rs` — `b256!`, `address!` const macros.
-- [ ] **Build**: `crates/eth-primitives-derive/` proc-macro crate (syn + quote). `#[derive(SimpleEncode)]` placeholder for Week 5's RlpEncodable.
+- [ ] **Build**: `crates/eth-primitives-derive/` proc-macro crate (syn + quote). `#[derive(SimpleEncode)]` placeholder
+  for Week 5's RlpEncodable.
 - [ ] Test the derive on a 3-field struct.
 - [ ] Commit + log
 
 **Saturday — R4R + integration polish**
+
 - [ ] R4R ch1-5 — finish.
 - [ ] Apply at least one R4R insight to refactor existing crates.
 - [ ] Tag `eth-primitives v0.2.0`.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 1 review**
+
 - [ ] Honest assessment: "Could I read reth-trie source today?"
 - [ ] Inheritance check: 4 crates shipped.
 - [ ] Update North Star M1 metrics.
@@ -554,19 +650,24 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Mirror target**: `alloy-rlp` + `alloy-rlp-derive`.
 
 **Monday — Spec + traits**
-- [ ] Re-read W4 Fri's `eth-primitives-derive` scaffold (Cargo.toml proc-macro = true, syn/quote/proc-macro2 deps, basic DeriveInput parsing). 5 min refresh so you don't spend 30 min re-orienting Friday.
+
+- [ ] Re-read W4 Fri's `eth-primitives-derive` scaffold (Cargo.toml proc-macro = true, syn/quote/proc-macro2 deps, basic
+  DeriveInput parsing). 5 min refresh so you don't spend 30 min re-orienting Friday.
 - [ ] Read RLP spec. Read alloy-rlp's `Encodable` and `Decodable` source.
 - [ ] **Build**: `crates/eth-rlp/src/lib.rs` — `Encodable` and `Decodable` traits matching alloy's signatures.
 - [ ] R4R ch7 cross-reference.
 - [ ] Commit + log
 
 **Tuesday — `Header` + scalar encoding**
+
 - [ ] **Build**: `crates/eth-rlp/src/header.rs` — Header { list, payload_length }. Test against ethereumjs fixtures.
-- [ ] **Build**: `crates/eth-rlp/src/encodable.rs` — impls for u8..u64, U256, bool, slices, Vec, String, Address, B256, Bytes.
+- [ ] **Build**: `crates/eth-rlp/src/encodable.rs` — impls for u8..u64, U256, bool, slices, Vec, String, Address, B256,
+  Bytes.
 - [ ] R4R ch9-11.
 - [ ] Commit + log
 
 **Wednesday — List encoding + `Vec<T>` + `length_of_length`**
+
 - [ ] **Build**: Encodable for `Vec<T: Encodable>`, Option<T>, tuples, arrays. length_of_length helper.
 - [ ] Nested list test: `Vec<Vec<u64>>` matches Geth's RLP byte-for-byte.
 - [ ] Buffer-size-class optimization: pre-size BytesMut.
@@ -574,22 +675,28 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Commit + log
 
 **Thursday — Alloy code tour (compare not copy)**
+
 - [ ] Clone alloy-rs/alloy. Read alloy-primitives source AND DIFF against your eth-primitives. Note 5 divergences.
 - [ ] Read alloy-rlp source — confirm trait signatures match.
 - [ ] Commit notes + diff log.
 - [ ] Commit + log
 
 **Friday — `RlpEncodable` / `RlpDecodable` derive macros**
-- [ ] **Build**: extend `crates/eth-primitives-derive/` with `#[derive(RlpEncodable, RlpDecodable)]`. Mirror alloy-rlp-derive API.
+
+- [ ] **Build**: extend `crates/eth-primitives-derive/` with `#[derive(RlpEncodable, RlpDecodable)]`. Mirror
+  alloy-rlp-derive API.
 - [ ] Test on 5-field struct — bytes match alloy's derive output.
 - [ ] Commit + log
 
 **Saturday — `etherscanlite` CLI**
-- [ ] **Build**: `crates/etherscanlite/` — CLI fetching balance/nonce/last-5-tx via alloy-provider, parsed into your types. ~500 LOC.
+
+- [ ] **Build**: `crates/etherscanlite/` — CLI fetching balance/nonce/last-5-tx via alloy-provider, parsed into your
+  types. ~500 LOC.
 - [ ] First Alloy issue scan.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] Tag `eth-rlp v0.1.0`.
 
 ---
@@ -599,13 +706,16 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Mirror target**: `alloy-consensus` + bespoke `time` crate that becomes the universal time substrate.
 
 **Monday — Yellow Paper §4 + `Header`**
+
 - [ ] ME ch3, ch4. Yellow Paper §4.
 - [ ] Run reth on Sepolia.
-- [ ] **Build**: `crates/eth-consensus/src/header.rs` — Header mirroring alloy_consensus::Header (all fields incl. requests_hash). `#[derive(RlpEncodable, RlpDecodable)]`.
+- [ ] **Build**: `crates/eth-consensus/src/header.rs` — Header mirroring alloy_consensus::Header (all fields incl.
+  requests_hash). `#[derive(RlpEncodable, RlpDecodable)]`.
 - [ ] Test: encode mainnet block 1's header → bytes match `cast block 1 --raw`.
 - [ ] Commit + log
 
 **Tuesday — Tx types + `Transaction` trait**
+
 - [ ] ME ch5-6. Yellow §6.
 - [ ] **Build**: TxLegacy, TxEip1559, TxEip4844.
 - [ ] **Build**: `Transaction` trait matching alloy.
@@ -613,22 +723,34 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Commit + log
 
 **Wednesday — EIP-1559 + EIP-4844 fee math**
+
 - [ ] Read EIP-1559 + EIP-4844 specs.
 - [ ] **Build**: `crates/eth-consensus/src/eip1559.rs` — calc_next_block_base_fee.
 - [ ] **Build**: `crates/eth-consensus/src/eip4844.rs` — calc_excess_blob_gas, calc_blob_fee.
 - [ ] Commit + log
 
 **Thursday — [NEW] `time` crate v0.1 scaffold**
-- [ ] **Build**: `crates/time/Cargo.toml` workspace member. No deps except `core` and feature-gated `chrono` for Display only.
-- [ ] **Build**: `crates/time/src/monotonic.rs` — `Monotonic(u64)` newtype over `std::time::Instant::elapsed_since_anchor`. Anchor set once at process start. `now() -> Monotonic` is the universal monotonic source for the entire workspace from this week forward.
-- [ ] **Build**: `crates/time/src/lamport.rs` — `LamportClock { counter: AtomicU64 }`. `tick() -> u64` increments + returns. `observe(other: u64)` sets counter to max(self+1, other+1).
-- [ ] **Build**: `crates/time/src/hlc.rs` — `HybridLogicalClock { wall: AtomicU64, logical: AtomicU64 }` stub with `now() -> Hlc { ms_since_epoch, logical }`. Full implementation comes when distributed tx (W42) needs cross-node ordering.
-- [ ] **Build**: `crates/time/src/hw.rs` — `HardwareTimestamp` trait stub. Default impl returns Monotonic::now(). PTP and TSC variants land later.
-- [ ] Test: monotonic always non-decreasing; Lamport gives total order under concurrent thread spawn (1000 threads × 100 ticks each); HLC stub returns same value within 1 ms.
+
+- [ ] **Build**: `crates/time/Cargo.toml` workspace member. No deps except `core` and feature-gated `chrono` for Display
+  only.
+- [ ] **Build**: `crates/time/src/monotonic.rs` — `Monotonic(u64)` newtype over
+  `std::time::Instant::elapsed_since_anchor`. Anchor set once at process start. `now() -> Monotonic` is the universal
+  monotonic source for the entire workspace from this week forward.
+- [ ] **Build**: `crates/time/src/lamport.rs` — `LamportClock { counter: AtomicU64 }`. `tick() -> u64` increments +
+  returns. `observe(other: u64)` sets counter to max(self+1, other+1).
+- [ ] **Build**: `crates/time/src/hlc.rs` — `HybridLogicalClock { wall: AtomicU64, logical: AtomicU64 }` stub with
+  `now() -> Hlc { ms_since_epoch, logical }`. Full implementation comes when distributed tx (W42) needs cross-node
+  ordering.
+- [ ] **Build**: `crates/time/src/hw.rs` — `HardwareTimestamp` trait stub. Default impl returns Monotonic::now(). PTP
+  and TSC variants land later.
+- [ ] Test: monotonic always non-decreasing; Lamport gives total order under concurrent thread spawn (1000 threads × 100
+  ticks each); HLC stub returns same value within 1 ms.
 - [ ] Commit + log
 
 **Friday — `time` crate v0.1 ship + Alloy issue hunt**
-- [ ] **Build**: `crates/time/src/lib.rs` — re-exports + crate-level docs. Document the contract that `bufpool`, `wal`, `txn`, `matching-engine`, `ledger`, `messaging-aeron`, `consensus-raft` will all share this single time substrate.
+
+- [ ] **Build**: `crates/time/src/lib.rs` — re-exports + crate-level docs. Document the contract that `bufpool`, `wal`,
+  `txn`, `matching-engine`, `ledger`, `messaging-aeron`, `consensus-raft` will all share this single time substrate.
 - [ ] Tag `time v0.1.0`.
 - [ ] Browse alloy issues. Prefer alloy-consensus, alloy-eips, alloy-rlp.
 - [ ] Read CONTRIBUTING.md + 5 recently merged PRs.
@@ -636,12 +758,14 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Commit + log
 
 **Saturday — First Alloy PR work + `Signed<T>`**
+
 - [ ] Fork, branch, implement.
 - [ ] cargo fmt, clippy, nextest. Open PR.
 - [ ] **Build**: `crates/eth-consensus/src/signed.rs` — `Signed<T> { tx, signature, hash: OnceLock<B256> }`.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] Inheritance check: `time` now exists; mark each future Layer-1+ crate as "must depend on `time`."
 
 ---
@@ -651,32 +775,38 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate extended**: `eth-consensus` v0.1 → v0.2.
 
 **Monday — PR #1 review iteration + EIP-2930 access list**
+
 - [ ] Address Alloy PR #1 review.
 - [ ] **Build**: `crates/eth-consensus/src/eip2930.rs` — AccessList. Wire into TxEip1559 + TxEip4844.
 - [ ] Commit + log
 
 **Tuesday — EIP-7702 `Authorization` + `TxEip7702`**
+
 - [ ] Read EIP-7702 + EIP-7685 specs end-to-end.
 - [ ] **Build**: `crates/eth-consensus/src/eip7702.rs` — Authorization, SignedAuthorization, recover_authority.
 - [ ] **Build**: TxEip7702 with authorization_list.
 - [ ] Commit + log
 
 **Wednesday — EIP-7685 + EOF skeleton**
+
 - [ ] Read EOF EIPs: 3540, 3670, 4200, 4750.
 - [ ] **Build**: `crates/eth-consensus/src/eip7685.rs` — Request enum + requests_root.
 - [ ] **Build**: `crates/eth-consensus/src/bytecode.rs` — Bytecode enum. EOF parser skeleton.
 - [ ] Commit + log
 
 **Thursday — `TxEnvelope` + Second Alloy PR**
+
 - [ ] **Build**: `crates/eth-consensus/src/envelope.rs` — TxEnvelope enum dispatching across all tx types.
 - [ ] Pick + implement second Alloy PR.
 - [ ] Commit + log
 
 **Friday — Third Alloy PR (medium)**
+
 - [ ] Substantive PR — prefer alloy-consensus or alloy-eips.
 - [ ] Commit + log
 
 **Saturday — PR #3 submitted + Foundry intro**
+
 - [ ] Submit PR #3.
 - [ ] Clone foundry-rs/foundry, browse forge + cast.
 - [ ] Commit notes.
@@ -690,35 +820,43 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate extended**: `eth-consensus` v0.2 → v0.3.
 
 **Monday — Foundry issue hunt + claim**
+
 - [ ] Browse Foundry issues, pick good first. Prefer `cast`.
 - [ ] Commit notes.
 
 **Tuesday — First Foundry PR**
+
 - [ ] Implement + submit.
 - [ ] Commit + log
 
 **Wednesday — revm overview (read with `exec-vm` Phase 4 in mind)**
+
 - [ ] Clone bluealloy/revm, read README + arch doc.
 - [ ] Cross-reference revm-primitives::Database against your eth-storage-cache::StateCache. Adjust StateCache if needed.
 - [ ] Commit notes.
 
 **Thursday — revm-interpreter + `Receipt` build**
+
 - [ ] Read revm-primitives, compare with eth-primitives.
 - [ ] Read revm-interpreter — opcode dispatch, gas. Trace ADD end-to-end.
 - [ ] **Build**: `crates/eth-consensus/src/receipt.rs` — Receipt + ReceiptEnvelope. RLP derive.
 - [ ] Commit + log
 
 **Friday — ME ch13 + `Log` + `Bloom`**
+
 - [ ] ME ch13 full. Walk evm.codes top 20 opcodes.
-- [ ] **Build**: `crates/eth-consensus/src/log.rs` — Log + bloom_filter(logs). Note: the Bloom filter here is a fixed-size 2048-bit Ethereum bloom. The general `bloom` crate (classic + counting + scalable) ships W34.
+- [ ] **Build**: `crates/eth-consensus/src/log.rs` — Log + bloom_filter(logs). Note: the Bloom filter here is a
+  fixed-size 2048-bit Ethereum bloom. The general `bloom` crate (classic + counting + scalable) ships W34.
 - [ ] Commit notes.
 
 **Saturday — PR cleanup + tag `eth-consensus v0.3.0`**
+
 - [ ] Address all reviewer feedback.
 - [ ] Tag `eth-consensus v0.3.0`.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 2 review**
+
 - [ ] Target check: 3+ Alloy PRs, 1+ Foundry PR.
 
 ---
@@ -731,35 +869,44 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate created**: `crates/exec-vm/`.
 
 **Monday — `Stack` + arithmetic opcodes**
+
 - [ ] **Build**: `crates/exec-vm/src/interpreter/stack.rs` — 1024-deep Stack mirroring revm_interpreter::Stack.
 - [ ] **Build**: `crates/exec-vm/src/instructions/arithmetic.rs` — ADD, SUB, MUL, DIV, MOD. 3 gas/op.
 - [ ] **Build**: `crates/exec-vm/src/interpreter/mod.rs` — Interpreter skeleton + step() dispatcher.
 - [ ] Commit + log
 
 **Tuesday — `SharedMemory` + control flow**
-- [ ] **Build**: `crates/exec-vm/src/interpreter/memory.rs` — SharedMemory. mload/mstore/mstore8/resize with quadratic gas.
+
+- [ ] **Build**: `crates/exec-vm/src/interpreter/memory.rs` — SharedMemory. mload/mstore/mstore8/resize with quadratic
+  gas.
 - [ ] **Build**: `crates/exec-vm/src/instructions/control.rs` — JUMP, JUMPI, JUMPDEST, PC, STOP, INVALID.
 - [ ] **Build**: `crates/exec-vm/src/instructions/comparison.rs` — LT, GT, SLT, SGT, EQ, ISZERO, AND, OR, XOR, NOT.
 - [ ] Commit + log
 
 **Wednesday — `Gas` + SSTORE/SLOAD against `StateCache`**
+
 - [ ] **Build**: `crates/exec-vm/src/interpreter/gas.rs` — Gas { limit, remaining, refunded }.
-- [ ] **Build**: `crates/exec-vm/src/instructions/host.rs` — SSTORE, SLOAD, BALANCE, EXTCODESIZE. `Host` trait delegating to eth_storage_cache::StateCache.
+- [ ] **Build**: `crates/exec-vm/src/instructions/host.rs` — SSTORE, SLOAD, BALANCE, EXTCODESIZE. `Host` trait
+  delegating to eth_storage_cache::StateCache.
 - [ ] 15-20 opcodes total. Test against hand-rolled bytecode.
 - [ ] cargo test -p exec-vm. Tag `exec-vm v0.0.1`.
 - [ ] Commit + log
 
 **Thursday — First revm PR**
+
 - [ ] Browse revm issues, pick good first, implement, submit.
 - [ ] Commit + log
 
 **Friday — `eth-rlp` extension: typed envelopes**
-- [ ] **Extend**: `crates/eth-consensus/src/envelope.rs` — implement RLP for TxEnvelope with leading type byte per EIP-2718. Test against mainnet typed-tx test vectors.
+
+- [ ] **Extend**: `crates/eth-consensus/src/envelope.rs` — implement RLP for TxEnvelope with leading type byte per
+  EIP-2718. Test against mainnet typed-tx test vectors.
 - [ ] **Extend**: same for ReceiptEnvelope.
 - [ ] Diff against alloy-eips::eip2718.
 - [ ] Commit + log
 
 **Saturday — More PRs (Alloy/revm)**
+
 - [ ] Whichever is unblocked. Prefer revm now that exec-vm is bootstrapped.
 - [ ] Commit + log
 
@@ -773,34 +920,41 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate created**: `crates/eth-trie/`.
 
 **Monday — MPT theory + `Nibbles`**
+
 - [ ] ethereum.org MPT docs + 2-3 blog explanations.
 - [ ] Draw extension/branch/leaf/hash node diagrams.
 - [ ] **Build**: `crates/eth-trie/src/nibbles.rs` — `Nibbles(SmallVec<[u8; 64]>)`. Hex-prefix encoding.
 - [ ] Commit + log
 
 **Tuesday — `Node` enum + insert/get**
+
 - [ ] **Build**: `crates/eth-trie/src/node.rs` — Node enum (Empty, Leaf, Extension, Branch).
 - [ ] **Build**: `crates/eth-trie/src/storage.rs` — `TrieStorage` trait. Initial impl `MemoryStorage`.
 - [ ] Insert + get on trie. Test on `[("do","verb"),("dog","puppy"),("doge","coin")]`.
 - [ ] Commit + log
 
 **Wednesday — `HashBuilder` + root hash**
-- [ ] **Build**: `crates/eth-trie/src/hash_builder.rs` — HashBuilder. Stream-builds root via keccak256 of RLP-encoded nodes.
+
+- [ ] **Build**: `crates/eth-trie/src/hash_builder.rs` — HashBuilder. Stream-builds root via keccak256 of RLP-encoded
+  nodes.
 - [ ] Test against EIP-1186 vectors + alloy-trie fixtures.
 - [ ] Tag `eth-trie v0.0.1`.
 - [ ] Commit + log
 
 **Thursday — Second revm PR**
+
 - [ ] Pick, implement, submit.
 - [ ] Commit + log
 
 **Friday — Reth passive exposure**
+
 - [ ] Clone paradigmxyz/reth. cargo build --release.
 - [ ] Browse `reth/crates/trie`. Identify HashBuilder, TrieWalker, HashedPostState, TrieUpdates.
 - [ ] Read 5 recently merged trie/storage PRs for style.
 - [ ] Commit notes.
 
 **Saturday — `peer-keepalive` state machine on `eth-network-codec`**
+
 - [ ] Build peer-keepalive ping/pong oscillator inside eth-network-codec.
 - [ ] Property tests with proptest.
 - [ ] Commit + log
@@ -811,40 +965,53 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Week 11 — Type-state + `HashedPostState` + [NEW] `backpressure` crate v0.1
 
-**[NEW] crate created**: `crates/backpressure/` — extraction of `eth-network-codec`'s BackpressureStrategy enum into a free-standing crate, then re-exported.
+**[NEW] crate created**: `crates/backpressure/` — extraction of `eth-network-codec`'s BackpressureStrategy enum into a
+free-standing crate, then re-exported.
 
 **Monday — Type-state pattern applied to `eth-network-codec`**
+
 - [ ] Type-state, sealed trait, extension trait reading.
-- [ ] **Refactor**: `crates/eth-network-codec/src/connection.rs` — `Connection<S>` with phantom states Disconnected/Handshaking/Established.
+- [ ] **Refactor**: `crates/eth-network-codec/src/connection.rs` — `Connection<S>` with phantom states
+  Disconnected/Handshaking/Established.
 - [ ] Commit + log
 
 **Tuesday — Erigon staged sync (read with your crates as the substrate)**
+
 - [ ] Read Erigon staged sync design doc.
-- [ ] Map: headers → bodies → senders → execution → hashing → merkle. For each stage, name the eth-* crate that feeds it.
+- [ ] Map: headers → bodies → senders → execution → hashing → merkle. For each stage, name the eth-* crate that feeds
+  it.
 - [ ] Commit notes.
 
 **Wednesday — `HashedPostState` + `TrieUpdates`**
+
 - [ ] Browse reth/crates/trie source.
 - [ ] **Build**: `crates/eth-trie/src/hashed_state.rs` — HashedPostState mirroring reth_trie.
 - [ ] **Build**: TrieUpdates struct.
 - [ ] Commit + log
 
 **Thursday — [NEW] `backpressure` crate v0.1 extraction**
+
 - [ ] **Build**: `crates/backpressure/Cargo.toml` workspace member. Depends on `time` only.
-- [ ] **Build**: `crates/backpressure/src/strategy.rs` — move `BackpressureStrategy` enum from eth-network-codec. Variants: `DropOldest`, `DropNewest`, `Block`, `BlockWithTimeout(Monotonic)`, `Spill { dst: Box<dyn SpillSink> }`.
-- [ ] **Build**: `crates/backpressure/src/sink.rs` — `SpillSink` trait: where to dump on overflow (used by messaging-aeron W76 to spill to disk via wal).
-- [ ] **Build**: `crates/backpressure/src/credit.rs` — `CreditFlowControl { credits: AtomicU64, low_water: u64, high_water: u64 }` — used by messaging-aeron flow control AND matching-engine inbound queue.
+- [ ] **Build**: `crates/backpressure/src/strategy.rs` — move `BackpressureStrategy` enum from eth-network-codec.
+  Variants: `DropOldest`, `DropNewest`, `Block`, `BlockWithTimeout(Monotonic)`, `Spill { dst: Box<dyn SpillSink> }`.
+- [ ] **Build**: `crates/backpressure/src/sink.rs` — `SpillSink` trait: where to dump on overflow (used by
+  messaging-aeron W76 to spill to disk via wal).
+- [ ] **Build**: `crates/backpressure/src/credit.rs` —
+  `CreditFlowControl { credits: AtomicU64, low_water: u64, high_water: u64 }` — used by messaging-aeron flow control AND
+  matching-engine inbound queue.
 - [ ] Tag `backpressure v0.1.0`.
 - [ ] Re-export from eth-network-codec, deprecate the local copy with a TODO to remove next minor.
 - [ ] Third revm PR (medium difficulty) — pick substantive issue, implement.
 - [ ] Commit + log
 
 **Friday — Twitter + GitHub presence warm-up**
+
 - [ ] First thoughtful technical reply on a reth/paradigm tweet.
 - [ ] Star key repos. Follow 20 more Ethereum infra engineers.
 - [ ] Commit notes.
 
 **Saturday — Outstanding PR cleanup + tag**
+
 - [ ] Address all reviewer feedback.
 - [ ] Tag `eth-trie v0.1.0`. `eth-network-codec v0.2.0` (now depends on `backpressure`).
 - [ ] Commit + log
@@ -858,38 +1025,50 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **[NEW] crate scaffolded**: `crates/bufpool/` — empty lib.rs this week, fully built W14.
 
 **Monday — MDBX overview**
+
 - [ ] Read libmdbx high-level README + libmdbx-rs crate skim.
-- [ ] Sketch layering: StateCache → MdbxStateCache (Phase 3) → MDBX env. Bufpool sits between the Page primitive (W2) and MDBX's mmap.
+- [ ] Sketch layering: StateCache → MdbxStateCache (Phase 3) → MDBX env. Bufpool sits between the Page primitive (W2)
+  and MDBX's mmap.
 - [ ] Commit notes.
 
 **Tuesday — Reth architecture talk + consensus background**
+
 - [ ] Watch gakonst reth architecture talk on YouTube.
 - [ ] Mastering Ethereum consensus chapter; The Merge high level.
 - [ ] Commit notes.
 
 **Wednesday — Final Alloy/revm PR for Phase 1**
+
 - [ ] Push one more PR over the finish line.
 - [ ] Commit + log
 
 **Thursday — Maintainer tracker**
+
 - [ ] Note which maintainers reviewed PRs.
 - [ ] Identify mentor candidate (likely Matthias Seitz).
 - [ ] Commit notes.
 
 **Friday — Reth Telegram + Discord + [NEW] `bufpool` scaffold**
+
 - [ ] Join reth Telegram, observe (don't post yet).
-- [ ] **Build**: `crates/bufpool/Cargo.toml` workspace member. Depends on `time`, `eth-storage-cache` (for the Page type).
-- [ ] **Build**: `crates/bufpool/src/lib.rs` — empty `BufferPool<P: PageRef>` skeleton + module headers for `lru_k.rs`, `pin.rs`, `dirty.rs`. cargo build --workspace green with 11 crates.
+- [ ] **Build**: `crates/bufpool/Cargo.toml` workspace member. Depends on `time`, `eth-storage-cache` (for the Page
+  type).
+- [ ] **Build**: `crates/bufpool/src/lib.rs` — empty `BufferPool<P: PageRef>` skeleton + module headers for `lru_k.rs`,
+  `pin.rs`, `dirty.rs`. cargo build --workspace green with 11 crates.
 - [ ] Commit notes.
 
 **Saturday — Phase 1 review**
-- [ ] Verify shipped crates: eth-primitives v0.2, eth-rlp v0.1, eth-storage-cache v0.1, eth-network-codec v0.2, eth-consensus v0.3, exec-vm v0.0.1, eth-trie v0.1, eth-primitives-derive v0.1, **time v0.1**, **backpressure v0.1**, **bufpool scaffold**.
+
+- [ ] Verify shipped crates: eth-primitives v0.2, eth-rlp v0.1, eth-storage-cache v0.1, eth-network-codec v0.2,
+  eth-consensus v0.3, exec-vm v0.0.1, eth-trie v0.1, eth-primitives-derive v0.1, **time v0.1**, **backpressure v0.1**, *
+  *bufpool scaffold**.
 - [ ] Verify: 3-5 Alloy PRs, 2-3 revm PRs, 1-2 Foundry PRs.
 - [ ] cargo test --workspace green; clippy clean; miri clean on eth-primitives.
 - [ ] Phase 1 reflection in `progress.md`.
 - [ ] Commit + log
 
 **Sunday — End Phase 1 ritual**
+
 - [ ] Full assessment.
 - [ ] Update North Star M3 metrics.
 - [ ] Phase 2 starts tomorrow.
@@ -899,44 +1078,54 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 # PHASE 2: ETHEREUM FOUNDATION + ECOSYSTEM PRs (Month 4-6)
 
 > Tempo enters this phase as reading/orientation only. First touch W16 Tue. No Tempo PRs in Phase 2.
-> [NEW] `bufpool` v1.0 ships W14 Sat — the first Layer-1 primitive at production version. From W14, all Page traffic in the workspace flows through `bufpool`.
+> [NEW] `bufpool` v1.0 ships W14 Sat — the first Layer-1 primitive at production version. From W14, all Page traffic in
+> the workspace flows through `bufpool`.
 
 ## Month 4: Ethereum Protocol + Alloy PRs
 
 ### Week 13 — Ethereum fundamentals + `eth-consensus` deepening
 
 **Monday — ME ch3 + `SealedHeader` finalize**
+
 - [ ] ME ch3 (Clients) + ethereum.org intro skim.
 - [ ] Run reth on Sepolia, observe sync logs.
-- [ ] **Build**: `crates/eth-consensus/src/sealed.rs` — SealedHeader mirroring reth_primitives. hash_ref via keccak256(rlp(header)).
+- [ ] **Build**: `crates/eth-consensus/src/sealed.rs` — SealedHeader mirroring reth_primitives. hash_ref via keccak256(
+  rlp(header)).
 - [ ] Test: hash matches mainnet block hashes via alloy-provider.
 - [ ] Commit + log
 
 **Tuesday — ME ch4 + signer recovery**
+
 - [ ] ME ch4 (Cryptography). keccak256, secp256k1.
 - [ ] **Build**: `crates/eth-consensus/src/recovery.rs` — recover_signer using k256 directly.
 - [ ] **Build**: `Signed<T>::recover_signer()`.
 - [ ] Commit + log
 
 **Wednesday — ME ch5-6 + `Block` + `Body`**
+
 - [ ] ME ch5-6.
 - [ ] **Build**: `crates/eth-consensus/src/block.rs` — Block, BlockBody, SealedBlock.
 - [ ] Sign each tx type via your signature_hash() then alloy-signer; assert recovered address matches.
 - [ ] Commit + log
 
 **Thursday — ME ch7 + `encode_tx` round-trip**
+
 - [ ] ME ch7 (Smart Contracts Solidity).
 - [ ] Deploy simple contract on Sepolia via Foundry.
-- [ ] **Build**: `crates/eth-consensus/src/encode_tx.rs` — encode_signed_tx. Send via eth_sendRawTransaction against Sepolia.
+- [ ] **Build**: `crates/eth-consensus/src/encode_tx.rs` — encode_signed_tx. Send via eth_sendRawTransaction against
+  Sepolia.
 - [ ] Commit + log
 
 **Friday — Yellow Paper §4 + `Account` + `StorageEntry`**
+
 - [ ] Yellow Paper §4.
-- [ ] **Build**: `crates/eth-consensus/src/account.rs` — Account (RLP on-disk form). From/To conversions to eth-storage-cache's in-memory Account.
+- [ ] **Build**: `crates/eth-consensus/src/account.rs` — Account (RLP on-disk form). From/To conversions to
+  eth-storage-cache's in-memory Account.
 - [ ] Draw state diagrams.
 - [ ] Commit + log
 
 **Saturday — Yellow Paper §6 + intrinsic gas calculator**
+
 - [ ] Yellow Paper §6.
 - [ ] **Build**: `crates/eth-consensus/src/gas.rs` — intrinsic_gas. Test against revm's validate_initial_tx_gas.
 - [ ] Tag `eth-consensus v0.4.0`.
@@ -951,30 +1140,40 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate created**: `crates/eth-eips/`. **[NEW] crate version**: `bufpool` v1.0 ships Saturday.
 
 **Monday — EIP-1559 deep + extract `eth-eips/eip1559`**
+
 - [ ] Re-read EIP-1559 + Paradigm analysis.
-- [ ] **Refactor**: move to crates/eth-eips/src/eip1559.rs. Add BaseFeeParams for Optimism/Base chain-specific overrides.
+- [ ] **Refactor**: move to crates/eth-eips/src/eip1559.rs. Add BaseFeeParams for Optimism/Base chain-specific
+  overrides.
 - [ ] Test against mainnet, Optimism, Base genesis.
 - [ ] Commit + log
 
 **Tuesday — EIP-4844 (blobs) deep + KZG**
+
 - [ ] Read EIP-4844 + Proto-Danksharding roadmap.
 - [ ] **Refactor**: move blob fee math to crates/eth-eips/src/eip4844.rs. Add BlobTransactionSidecar. KZG placeholder.
 - [ ] Commit notes.
 
 **Wednesday — [NEW] `bufpool` build: LRU-K + pin/unpin**
-- [ ] **Build**: `crates/bufpool/src/lru_k.rs` — LRU-K (K=2) eviction policy. Tracks K-most-recent access timestamps via `time::Monotonic`. Frame with longest "backward K-distance" is evicted.
-- [ ] **Build**: `crates/bufpool/src/pin.rs` — `PinnedPage<'a>` RAII guard. `pool.pin(page_id) -> PinnedPage<'a>` increments pin count; drop decrements. Pinned pages are evict-immune.
-- [ ] **Build**: `crates/bufpool/src/dirty.rs` — `DirtyPageTracker` with a `HashSet<PageId>` and a counter. Marks pages for write-back. Wal (W26) drains the dirty set on group commit.
-- [ ] **Build**: `crates/bufpool/src/lib.rs` — `BufferPool<P: PageProvider>` API: `new(capacity, k=2)`, `pin(id) -> PinnedPage`, `mark_dirty(id)`, `flush_all(&self, sink: &mut dyn WriteBack) -> Result<()>`.
+
+- [ ] **Build**: `crates/bufpool/src/lru_k.rs` — LRU-K (K=2) eviction policy. Tracks K-most-recent access timestamps via
+  `time::Monotonic`. Frame with longest "backward K-distance" is evicted.
+- [ ] **Build**: `crates/bufpool/src/pin.rs` — `PinnedPage<'a>` RAII guard. `pool.pin(page_id) -> PinnedPage<'a>`
+  increments pin count; drop decrements. Pinned pages are evict-immune.
+- [ ] **Build**: `crates/bufpool/src/dirty.rs` — `DirtyPageTracker` with a `HashSet<PageId>` and a counter. Marks pages
+  for write-back. Wal (W26) drains the dirty set on group commit.
+- [ ] **Build**: `crates/bufpool/src/lib.rs` — `BufferPool<P: PageProvider>` API: `new(capacity, k=2)`,
+  `pin(id) -> PinnedPage`, `mark_dirty(id)`, `flush_all(&self, sink: &mut dyn WriteBack) -> Result<()>`.
 - [ ] Commit + log
 
 **Thursday — Alloy issues scan (target `alloy-eips`) + `bufpool` benchmarks**
+
 - [ ] Browse alloy issues. PREFER alloy-eips.
 - [ ] Identify 3-5 candidates, pick one, claim.
 - [ ] criterion bench on `bufpool`: 1M ops mixed read/write at hit rates 50/75/90/99%. LRU-K vs naive LRU vs FIFO. Plot.
 - [ ] Commit notes + bench numbers.
 
 **Friday — Medium-difficulty Alloy PR work + EIP-7702 in `eth-eips`**
+
 - [ ] Substantive change in alloy-eips or alloy-consensus.
 - [ ] Re-read EIP-7702.
 - [ ] **Refactor**: move Authorization + SignedAuthorization from eth-consensus to eth-eips.
@@ -982,8 +1181,11 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Commit + log
 
 **Saturday — Alloy PR submitted + tag `bufpool v1.0`**
+
 - [ ] Finish Alloy PR. Open with motivation referencing eth-eips design notes.
-- [ ] **Refactor**: `eth-storage-cache::Page` no longer owns its memory; it borrows from `bufpool::PinnedPage`. This is the first "primitive once" wire-up moment — Page memory is now sourced from a single pool that storage-trie (W31), wal (W26), and mini-db (W95) will all share.
+- [ ] **Refactor**: `eth-storage-cache::Page` no longer owns its memory; it borrows from `bufpool::PinnedPage`. This is
+  the first "primitive once" wire-up moment — Page memory is now sourced from a single pool that storage-trie (W31),
+  wal (W26), and mini-db (W95) will all share.
 - [ ] Tag `bufpool v1.0.0`. Update `eth-storage-cache` to v0.2.0 depending on bufpool.
 - [ ] Commit + log
 
@@ -994,16 +1196,19 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 15 — EIP-7685 + EOF parser in `exec-vm` + more PRs
 
 **Monday — Respond to Alloy PR reviews**
+
 - [ ] Address feedback; iterate.
 - [ ] Commit + log
 
 **Tuesday — EIP-7685 finalize in `eth-eips`**
+
 - [ ] Re-read EIP-7685.
 - [ ] **Refactor**: move Requests from eth-consensus to crates/eth-eips/src/eip7685.rs.
 - [ ] Tag `eth-eips v0.2.0`.
 - [ ] Commit notes.
 
 **Wednesday — EOF parser deepening in `exec-vm`**
+
 - [ ] Re-read EIP-3540, 3670, 4200, 4750.
 - [ ] **Build**: `crates/exec-vm/src/eof/parser.rs` — full EOF container parser.
 - [ ] **Build**: `crates/exec-vm/src/eof/validate.rs` — EIP-3670 code validation.
@@ -1011,14 +1216,17 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Commit notes.
 
 **Thursday — Second Alloy PR**
+
 - [ ] Pick next candidate, implement.
 - [ ] Commit + log
 
 **Friday — Third Alloy PR work (medium)**
+
 - [ ] Substantive contribution.
 - [ ] Commit + log
 
 **Saturday — Third Alloy PR complete**
+
 - [ ] Finish, submit.
 - [ ] Commit + log
 
@@ -1031,38 +1239,48 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate created**: `crates/eth-rpc-types/`.
 
 **Monday — `eth-rpc-types` + 4th Alloy PR**
+
 - [ ] **Build**: `crates/eth-rpc-types/src/block.rs` — RPC Block, Transaction.
 - [ ] Pick + implement 4th Alloy PR.
 - [ ] Commit + log
 
 **Tuesday — Foundry codebase intro**
+
 - [ ] Clone foundry-rs/foundry. Read Foundry Book briefly.
 - [ ] Browse forge crate source.
-- [ ] [Tempo] 15 min at end of day: open `github.com/tempoxyz/tempo-foundry` in browser. Read top of README. Note: fork of Foundry adding TempoEvm extending revm, plus `--tempo.fee-token` support. Close tab. No PR, no commit. Awareness only.
+- [ ] [Tempo] 15 min at end of day: open `github.com/tempoxyz/tempo-foundry` in browser. Read top of README. Note: fork
+  of Foundry adding TempoEvm extending revm, plus `--tempo.fee-token` support. Close tab. No PR, no commit. Awareness
+  only.
 - [ ] Commit notes.
 
 **Wednesday — Foundry cast + `eth-rpc-types/filter`**
+
 - [ ] Read cast crate source.
 - [ ] **Build**: `crates/eth-rpc-types/src/filter.rs` — Filter, FilterBlockOption, Topic.
 - [ ] Commit notes.
 
 **Thursday — First Foundry PR**
+
 - [ ] Browse Foundry issues, pick good first. Prefer cast.
 - [ ] Implement.
-- [ ] [Tempo] 30 min at end of day: open `tempoxyz/tempo` README + `docs.tempo.xyz` landing page. Create `notes/tempo_orientation.md` with one paragraph: "What Tempo is, why it's relevant to my Reth bet."
+- [ ] [Tempo] 30 min at end of day: open `tempoxyz/tempo` README + `docs.tempo.xyz` landing page. Create
+  `notes/tempo_orientation.md` with one paragraph: "What Tempo is, why it's relevant to my Reth bet."
 - [ ] Commit + log
 
 **Friday — Foundry PR complete + Alloy review responses**
+
 - [ ] Finish Foundry PR. Address Alloy review feedback.
 - [ ] Commit + log
 
 **Saturday — `eth-rpc-types/transaction_request` + 5th Alloy PR**
+
 - [ ] **Build**: `crates/eth-rpc-types/src/transaction_request.rs` — TransactionRequest.
 - [ ] Tag `eth-rpc-types v0.1.0`.
 - [ ] Submit 5th Alloy PR or polish existing.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 4 review**
+
 - [ ] Target check: 5+ Alloy PRs opened, some merged.
 
 ---
@@ -1074,35 +1292,46 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate extended**: exec-vm v0.0.1 → v0.1.0.
 
 **Monday — ME ch13 part 1 + `Env` types**
+
 - [ ] ME ch13 first half. Memorize top 20 opcodes.
 - [ ] **Build**: `crates/exec-vm/src/env.rs` — Env, BlockEnv, TxEnv, CfgEnv mirroring revm_primitives::Env.
 - [ ] **Build**: `From<&TxEnvelope> for TxEnv`, `From<&Header> for BlockEnv`.
 - [ ] Commit notes.
 
 **Tuesday — ME ch13 part 2 + `instructions/system.rs`**
+
 - [ ] ME ch13 second half.
-- [ ] **Build**: `crates/exec-vm/src/instructions/system.rs` — RETURN, REVERT, INVALID, SELFDESTRUCT (skeleton — full impl Phase 4 needs journal).
+- [ ] **Build**: `crates/exec-vm/src/instructions/system.rs` — RETURN, REVERT, INVALID, SELFDESTRUCT (skeleton — full
+  impl Phase 4 needs journal).
 - [ ] Commit notes.
 
 **Wednesday — evm.codes deep + `instructions/stack.rs`**
+
 - [ ] Walk every opcode on evm.codes.
 - [ ] **Build**: `crates/exec-vm/src/instructions/stack.rs` — PUSH0..PUSH32, DUP1..DUP16, SWAP1..SWAP16, POP. All 96.
 - [ ] Manual trace simple bytecode through interpreter.
-- [ ] [Tempo] 30 min at end of day: read `tempoxyz/tempo` repo top-level Cargo.toml. Note which reth-* and revm-* crates it pins. Confirm: every Reth crate you've been mirroring is also depended on by Tempo. Add 3-line note to tempo_orientation.md.
+- [ ] [Tempo] 30 min at end of day: read `tempoxyz/tempo` repo top-level Cargo.toml. Note which reth-* and revm-* crates
+  it pins. Confirm: every Reth crate you've been mirroring is also depended on by Tempo. Add 3-line note to
+  tempo_orientation.md.
 - [ ] Commit + log
 
 **Thursday — `instructions/contract.rs` (CALL family)**
-- [ ] **Build**: `crates/exec-vm/src/instructions/contract.rs` — CALL, CALLCODE, DELEGATECALL, STATICCALL. EIP-150 63/64ths gas.
+
+- [ ] **Build**: `crates/exec-vm/src/instructions/contract.rs` — CALL, CALLCODE, DELEGATECALL, STATICCALL. EIP-150
+  63/64ths gas.
 - [ ] **Build**: `crates/exec-vm/src/instructions/create.rs` — CREATE, CREATE2 with init code analysis.
 - [ ] Test: simple call-with-return via two hand-rolled programs.
 - [ ] Commit + log
 
 **Friday — `instructions/host.rs` extension against `StateCache`**
-- [ ] **Build**: extend host.rs with BALANCE, EXTCODESIZE, EXTCODEHASH, EXTCODECOPY, BLOCKHASH, COINBASE, TIMESTAMP, NUMBER, DIFFICULTY/PREVRANDAO, GASLIMIT, CHAINID, SELFBALANCE, BASEFEE, BLOBHASH, BLOBBASEFEE.
+
+- [ ] **Build**: extend host.rs with BALANCE, EXTCODESIZE, EXTCODEHASH, EXTCODECOPY, BLOCKHASH, COINBASE, TIMESTAMP,
+  NUMBER, DIFFICULTY/PREVRANDAO, GASLIMIT, CHAINID, SELFBALANCE, BASEFEE, BLOBHASH, BLOBBASEFEE.
 - [ ] All routed through Host trait → eth-storage-cache::StateCache.
 - [ ] Commit + log
 
 **Saturday — `instructions/log.rs` + ethereum-tests subset green**
+
 - [ ] **Build**: `crates/exec-vm/src/instructions/log.rs` — LOG0..LOG4.
 - [ ] Total opcode count: 60+. Pass GeneralStateTests/stArithmetic + stMemoryTest subsets.
 - [ ] Tag `exec-vm v0.1.0`. README documents opcode coverage matrix.
@@ -1115,34 +1344,42 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 18 — revm deep-read (diffing against your `exec-vm`)
 
 **Monday — revm overview + diff to `exec-vm`**
+
 - [ ] Re-clone bluealloy/revm latest.
 - [ ] Read README, arch doc fresh — with 60+ opcodes implemented.
 - [ ] **Diff log**: for each revm crate, name 3 design choices that differ. Save to `notes/08_revm_diff.md`.
 - [ ] Commit notes.
 
 **Tuesday — revm-primitives + `Database` trait alignment**
+
 - [ ] Read revm-primitives source.
 - [ ] Confirm your StateCache trait can be a Database for unmodified revm. Adjust if not.
 - [ ] Commit notes.
 
 **Wednesday — revm-interpreter dispatch**
+
 - [ ] Read revm-interpreter source. Study opcode dispatch.
 - [ ] Identify revm perf optimizations your exec-vm lacks. Add to `EXEC_VM_PERF_BACKLOG.md`.
 - [ ] Commit notes.
 
 **Thursday — revm hot path + ADD trace**
+
 - [ ] Trace ADD end-to-end through revm AND your exec-vm. Compare overhead.
 - [ ] Commit + log
 
 **Friday — revm handler + precompile reading**
+
 - [ ] Read revm Handler trait and precompile crate.
 - [ ] Sketch where Handler plugs into your exec-vm. Phase 4 W53 adds it.
 - [ ] Commit notes.
 
 **Saturday — First revm PR informed by the diff**
+
 - [ ] Browse revm issues. Pick something where your exec-vm gives informed perspective.
 - [ ] Implement, submit.
-- [ ] [Tempo] 45 min at end of day: while revm is fresh, browse `tempoxyz/tempo`'s evm crate. Note how TempoEvm wraps revm's Evm. Sketch in `notes/tempo_diff.md` the 3 most obvious extension points (precompile registry, tx handler, fee accounting). No code.
+- [ ] [Tempo] 45 min at end of day: while revm is fresh, browse `tempoxyz/tempo`'s evm crate. Note how TempoEvm wraps
+  revm's Evm. Sketch in `notes/tempo_diff.md` the 3 most obvious extension points (precompile registry, tx handler, fee
+  accounting). No code.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -1152,31 +1389,39 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 19 — revm PR velocity + `exec-vm` precompile skeleton
 
 **Monday — Second revm PR**
+
 - [ ] Pick and implement.
 - [ ] Commit + log
 
 **Tuesday — revm PR review response + `exec-vm` precompile registry**
+
 - [ ] Address reviewer feedback.
-- [ ] **Build**: `crates/exec-vm/src/precompile/mod.rs` — Precompile trait, PrecompileRegistry. Implement ECRECOVER first.
+- [ ] **Build**: `crates/exec-vm/src/precompile/mod.rs` — Precompile trait, PrecompileRegistry. Implement ECRECOVER
+  first.
 - [ ] Commit + log
 
 **Wednesday — Third revm PR (medium)**
+
 - [ ] Pick medium-difficulty issue, implement.
 - [ ] Commit + log
 
 **Thursday — geth core/vm comparison**
+
 - [ ] Read geth's core/vm package.
 - [ ] Add geth-specific notes to 08_revm_diff.md.
 - [ ] Commit notes.
 
 **Friday — evmone comparison**
+
 - [ ] Read evmone README + architecture.
 - [ ] Note C++ optimizations. Add to EXEC_VM_PERF_BACKLOG.md.
 - [ ] Commit notes.
 
 **Saturday — Continue revm PRs**
+
 - [ ] Work on outstanding or start new.
-- [ ] [Tempo] 30 min at end of day: skim Tempo TIP index on docs.tempo.xyz. Read just titles and one-line summaries. List the 5 most execution-relevant TIPs (likely: TIP-20, TIP-1020, TIP-1031, TIP-403, plus one more).
+- [ ] [Tempo] 30 min at end of day: skim Tempo TIP index on docs.tempo.xyz. Read just titles and one-line summaries.
+  List the 5 most execution-relevant TIPs (likely: TIP-20, TIP-1020, TIP-1031, TIP-403, plus one more).
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -1188,38 +1433,46 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate extended**: eth-trie v0.1 → v0.2.
 
 **Monday — MPT deeper theory + `BranchNodeCompact`**
+
 - [ ] Re-read ethereum.org MPT docs + 2-3 blog explanations.
 - [ ] **Build**: `crates/eth-trie/src/branch_compact.rs` — BranchNodeCompact mirroring reth_trie.
 - [ ] Commit notes.
 
 **Tuesday — `TrieStorage` abstraction over `StateCache`**
+
 - [ ] **Refactor**: split TrieStorage into HashedNodeStorage + IntermediateStorage.
 - [ ] **Build**: `CachedStorage<C: StateCache>` delegating to eth-storage-cache.
 - [ ] Commit + log
 
 **Wednesday — `TrieWalker` cursor**
+
 - [ ] **Build**: `crates/eth-trie/src/walker.rs` — TrieWalker<S: TrieStorage> streaming traversal.
 - [ ] Commit + log
 
 **Thursday — `ProofRetainer` + EIP-1186 proofs**
+
 - [ ] **Build**: `crates/eth-trie/src/proof/retainer.rs` — ProofRetainer mirroring alloy_trie.
 - [ ] **Build**: `crates/eth-trie/src/proof/verify.rs` — verify_proof.
 - [ ] Test against EIP-1186 vectors + captured mainnet eth_getProof response.
 - [ ] Commit + log
 
 **Friday — `StateRoot` orchestrator**
+
 - [ ] **Build**: `crates/eth-trie/src/state_root.rs` — StateRoot<S> with compute(). Heart of MerkleStage.
 - [ ] Test: reconstruct block 1 mainnet state root from genesis + block 1 changes.
 - [ ] Commit + log
 
 **Saturday — `StorageRoot` + tag**
+
 - [ ] **Build**: `crates/eth-trie/src/storage_root.rs`.
 - [ ] Pass simplest Ethereum trie test vectors end-to-end.
 - [ ] Tag `eth-trie v0.2.0`.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
-- [ ] [Tempo] 45 min during ritual: pick ONE TIP (recommended: TIP-1020 since signature verification ties to your W19 ECRECOVER work). Read end-to-end. Note in tempo_orientation.md how it would plug into exec-vm precompile registry.
+
+- [ ] [Tempo] 45 min during ritual: pick ONE TIP (recommended: TIP-1020 since signature verification ties to your W19
+  ECRECOVER work). Read end-to-end. Note in tempo_orientation.md how it would plug into exec-vm precompile registry.
 - [ ] Update North Star M5 metrics.
 
 ---
@@ -1229,32 +1482,39 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 21 — `eth-rlp` extension + maintainer engagement
 
 **Monday — `eth-rlp` extension: trie-friendly encoding**
+
 - [ ] Re-read RLP spec sections relevant to trie nodes.
 - [ ] **Build**: `crates/eth-rlp/src/trie.rs` — encode_branch_node, encode_extension_node, encode_leaf_node.
 - [ ] **Build**: refactor EipTransactionRlp helper to use eth-rlp helpers consistently.
 - [ ] Commit + log
 
 **Tuesday — Reth RLP usage patterns + `eth-rlp` derive enhancements**
+
 - [ ] Read reth's RLP usage patterns + alloy-rlp source freshly.
 - [ ] **Extend**: eth-rlp-derive to support `#[rlp(trailing)]`.
 - [ ] Tag `eth-rlp v0.2.0`.
 - [ ] Commit + log
 
 **Wednesday — Fourth revm PR**
+
 - [ ] Pick + implement.
 - [ ] Commit + log
 
 **Thursday — Second Foundry PR**
+
 - [ ] Pick + implement.
 - [ ] Commit + log
 
 **Friday — Maintainer engagement**
+
 - [ ] Identify maintainers per area (alloy-eips: gakonst/yash; revm: rakita; reth-trie: rakita/mattsse).
 - [ ] Engage thoughtfully in an issue discussion.
-- [ ] [Tempo] 15 min at end of day: identify which Tempo maintainers overlap with your Reth tracker. Update Tempo maintainer tracker (cross-references for gakonst, rakita, joshieDo). No outreach yet.
+- [ ] [Tempo] 15 min at end of day: identify which Tempo maintainers overlap with your Reth tracker. Update Tempo
+  maintainer tracker (cross-references for gakonst, rakita, joshieDo). No outreach yet.
 - [ ] Commit notes.
 
 **Saturday — Consolidation**
+
 - [ ] Review all open PRs. Close out review comments.
 - [ ] Commit + log
 
@@ -1267,34 +1527,42 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **Crate created**: `crates/eth-stage/`.
 
 **Monday — Erigon staged sync (deeper this time)**
+
 - [ ] Re-read Erigon staged sync doc with implementation eye.
 - [ ] Stage concept, unwind, checkpoints.
 - [ ] Commit notes.
 
 **Tuesday — Reth stages source dive**
+
 - [ ] Browse reth/crates/stages.
 - [ ] **Build**: `crates/eth-stage/src/lib.rs` — Stage trait (id, execute, unwind) matching reth shape.
 - [ ] **Build**: Pipeline runner with checkpoint persistence via eth-storage-cache::StateCache.
 - [ ] Commit + log
 
 **Wednesday — Stage dependency map**
+
 - [ ] Diagram: headers → bodies → senders → execution → hashing → merkle.
 - [ ] **Build**: `crates/eth-stage/src/stages/headers.rs` — skeleton HeaderStage.
 - [ ] Commit + log
 
 **Thursday — More revm or Alloy PRs**
+
 - [ ] Keep PR velocity.
 - [ ] Commit + log
 
 **Friday — Reth Telegram + Discord**
+
 - [ ] Join reth main Telegram. Observe discussion style for 4 weeks before posting.
-- [ ] [Tempo] 15 min: also join Tempo's public community channel (Discord/Telegram per `tempoxyz/tempo` CONTRIBUTING.md). Observe, post nothing for 4 weeks.
+- [ ] [Tempo] 15 min: also join Tempo's public community channel (Discord/Telegram per `tempoxyz/tempo`
+  CONTRIBUTING.md). Observe, post nothing for 4 weeks.
 - [ ] Commit notes.
 
 **Saturday — `eth-stage` consolidation + tag**
+
 - [ ] Skeleton stages for senders, execution, hashing, merkle.
 - [ ] Tag `eth-stage v0.0.1`.
-- [ ] [Tempo] 45 min: read TIP-20 (stablecoin token standard) end-to-end. Note differences from ERC-20. Add to tempo_diff.md — fee-token semantics, policy registry hook (TIP-403).
+- [ ] [Tempo] 45 min: read TIP-20 (stablecoin token standard) end-to-end. Note differences from ERC-20. Add to
+  tempo_diff.md — fee-token semantics, policy registry hook (TIP-403).
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -1304,32 +1572,42 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 23 — Ready up for Phase 3 (`storage-trie` scaffold pre-wiring)
 
 **Monday — Reth storage crate survey + `storage-trie` workspace setup**
+
 - [ ] Browse reth/crates/storage (db, provider, codecs, api).
-- [ ] **Build**: `crates/storage-trie/Cargo.toml` workspace member. Empty lib.rs. Declare deps: `bufpool`, `time`, `eth-trie`, `eth-storage-cache`.
+- [ ] **Build**: `crates/storage-trie/Cargo.toml` workspace member. Empty lib.rs. Declare deps: `bufpool`, `time`,
+  `eth-trie`, `eth-storage-cache`.
 - [ ] Confirm cargo build --workspace succeeds.
 - [ ] Commit notes + scaffold.
 
 **Tuesday — MDBX first look + `Database` trait sketch**
+
 - [ ] Read libmdbx high-level README.
 - [ ] **Sketch**: in storage-trie/src/lib.rs, define Database trait shape.
-- [ ] [Tempo] 30 min at end of day: read TIP-1031 (consensus context in block header). Matters for Phase 5 consensus-engine — Tempo's header has extra fields your engine_newPayload handler needs to carry through (gated behind feature flag).
+- [ ] [Tempo] 30 min at end of day: read TIP-1031 (consensus context in block header). Matters for Phase 5
+  consensus-engine — Tempo's header has extra fields your engine_newPayload handler needs to carry through (gated behind
+  feature flag).
 - [ ] Commit notes.
 
 **Wednesday — More Alloy/revm PRs**
+
 - [ ] Keep contribution streak.
 - [ ] Commit + log
 
 **Thursday — Conference research**
+
 - [ ] EthCC Paris 2027 + Devcon 2027 dates. Start budgeting.
 - [ ] Commit notes.
 
 **Friday — Relationship review**
+
 - [ ] Update maintainer tracker. Identify target mentor.
 - [ ] Commit notes.
 
 **Saturday — Month 6 consolidation**
+
 - [ ] Review all PRs. Check target: 5+ Alloy, 3+ revm, 2+ Foundry.
-- [ ] [Tempo] 1 hr: read tempoxyz/tempo's storage-adjacent crates. Note divergence from upstream Reth — payment-lane-aware indexing if any. Add to tempo_diff.md.
+- [ ] [Tempo] 1 hr: read tempoxyz/tempo's storage-adjacent crates. Note divergence from upstream Reth —
+  payment-lane-aware indexing if any. Add to tempo_diff.md.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -1339,39 +1617,54 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 24 — Phase 2 close + Phase 3 prep
 
 **Monday — Mastering Ethereum consensus + `consensus-engine` placeholder crate**
+
 - [ ] ME consensus chapter. The Merge high level.
 - [ ] **Build**: `crates/consensus-engine/Cargo.toml` workspace member. Empty lib.rs.
-- [ ] cargo build --workspace green with all 14 crates (eth-* + exec-vm + time + backpressure + bufpool + storage-trie scaffold + consensus-engine scaffold).
+- [ ] cargo build --workspace green with all 14 crates (eth-* + exec-vm + time + backpressure + bufpool + storage-trie
+  scaffold + consensus-engine scaffold).
 - [ ] Commit notes.
 
 **Tuesday — Reth architecture talk/video**
+
 - [ ] Watch gakonst reth architecture talk + Paradigm Frontiers talk.
 - [ ] Map every component to one of YOUR workspace crates.
-- [ ] [Tempo] 20 min: `git clone https://github.com/tempoxyz/tempo /tmp/tempo` and `cargo build --release` (runs in background). Confirms toolchain works against their pinned reth revision. If build fails, file failure mode in `notes/tempo_build_blockers.md` for later. Do NOT debug.
+- [ ] [Tempo] 20 min: `git clone https://github.com/tempoxyz/tempo /tmp/tempo` and `cargo build --release` (runs in
+  background). Confirms toolchain works against their pinned reth revision. If build fails, file failure mode in
+  `notes/tempo_build_blockers.md` for later. Do NOT debug.
 - [ ] Commit notes.
 
 **Wednesday — Phase 3 scope + outline**
+
 - [ ] Read Phase 3 section.
-- [ ] Outline approach for Month 7. Note: the `wal` extraction at W26 is a critical new dependency for storage-trie. Plan accordingly.
+- [ ] Outline approach for Month 7. Note: the `wal` extraction at W26 is a critical new dependency for storage-trie.
+  Plan accordingly.
 - [ ] Commit notes.
 
 **Thursday — Phase 3 scaffolding + CI**
+
 - [ ] CI in `.github/workflows/ci.yml` running fmt --check, clippy, nextest, miri (weekly).
 - [ ] README at workspace root with dependency graph showing all 14 crates.
 - [ ] Commit + log
 
 **Friday — Final Phase 2 PRs**
+
 - [ ] Wrap outstanding.
 - [ ] Commit + log
 
 **Saturday — Phase 2 review**
+
 - [ ] Full assessment.
-- [ ] Verify shipped crates: eth-primitives v0.2, eth-rlp v0.2, eth-storage-cache v0.2 (now bufpool-backed), eth-network-codec v0.2, eth-consensus v0.4, eth-eips v0.2, eth-rpc-types v0.1, eth-trie v0.2, eth-stage v0.0.1, exec-vm v0.1, eth-primitives-derive v0.1, **time v0.1**, **backpressure v0.1**, **bufpool v1.0**, storage-trie scaffold, consensus-engine scaffold.
+- [ ] Verify shipped crates: eth-primitives v0.2, eth-rlp v0.2, eth-storage-cache v0.2 (now bufpool-backed),
+  eth-network-codec v0.2, eth-consensus v0.4, eth-eips v0.2, eth-rpc-types v0.1, eth-trie v0.2, eth-stage v0.0.1,
+  exec-vm v0.1, eth-primitives-derive v0.1, **time v0.1**, **backpressure v0.1**, **bufpool v1.0**, storage-trie
+  scaffold, consensus-engine scaffold.
 - [ ] Update progress.md.
-- [ ] [Tempo] End-of-phase Tempo metrics check: orientation depth target 1 (should hit), TIPs read target 1 — at 3 (TIP-1020 W20, TIP-20 W22, TIP-1031 W23). PRs: 0 (correct).
+- [ ] [Tempo] End-of-phase Tempo metrics check: orientation depth target 1 (should hit), TIPs read target 1 — at 3 (
+  TIP-1020 W20, TIP-20 W22, TIP-1031 W23). PRs: 0 (correct).
 - [ ] Commit + log
 
 **Sunday — End Phase 2 + Phase 3 prep**
+
 - [ ] Full rest.
 - [ ] Phase 3 starts tomorrow.
 
@@ -1380,11 +1673,16 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 # PHASE 3: STORAGE + TRIE DEEP DIVE + DURABILITY PRIMITIVES (Month 7-12)
 
 **Reth Deliverable**: `storage-trie` v1.0 (W44) — MDBX-backed persistent state DB.
-**[NEW] Layer-2/3 Deliverables**: `wal` v0.1 (W26), `recovery` v0.5 (W30), `bloom` v0.1 (W34), `lsm-core` v0.5 (W40), `txn` v0.5 (W42).
+**[NEW] Layer-2/3 Deliverables**: `wal` v0.1 (W26), `recovery` v0.5 (W30), `bloom` v0.1 (W34), `lsm-core` v0.5 (W40),
+`txn` v0.5 (W42).
 
-> Tempo Phase 3 budget: 2-3 hrs/wk. Reading + bookmarking PR candidates + Sunday release skims. First Tempo PR scheduled W60-62 (Phase 4).
+> Tempo Phase 3 budget: 2-3 hrs/wk. Reading + bookmarking PR candidates + Sunday release skims. First Tempo PR scheduled
+> W60-62 (Phase 4).
 
-`storage-trie` consumes seed crates from Phase 1-2 AND the new durability primitives shipped this phase: provides MDBX-backed Database implementing eth-storage-cache::StateCache, TrieStorage impl replacing MemoryStorage (W10), MerkleStage impl plugging into eth-stage::Stage (W22), wal-backed transaction log (W31+), recovery-driven crash safety (W36+).
+`storage-trie` consumes seed crates from Phase 1-2 AND the new durability primitives shipped this phase: provides
+MDBX-backed Database implementing eth-storage-cache::StateCache, TrieStorage impl replacing MemoryStorage (W10),
+MerkleStage impl plugging into eth-stage::Stage (W22), wal-backed transaction log (W31+), recovery-driven crash safety (
+W36+).
 
 ---
 
@@ -1393,28 +1691,35 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 25 — MDBX documentation deep
 
 **Monday — MDBX overview**
+
 - [ ] Read libmdbx.dqdkfa.ru full overview. mmap-based design.
 - [ ] Commit notes
 
 **Tuesday — MDBX internals: B-tree**
+
 - [ ] B-tree structure section. Compare with B+tree.
 - [ ] Commit notes
 
 **Wednesday — MDBX internals: MVCC**
+
 - [ ] MVCC section. Read tx during write tx.
 - [ ] Commit notes
 
 **Thursday — MDBX internals: Durability**
+
 - [ ] WAL / sync modes. Crash recovery. **Critical reading** — informs the W26 `wal` crate design.
 - [ ] Commit notes
 
 **Friday — MDBX cursor semantics**
+
 - [ ] Cursor documentation. Range scan.
 - [ ] Commit notes
 
 **Saturday — libmdbx-rs source**
+
 - [ ] Clone and read libmdbx-rs.
-- [ ] [Tempo] 1 hr at end of day: re-read tempoxyz/tempo's storage-adjacent crates with MDBX knowledge fresh. Note divergence from upstream Reth — payment-lane-aware indexing if any. Update tempo_diff.md.
+- [ ] [Tempo] 1 hr at end of day: re-read tempoxyz/tempo's storage-adjacent crates with MDBX knowledge fresh. Note
+  divergence from upstream Reth — payment-lane-aware indexing if any. Update tempo_diff.md.
 - [ ] Commit notes
 
 **Sunday — Rest + Weekly Ritual**
@@ -1423,40 +1728,58 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Week 26 — [NEW] `wal` crate v0.1 + reth storage architecture
 
-**[NEW] crate created**: `crates/wal/`. The first universal durability primitive. Will be inherited by storage-trie (W31), ledger (W80), matching-engine (W74), consensus-raft (W64+ for snapshot logs), and mini-db (W95).
+**[NEW] crate created**: `crates/wal/`. The first universal durability primitive. Will be inherited by storage-trie (
+W31), ledger (W80), matching-engine (W74), consensus-raft (W64+ for snapshot logs), and mini-db (W95).
 
 **Monday — `wal` crate scaffold + segment layout**
-- [ ] **Build**: `crates/wal/Cargo.toml` workspace member. Deps: `time`, `bufpool`, `eth-storage-cache` (Page). Optional dep on `crc32fast` for checksums.
-- [ ] **Build**: `crates/wal/src/segment.rs` — `Segment` is an mmap-backed file with header `{ magic, version, segment_id, first_lsn }`, body of length-prefixed records, footer `{ last_lsn, checksum }`. Default segment size 64 MiB. Pre-allocated.
-- [ ] **Build**: `crates/wal/src/record.rs` — `WalRecord { lsn: u64, kind: RecordKind, payload: Bytes }`. RecordKind enum (Insert, Update, Delete, Begin, Commit, Abort, Checkpoint).
+
+- [ ] **Build**: `crates/wal/Cargo.toml` workspace member. Deps: `time`, `bufpool`, `eth-storage-cache` (Page). Optional
+  dep on `crc32fast` for checksums.
+- [ ] **Build**: `crates/wal/src/segment.rs` — `Segment` is an mmap-backed file with header
+  `{ magic, version, segment_id, first_lsn }`, body of length-prefixed records, footer `{ last_lsn, checksum }`. Default
+  segment size 64 MiB. Pre-allocated.
+- [ ] **Build**: `crates/wal/src/record.rs` — `WalRecord { lsn: u64, kind: RecordKind, payload: Bytes }`. RecordKind
+  enum (Insert, Update, Delete, Begin, Commit, Abort, Checkpoint).
 - [ ] Test: append 10k records, fsync, re-open, scan from offset 0 — all 10k recovered in order.
 - [ ] Commit + log
 
 **Tuesday — `wal` group commit**
-- [ ] **Build**: `crates/wal/src/group_commit.rs` — `GroupCommit { pending: Mutex<Vec<WalRecord>>, fsync_signal: Notify }`. Background fsync thread drains pending every 10 µs or when buffer hits N records (configurable, default 1024). Returns oneshot to each caller on durable completion.
+
+- [ ] **Build**: `crates/wal/src/group_commit.rs` —
+  `GroupCommit { pending: Mutex<Vec<WalRecord>>, fsync_signal: Notify }`. Background fsync thread drains pending every
+  10 µs or when buffer hits N records (configurable, default 1024). Returns oneshot to each caller on durable
+  completion.
 - [ ] criterion bench: throughput at group-size 1, 8, 64, 1024. Plot.
 - [ ] Commit + log
 
 **Wednesday — `wal` checksums + replay**
+
 - [ ] **Build**: `crates/wal/src/checksum.rs` — CRC32C per record + per-segment-footer rollup.
-- [ ] **Build**: `crates/wal/src/replay.rs` — `Replayer<'a, S: SegmentStream>` yields `Result<WalRecord, ReplayError>`. Stops cleanly at the first checksum mismatch (partial-tail handling).
-- [ ] Test: write 10k records, truncate the last segment mid-record, re-open, replay — gets first 9_973 records then stops with a tail-truncation diagnostic.
+- [ ] **Build**: `crates/wal/src/replay.rs` — `Replayer<'a, S: SegmentStream>` yields `Result<WalRecord, ReplayError>`.
+  Stops cleanly at the first checksum mismatch (partial-tail handling).
+- [ ] Test: write 10k records, truncate the last segment mid-record, re-open, replay — gets first 9_973 records then
+  stops with a tail-truncation diagnostic.
 - [ ] Commit + log
 
 **Thursday — `wal` v0.1 ship + reth-db deep read part 1**
-- [ ] **Build**: `crates/wal/src/lib.rs` — `Wal { dir: PathBuf, segments: Vec<Segment>, ... }` public API: `append(record) -> Future<Lsn>`, `replay() -> Replayer`, `checkpoint(lsn)`, `truncate_below(lsn)`.
+
+- [ ] **Build**: `crates/wal/src/lib.rs` — `Wal { dir: PathBuf, segments: Vec<Segment>, ... }` public API:
+  `append(record) -> Future<Lsn>`, `replay() -> Replayer`, `checkpoint(lsn)`, `truncate_below(lsn)`.
 - [ ] Tag `wal v0.1.0`.
 - [ ] Read reth-db/src/lib.rs. Table definitions.
 - [ ] Commit + log
 
 **Friday — reth-db deep read part 2 + first reth storage PR hunt**
+
 - [ ] Transaction impl. Cursor wrappers.
 - [ ] Browse reth issues tagged storage.
 - [ ] Find good-first-issue or docs issue. Claim.
-- [ ] [Tempo] 15 min after Reth issue claimed: scan `tempoxyz/tempo` issues filtered by storage, db, state-root labels. Bookmark 2-3 candidate "future second-PR" issues. Do NOT claim. Reth comes first.
+- [ ] [Tempo] 15 min after Reth issue claimed: scan `tempoxyz/tempo` issues filtered by storage, db, state-root labels.
+  Bookmark 2-3 candidate "future second-PR" issues. Do NOT claim. Reth comes first.
 - [ ] Commit notes
 
 **Saturday — First reth storage PR work**
+
 - [ ] Implement. Submit PR.
 - [ ] Commit + log
 
@@ -1467,67 +1790,86 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 27 — `storage-trie::mdbx`: mmap scaffold + `wal` integration
 
 **Monday — Research mmap in Rust**
+
 - [ ] memmap2 crate docs. Rust + mmap safety.
 - [ ] Commit notes
 
 **Tuesday — mmap B-tree research (decide: thin wrapper vs from-scratch)**
+
 - [ ] B-tree on mmap techniques.
-- [ ] **Decision**: thin wrapper over libmdbx-rs vs from-scratch. Default wrapper unless explicit re-implementation milestone. Record in notes/.
+- [ ] **Decision**: thin wrapper over libmdbx-rs vs from-scratch. Default wrapper unless explicit re-implementation
+  milestone. Record in notes/.
 - [ ] Commit notes
 
 **Wednesday — Crate structure (extending the W23 scaffold)**
-- [ ] Lay out storage-trie/src/{mdbx, tables, mpt, state_root, merkle_stage, lib.rs}. mpt and state_root re-export from eth-trie.
+
+- [ ] Lay out storage-trie/src/{mdbx, tables, mpt, state_root, merkle_stage, lib.rs}. mpt and state_root re-export from
+  eth-trie.
 - [ ] Sketch Tx / Cursor traits matching reth-db-api.
 - [ ] Commit + log
 
 **Thursday — Page provider over mmap + `bufpool` integration**
+
 - [ ] Implement MmapPageProvider returning eth_storage_cache::Page views.
-- [ ] Wire `bufpool::BufferPool<MmapPageProvider>` as the L1 cache in front of MDBX. Pinned pages survive eviction; dirty pages are written back to mmap on flush.
+- [ ] Wire `bufpool::BufferPool<MmapPageProvider>` as the L1 cache in front of MDBX. Pinned pages survive eviction;
+  dirty pages are written back to mmap on flush.
 - [ ] Free-list allocation.
 - [ ] Commit + log
 
 **Friday — mmap wrapper + `wal` write path**
+
 - [ ] mmap-backed file wrapper with safe remap on growth.
-- [ ] **Build**: storage-trie's write transaction now appends to `wal::Wal` BEFORE updating mmap pages. WAL-first means crash recovery is well-defined.
+- [ ] **Build**: storage-trie's write transaction now appends to `wal::Wal` BEFORE updating mmap pages. WAL-first means
+  crash recovery is well-defined.
 - [ ] Commit + log
 
 **Saturday — Respond to reth PR review + continue crate**
+
 - [ ] Address reth PR feedback.
 - [ ] Continue crate work.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
-- [ ] [Tempo] 20 min: skim Tempo releases page (tempoxyz/tempo/releases). Identify which TIPs are landing this week. Add to notes/tempo_roadmap.md. (Weekly ritual from now on.)
+
+- [ ] [Tempo] 20 min: skim Tempo releases page (tempoxyz/tempo/releases). Identify which TIPs are landing this week. Add
+  to notes/tempo_roadmap.md. (Weekly ritual from now on.)
 
 ---
 
 ### Week 28 — `storage-trie` crate: B-tree core
 
 **Monday — B-tree node design**
+
 - [ ] Design leaf vs internal node layout.
 - [ ] Commit + log
 
 **Tuesday — B-tree insert**
+
 - [ ] Insert with node splitting. Unit tests.
 - [ ] Commit + log
 
 **Wednesday — B-tree get**
+
 - [ ] Lookup by key. Range iteration.
 - [ ] Commit + log
 
 **Thursday — B-tree delete**
+
 - [ ] Delete with node merging.
 - [ ] Commit + log
 
 **Friday — Second reth storage PR**
+
 - [ ] Pick next issue. Implement.
 - [ ] Commit + log
 
 **Saturday — Crate polish**
+
 - [ ] Document public API. Benchmark setup.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 7 review**
+
 - [ ] Update North Star M7 metrics.
 - [ ] [Tempo] 20 min during ritual: Tempo releases skim.
 
@@ -1540,35 +1882,47 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 **[NEW] crate created**: `crates/recovery/`. ARIES-style recovery as a reusable component.
 
 **Monday — ARIES paper + design**
+
 - [ ] Read Mohan et al. ARIES paper sections 1-4.
-- [ ] **Build**: `crates/recovery/Cargo.toml` workspace member. Deps: `wal`, `time`. The wal crate gives us LSNs; recovery layers on top.
-- [ ] **Build**: `crates/recovery/src/lib.rs` skeleton with module headers: `analysis.rs`, `redo.rs`, `undo.rs`, `checkpoint.rs`.
+- [ ] **Build**: `crates/recovery/Cargo.toml` workspace member. Deps: `wal`, `time`. The wal crate gives us LSNs;
+  recovery layers on top.
+- [ ] **Build**: `crates/recovery/src/lib.rs` skeleton with module headers: `analysis.rs`, `redo.rs`, `undo.rs`,
+  `checkpoint.rs`.
 - [ ] Commit + log
 
 **Tuesday — ARIES analysis pass**
-- [ ] **Build**: `crates/recovery/src/analysis.rs` — `AnalysisPass<'a, R: Replayer>`. Walks WAL forward from last checkpoint LSN. Builds two tables: `DirtyPageTable` (PageId → recovery LSN) and `TransactionTable` (TxId → LastLsn). Stops at end of WAL.
+
+- [ ] **Build**: `crates/recovery/src/analysis.rs` — `AnalysisPass<'a, R: Replayer>`. Walks WAL forward from last
+  checkpoint LSN. Builds two tables: `DirtyPageTable` (PageId → recovery LSN) and `TransactionTable` (TxId → LastLsn).
+  Stops at end of WAL.
 - [ ] Test: 100 txs, half committed, replay analysis pass — TxTable correctly identifies in-flight txs.
 - [ ] Commit + log
 
 **Wednesday — MVCC design (in `storage-trie`)**
+
 - [ ] Design MVCC (version chain vs copy-on-write).
 - [ ] Commit notes
 
 **Thursday — ARIES redo pass**
-- [ ] **Build**: `crates/recovery/src/redo.rs` — `RedoPass`. Re-applies every WAL record from min(recoveryLSN) forward to a page if pageLSN < recordLSN. Idempotent.
+
+- [ ] **Build**: `crates/recovery/src/redo.rs` — `RedoPass`. Re-applies every WAL record from min(recoveryLSN) forward
+  to a page if pageLSN < recordLSN. Idempotent.
 - [ ] Test: crash mid-write, replay analysis + redo → page state matches pre-crash committed state.
 - [ ] Commit + log
 
 **Friday — Third reth storage PR + MVCC read tx**
+
 - [ ] Medium-difficulty issue.
 - [ ] Implement storage-trie read tx with snapshot (MVCC).
 - [ ] Commit + log
 
 **Saturday — Crate: durability + wal integration**
+
 - [ ] fsync strategies. Crash recovery wired through `recovery::AnalysisPass` + `RedoPass`.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] [Tempo] 20 min: Tempo releases skim.
 
 ---
@@ -1576,32 +1930,45 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 30 — [NEW] `recovery` undo pass + ship v0.5; reth trie crate reading
 
 **Monday — ARIES undo pass**
-- [ ] **Build**: `crates/recovery/src/undo.rs` — `UndoPass` rolls back all txs in `TransactionTable` from analysis. Walks each tx's chain via prevLSN field of each WAL record. Writes Compensation Log Records (CLRs) so undo is idempotent under re-crash.
-- [ ] Test: write 10 txs, abort 5 mid-flight via simulated crash, run analysis+redo+undo — final state matches "5 committed, 5 never happened."
+
+- [ ] **Build**: `crates/recovery/src/undo.rs` — `UndoPass` rolls back all txs in `TransactionTable` from analysis.
+  Walks each tx's chain via prevLSN field of each WAL record. Writes Compensation Log Records (CLRs) so undo is
+  idempotent under re-crash.
+- [ ] Test: write 10 txs, abort 5 mid-flight via simulated crash, run analysis+redo+undo — final state matches "5
+  committed, 5 never happened."
 - [ ] Commit + log
 
 **Tuesday — `recovery::checkpoint` + ship**
-- [ ] **Build**: `crates/recovery/src/checkpoint.rs` — `Checkpointer` writes Begin-Checkpoint and End-Checkpoint WAL records with current DPT + TT. Bounds recovery time.
-- [ ] **Build**: `crates/recovery/src/lib.rs` — `Recovery::recover(wal: &Wal, page_provider: &mut impl PageProvider) -> Result<(), Error>` orchestrating analysis → redo → undo.
+
+- [ ] **Build**: `crates/recovery/src/checkpoint.rs` — `Checkpointer` writes Begin-Checkpoint and End-Checkpoint WAL
+  records with current DPT + TT. Bounds recovery time.
+- [ ] **Build**: `crates/recovery/src/lib.rs` —
+  `Recovery::recover(wal: &Wal, page_provider: &mut impl PageProvider) -> Result<(), Error>` orchestrating analysis →
+  redo → undo.
 - [ ] Tag `recovery v0.5.0`.
 - [ ] Commit + log
 
 **Wednesday — reth-trie state root**
+
 - [ ] State root computation. Incremental.
 - [ ] Commit notes
 
 **Thursday — reth-trie hashed state**
+
 - [ ] Hashed state abstraction.
 - [ ] Commit notes
 
 **Friday — First reth trie PR**
+
 - [ ] Find trie-related issue. Implement.
 - [ ] Commit + log
 
 **Saturday — Crate: benchmarks + recovery integration in storage-trie**
+
 - [ ] criterion benchmarks for B-tree ops. Baseline vs sled, redb.
 - [ ] storage-trie::open() now calls `recovery::Recovery::recover(...)` before serving reads.
-- [ ] [Tempo] 1 hr at end of day: while reth-trie is fresh, browse Tempo's trie integration. Note: Tempo uses Reth's trie wholesale; divergence is in state schema (TIP-20 token balances first-class). 2-paragraph note to tempo_diff.md.
+- [ ] [Tempo] 1 hr at end of day: while reth-trie is fresh, browse Tempo's trie integration. Note: Tempo uses Reth's
+  trie wholesale; divergence is in state schema (TIP-20 token balances first-class). 2-paragraph note to tempo_diff.md.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -1610,67 +1977,84 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Week 31 — Persistent MPT in `storage-trie::mpt`
 
-**Inheritance**: Nibbles, Node, HashBuilder, TrieStorage, StateRoot, ProofRetainer all in eth-trie. This week adds **persistent** backing — MdbxTrieStorage implementing eth-trie::TrieStorage against W27-29 MDBX + wal + recovery. Do NOT reimplement.
+**Inheritance**: Nibbles, Node, HashBuilder, TrieStorage, StateRoot, ProofRetainer all in eth-trie. This week adds *
+*persistent** backing — MdbxTrieStorage implementing eth-trie::TrieStorage against W27-29 MDBX + wal + recovery. Do NOT
+reimplement.
 
 **Monday — `MdbxTrieStorage` design**
+
 - [ ] Design table layout (state nodes by hash, intermediate nodes by Nibbles path).
 - [ ] Implement `eth_trie::TrieStorage for MdbxTrieStorage` skeleton.
 - [ ] Commit + log
 
 **Tuesday — Wire `eth-trie::Node` to the table layout**
+
 - [ ] Cursor-based read path + dirty-set write path against MDBX.
 - [ ] Commit + log
 
 **Wednesday — Persistent insert via existing HashBuilder**
+
 - [ ] Drive eth_trie::HashBuilder with MdbxTrieStorage as read source.
 - [ ] Test: round-trip small trie through MDBX; assert root matches W10/W20 in-memory.
 - [ ] Commit + log
 
 **Thursday — Persistent get via existing walker**
+
 - [ ] Drive eth_trie::TrieWalker against MdbxTrieStorage.
 - [ ] Range scans via MDBX cursor.
 - [ ] Commit + log
 
 **Friday — Root hash regression suite against `eth-trie` v0.2 fixtures**
+
 - [ ] Re-run W20's Ethereum test vectors with persistent backing — assert byte-identical roots.
 - [ ] Commit + log
 
 **Saturday — Reth trie second PR**
+
 - [ ] Continue trie contribution.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
-- [ ] [Tempo] 30 min during ritual: read one Tempo TIP from queue. Storage-relevant if available. Aim for "one TIP per ritual" through Phase 3.
+
+- [ ] [Tempo] 30 min during ritual: read one Tempo TIP from queue. Storage-relevant if available. Aim for "one TIP per
+  ritual" through Phase 3.
 
 ---
 
 ### Week 32 — MPT proofs + more reth PRs
 
 **Monday — MPT proof generation**
+
 - [ ] Implement Merkle proof generation. Unit tests.
 - [ ] Commit + log
 
 **Tuesday — MPT proof verification**
+
 - [ ] Standalone proof verification.
 - [ ] Commit + log
 
 **Wednesday — MPT delete**
+
 - [ ] MPT delete with rebalancing.
 - [ ] Commit + log
 
 **Thursday — Ethereum test vectors**
+
 - [ ] Integrate official trie test vectors.
 - [ ] Commit + log
 
 **Friday — Reth PR volume**
+
 - [ ] Another reth PR (storage or trie).
 - [ ] Commit + log
 
 **Saturday — Crate docs**
+
 - [ ] Comprehensive docs for all public APIs. Examples in docs.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 8 review**
+
 - [ ] [Tempo] 20 min: Tempo releases skim.
 
 ---
@@ -1680,32 +2064,41 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 33 — Advanced trie: path compression + LSM extension reading
 
 **Monday — Path compression theory + skyzh/mini-lsm Week 1 Day 1-2 reading**
+
 - [ ] Research path compression. Ethereum's approach.
-- [ ] **Read** mini-lsm tutorial https://skyzh.github.io/mini-lsm/ Week 1 Day 1 (Memtable) and Day 2 (Merge Iterator). This is the alternative engine model — informs the W38-W40 `lsm-core` extraction.
+- [ ] **Read** mini-lsm tutorial https://skyzh.github.io/mini-lsm/ Week 1 Day 1 (Memtable) and Day 2 (Merge Iterator).
+  This is the alternative engine model — informs the W38-W40 `lsm-core` extraction.
 - [ ] Commit notes
 
 **Tuesday — Implement path compression in storage-trie**
+
 - [ ] Add to crate MPT. Verify correctness.
 - [ ] Commit + log
 
 **Wednesday — Benchmark path compression + skyzh Week 1 Day 3-4 reading**
+
 - [ ] Benchmark with/without. Document.
 - [ ] **Read** mini-lsm Week 1 Day 3 (Block format) and Day 4 (SSTable). Note the encoding choices.
 - [ ] Commit + log
 
 **Thursday — Reth staged sync survey**
+
 - [ ] Browse reth/crates/stages deeply.
 - [ ] Commit notes
 
 **Friday — Stage dependencies diagram + skyzh Week 1 Day 5-7 reading**
+
 - [ ] Detailed flow diagram. Unwind paths.
-- [ ] **Read** mini-lsm Week 1 Day 5-7 (read path, write path, bloom filters). The bloom-filter section is the spec for W34's `bloom` crate.
+- [ ] **Read** mini-lsm Week 1 Day 5-7 (read path, write path, bloom filters). The bloom-filter section is the spec for
+  W34's `bloom` crate.
 - [ ] Commit notes
 
 **Saturday — Reth PR day + skyzh Week 2 (compaction) reading**
+
 - [ ] Another reth PR.
 - [ ] **Read** mini-lsm Week 2 in full (STCS compaction).
-- [ ] [Tempo] 30 min at end of day: read 2 of the most storage-relevant TIPs end-to-end from W19 list. Add 1-page "TIP storage impact" summary to notes/.
+- [ ] [Tempo] 30 min at end of day: read 2 of the most storage-relevant TIPs end-to-end from W19 list. Add 1-page "TIP
+  storage impact" summary to notes/.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -1714,40 +2107,52 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Week 34 — [NEW] `bloom` crate v0.1 + Pruning strategies
 
-**[NEW] crate created**: `crates/bloom/`. General bloom filter primitive — classic, counting, scalable. Note: Ethereum's 2048-bit Logs Bloom from eth-consensus stays where it is (it's a domain-specific encoding). The `bloom` crate is the general engine used by storage-trie's pruning index, mini-db SSTable filters, and vector-db filtered-search bitmap.
+**[NEW] crate created**: `crates/bloom/`. General bloom filter primitive — classic, counting, scalable. Note: Ethereum's
+2048-bit Logs Bloom from eth-consensus stays where it is (it's a domain-specific encoding). The `bloom` crate is the
+general engine used by storage-trie's pruning index, mini-db SSTable filters, and vector-db filtered-search bitmap.
 
 **Monday — Bloom theory + design**
-- [ ] Re-read mini-lsm bloom section. Read "Cache, Hash, and Space-Efficient Bloom Filters" (Putze et al.). FPR math: m bits, k hashes, n insertions → fpr ≈ (1 - e^(-kn/m))^k.
+
+- [ ] Re-read mini-lsm bloom section. Read "Cache, Hash, and Space-Efficient Bloom Filters" (Putze et al.). FPR math: m
+  bits, k hashes, n insertions → fpr ≈ (1 - e^(-kn/m))^k.
 - [ ] **Build**: `crates/bloom/Cargo.toml` workspace member. Deps: `time` (for instrumentation only).
-- [ ] **Build**: `crates/bloom/src/classic.rs` — `BloomFilter { bits: BitVec, k: u8, hasher_seeds: [u64; 4] }` with `with_fpr_at_capacity(fpr, n)` constructor.
+- [ ] **Build**: `crates/bloom/src/classic.rs` — `BloomFilter { bits: BitVec, k: u8, hasher_seeds: [u64; 4] }` with
+  `with_fpr_at_capacity(fpr, n)` constructor.
 - [ ] Test: 1M insertions, target FPR 1%, measured FPR ≤ 1.2%.
 - [ ] Commit + log
 
 **Tuesday — Counting bloom + Reth pruning code**
+
 - [ ] **Build**: `crates/bloom/src/counting.rs` — `CountingBloom` with u4 or u8 counters. Supports deletion.
 - [ ] Read reth pruner crate.
 - [ ] Commit + log
 
 **Wednesday — Scalable bloom + storage-trie pruning design**
-- [ ] **Build**: `crates/bloom/src/scalable.rs` — `ScalableBloomFilter` chains classic filters with tightening FPR (Almeida et al.). Grows without rebuild.
+
+- [ ] **Build**: `crates/bloom/src/scalable.rs` — `ScalableBloomFilter` chains classic filters with tightening FPR (
+  Almeida et al.). Grows without rebuild.
 - [ ] Design pruning strategy trait in storage-trie. Plan MPT integration.
 - [ ] Tag `bloom v0.1.0`.
 - [ ] Commit + log
 
 **Thursday — Implement full pruning**
+
 - [ ] "full" retention (prune history beyond N blocks).
 - [ ] Use `bloom::ScalableBloomFilter` to track which keys exist post-prune (avoids false-positive deletions).
 - [ ] Commit + log
 
 **Friday — Implement archive mode**
+
 - [ ] Keep everything mode.
 - [ ] Commit + log
 
 **Saturday — Reth PR + integration testing**
+
 - [ ] Reth PR in pruning area if possible.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] [Tempo] 20 min: Tempo releases skim.
 
 ---
@@ -1755,30 +2160,37 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 35 — State commitment deep
 
 **Monday — State commitment theory**
+
 - [ ] State commitment schemes. MPT vs Verkle tradeoffs.
 - [ ] Commit notes
 
 **Tuesday — Verkle Trees reading**
+
 - [ ] Verkle Trees research (Vitalik, EF).
 - [ ] Commit notes
 
 **Wednesday — Crate: incremental root**
+
 - [ ] Design incremental state root computation.
 - [ ] Commit + log
 
 **Thursday — Benchmark incremental vs full**
+
 - [ ] Benchmark root computation.
 - [ ] Commit + log
 
 **Friday — Reth PR**
+
 - [ ] Continue velocity.
 - [ ] Commit + log
 
 **Saturday — Crate polish**
+
 - [ ] Clean up APIs. Update docs.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] [Tempo] 20 min: Tempo releases skim.
 
 ---
@@ -1786,31 +2198,41 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 36 — Snapshot sync research
 
 **Monday — Snapshot sync theory**
+
 - [ ] Ethereum snapshot sync.
 - [ ] Commit notes
 
 **Tuesday — Erigon snapshots**
+
 - [ ] Erigon's snapshot strategy. File format.
 - [ ] Commit notes
 
 **Wednesday — Reth snapshots**
+
 - [ ] reth's snapshot approach.
 - [ ] Commit notes
 
 **Thursday — Crate: snapshot export**
+
 - [ ] Design export format. Basic export.
 - [ ] Commit + log
 
 **Friday — Crate: snapshot import + recovery integration**
-- [ ] Snapshot import. Wire `recovery::Checkpointer` so a snapshot can be treated as a checkpoint barrier — recovery after snapshot import starts from the snapshot's LSN.
+
+- [ ] Snapshot import. Wire `recovery::Checkpointer` so a snapshot can be treated as a checkpoint barrier — recovery
+  after snapshot import starts from the snapshot's LSN.
 - [ ] Commit + log
 
 **Saturday — End Month 9 PR push**
+
 - [ ] 1-2 more reth PRs.
-- [ ] [Tempo] 45 min at end of day: read tempoxyz/tidx README (Tempo's PostgreSQL + ClickHouse chain indexer). Note: analytics path separate from node snapshots. Document architectural split in tempo_diff.md. NOT something to build — interview context.
+- [ ] [Tempo] 45 min at end of day: read tempoxyz/tidx README (Tempo's PostgreSQL + ClickHouse chain indexer). Note:
+  analytics path separate from node snapshots. Document architectural split in tempo_diff.md. NOT something to build —
+  interview context.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 9 review**
+
 - [ ] Check: 15+ reth PRs, 10+ in storage/trie.
 
 ---
@@ -1820,68 +2242,87 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 37 — Medium-sized reth PRs + skyzh Week 3 (MVCC) reading
 
 **Monday — Identify meaningful PR target + read mini-lsm Week 3**
+
 - [ ] Enhancement issues. 1 medium PR candidate. Design.
 - [ ] **Read** mini-lsm Week 3 (MVCC) in full. Note how it interacts with the LSM layer — informs `txn` v0.5 W42.
 - [ ] Commit notes
 
 **Tuesday — Medium PR: implement**
+
 - [ ] Start implementation.
 - [ ] Commit + log
 
 **Wednesday — Medium PR: tests**
+
 - [ ] Comprehensive testing.
 - [ ] Commit + log
 
 **Thursday — Medium PR: benchmark**
+
 - [ ] Perf measurements if relevant.
 - [ ] Commit + log
 
 **Friday — Medium PR: submit**
+
 - [ ] Submit.
 - [ ] Commit + log
 
 **Saturday — Crate work**
+
 - [ ] Continue storage-trie enhancements.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] [Tempo] 20 min: Tempo releases skim.
 
 ---
 
 ### Week 38 — [NEW] `lsm-core` v0.1: memtable + merge iterator
 
-**[NEW] crate created**: `crates/lsm-core/`. Mini-LSM-equivalent core. The alternative storage engine the `mini-db` CAPSTONE (W95) consumes.
+**[NEW] crate created**: `crates/lsm-core/`. Mini-LSM-equivalent core. The alternative storage engine the `mini-db`
+CAPSTONE (W95) consumes.
 
 **Monday — `lsm-core` scaffold + memtable**
+
 - [ ] **Build**: `crates/lsm-core/Cargo.toml` workspace member. Deps: `time`, `bufpool`, `wal`, `bloom`.
-- [ ] **Build**: `crates/lsm-core/src/memtable.rs` — `MemTable { skip_list: ConcurrentSkipList<Key, ValueWithTombstone>, size: AtomicUsize }`. Skip list per skyzh tutorial Day 1.
+- [ ] **Build**: `crates/lsm-core/src/memtable.rs` —
+  `MemTable { skip_list: ConcurrentSkipList<Key, ValueWithTombstone>, size: AtomicUsize }`. Skip list per skyzh tutorial
+  Day 1.
 - [ ] Test: insert 10k, scan in order, size accounting correct.
 - [ ] Commit + log
 
 **Tuesday — `lsm-core` merge iterator**
-- [ ] **Build**: `crates/lsm-core/src/iterator.rs` — `MergeIterator<I: KvIterator>` k-way merge via a min-heap over (key, source_idx, value). Tie-break by source_idx (newer wins).
+
+- [ ] **Build**: `crates/lsm-core/src/iterator.rs` — `MergeIterator<I: KvIterator>` k-way merge via a min-heap over (
+  key, source_idx, value). Tie-break by source_idx (newer wins).
 - [ ] Test: merge 4 sorted streams of 1k each → 4k sorted with newer tombstones winning.
 - [ ] Commit + log
 
 **Wednesday — Reth codecs read**
+
 - [ ] Read reth codecs crate.
 - [ ] Commit notes
 
 **Thursday — Zstd compression in reth + lsm-core block design**
+
 - [ ] How reth uses compression.
-- [ ] **Build**: `crates/lsm-core/src/block.rs` — `Block { offsets: Vec<u16>, data: Bytes, restart_interval: u16 }`. Restart-point compression (LevelDB-style).
+- [ ] **Build**: `crates/lsm-core/src/block.rs` — `Block { offsets: Vec<u16>, data: Bytes, restart_interval: u16 }`.
+  Restart-point compression (LevelDB-style).
 - [ ] Commit notes
 
 **Friday — Reth PR**
+
 - [ ] Codec-related PR ideally.
 - [ ] Commit + log
 
 **Saturday — `lsm-core` block bench**
+
 - [ ] criterion: block encoding/decoding throughput at restart_interval 8, 16, 64.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] [Tempo] 20 min: Tempo releases skim.
 
 ---
@@ -1889,68 +2330,92 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 39 — [NEW] `lsm-core` v0.3: SSTable + bloom + read path
 
 **Monday — `lsm-core` SSTable format**
-- [ ] **Build**: `crates/lsm-core/src/sst/mod.rs` — `SSTable { blocks: Vec<Block>, index: BlockIndex, bloom: bloom::ClassicBloomFilter, meta: SstMetadata }`. Footer encodes index + bloom offsets.
-- [ ] **Build**: `crates/lsm-core/src/sst/builder.rs` — `SstBuilder` streams kvs into blocks, populating bloom + index incrementally.
+
+- [ ] **Build**: `crates/lsm-core/src/sst/mod.rs` —
+  `SSTable { blocks: Vec<Block>, index: BlockIndex, bloom: bloom::ClassicBloomFilter, meta: SstMetadata }`. Footer
+  encodes index + bloom offsets.
+- [ ] **Build**: `crates/lsm-core/src/sst/builder.rs` — `SstBuilder` streams kvs into blocks, populating bloom + index
+  incrementally.
 - [ ] Commit + log
 
 **Tuesday — `lsm-core` SST read path**
-- [ ] **Build**: `crates/lsm-core/src/sst/reader.rs` — `SstReader` mmap-backed, bloom-filter-first lookup, block-load via `bufpool`.
+
+- [ ] **Build**: `crates/lsm-core/src/sst/reader.rs` — `SstReader` mmap-backed, bloom-filter-first lookup, block-load
+  via `bufpool`.
 - [ ] Test: write 100k unique keys to SST, read back 1M random gets — bloom rejects ≥99% of non-existent keys.
 - [ ] Commit + log
 
 **Wednesday — Read storage discussions + lsm-core write path**
+
 - [ ] All recent GitHub discussions on storage.
-- [ ] **Build**: `crates/lsm-core/src/write_path.rs` — `flush_memtable_to_l0(mem: MemTable, dir: &Path) -> Result<SstReader>`. Wal-backed.
+- [ ] **Build**: `crates/lsm-core/src/write_path.rs` —
+  `flush_memtable_to_l0(mem: MemTable, dir: &Path) -> Result<SstReader>`. Wal-backed.
 - [ ] Commit + log
 
 **Thursday — Crate: composition test**
+
 - [ ] Integration test: B-tree + MPT + transaction combined.
 - [ ] Commit + log
 
 **Friday — Crate: example + substantive Reth comment**
+
 - [ ] Example showing typical storage-trie usage.
 - [ ] Find appropriate discussion. Substantive technical comment.
 - [ ] Commit + log
 
 **Saturday — Consolidation + more Reth PR**
+
 - [ ] Review everything.
 - [ ] Continue velocity.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
-- [ ] [Tempo] 20 min: Tempo releases skim + 1-sentence summary of "what shipped in Tempo this month" to tempo_roadmap.md.
+
+- [ ] [Tempo] 20 min: Tempo releases skim + 1-sentence summary of "what shipped in Tempo this month" to
+  tempo_roadmap.md.
 
 ---
 
 ### Week 40 — [NEW] `lsm-core` v0.5: STCS compaction + ship
 
 **Monday — STCS theory + implementation start**
-- [ ] **Build**: `crates/lsm-core/src/compaction/stcs.rs` — Size-Tiered. Trigger when level i has ≥4 similarly-sized SSTs. Merge them via MergeIterator into level i+1.
+
+- [ ] **Build**: `crates/lsm-core/src/compaction/stcs.rs` — Size-Tiered. Trigger when level i has ≥4 similarly-sized
+  SSTs. Merge them via MergeIterator into level i+1.
 - [ ] Commit + log
 
 **Tuesday — Compaction scheduler**
-- [ ] **Build**: `crates/lsm-core/src/compaction/scheduler.rs` — background thread runs compaction picks. Throttling via the same `backpressure::CreditFlowControl` matching-engine will use.
+
+- [ ] **Build**: `crates/lsm-core/src/compaction/scheduler.rs` — background thread runs compaction picks. Throttling via
+  the same `backpressure::CreditFlowControl` matching-engine will use.
 - [ ] Commit + log
 
 **Wednesday — Feature implementation: lsm-backed alt-engine in storage-trie (experimental)**
-- [ ] **Build**: `storage-trie::lsm_engine` feature flag wires lsm-core in as an alternative to MDBX. Not for production — proof of inheritance, and an option for chains with high write amplification budgets.
+
+- [ ] **Build**: `storage-trie::lsm_engine` feature flag wires lsm-core in as an alternative to MDBX. Not for
+  production — proof of inheritance, and an option for chains with high write amplification budgets.
 - [ ] Commit + log
 
 **Thursday — Tag `lsm-core v0.5.0` + feature PR continuation**
+
 - [ ] Tag.
 - [ ] Continue reth feature PR.
 - [ ] Commit + log
 
 **Friday — Feature: tests**
+
 - [ ] Comprehensive tests.
 - [ ] Commit + log
 
 **Saturday — Feature: submit**
+
 - [ ] Submit PR.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 10 review**
-- [ ] [Tempo] 30 min during ritual: identify by name which 2 Tempo maintainers have been most active in the last month's PR/release activity (likely klkvr, legion2002, or 0xrusowsky). Update Tempo maintainer tracker.
+
+- [ ] [Tempo] 30 min during ritual: identify by name which 2 Tempo maintainers have been most active in the last month's
+  PR/release activity (likely klkvr, legion2002, or 0xrusowsky). Update Tempo maintainer tracker.
 
 ---
 
@@ -1959,26 +2424,32 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 41 — Ship reth feature
 
 **Monday — Address feature PR reviews**
+
 - [ ] Iterate on reviews.
 - [ ] Commit + log
 
 **Tuesday — More iteration**
+
 - [ ] Address remaining feedback.
 - [ ] Commit + log
 
 **Wednesday — Feature merged ideally**
+
 - [ ] If merged, celebrate + blog draft.
 - [ ] Commit + log
 
 **Thursday — Crate: performance pass**
+
 - [ ] Profile storage-trie. Hot paths.
 - [ ] Commit + log
 
 **Friday — Crate: optimizations**
+
 - [ ] Implement optimizations.
 - [ ] Commit + log
 
 **Saturday — Another reth PR**
+
 - [ ] Keep velocity.
 - [ ] Commit + log
 
@@ -1988,36 +2459,52 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Week 42 — [NEW] `txn` crate v0.5: 2PL + OCC + deadlock detect
 
-**[NEW] crate created**: `crates/txn/`. Transaction lifecycle and concurrency control. Inherited by storage-trie (rewires existing tx logic), ledger (W80), mini-db (W95), matching-engine (W74 — for per-symbol order-book mutations under raft). v1.0 with 2PC ships W72.
+**[NEW] crate created**: `crates/txn/`. Transaction lifecycle and concurrency control. Inherited by storage-trie (
+rewires existing tx logic), ledger (W80), mini-db (W95), matching-engine (W74 — for per-symbol order-book mutations
+under raft). v1.0 with 2PC ships W72.
 
 **Monday — Geth comparison study (background reading)**
+
 - [ ] Read Geth's Go implementation core/state package.
 - [ ] Commit notes
 
 **Tuesday — `txn` crate scaffold + lifecycle**
+
 - [ ] **Build**: `crates/txn/Cargo.toml` workspace member. Deps: `time`, `wal`, `recovery`.
-- [ ] **Build**: `crates/txn/src/lifecycle.rs` — `Txn { id: TxId, started_at: Hlc, state: AtomicState, locks: LockSet, log_records: SmallVec<Lsn> }`. State enum: Active, Preparing, Committed, Aborted.
-- [ ] **Build**: `crates/txn/src/manager.rs` — `TxnManager { next_id: AtomicU64, active: DashMap<TxId, Arc<Txn>>, ... }`.
+- [ ] **Build**: `crates/txn/src/lifecycle.rs` —
+  `Txn { id: TxId, started_at: Hlc, state: AtomicState, locks: LockSet, log_records: SmallVec<Lsn> }`. State enum:
+  Active, Preparing, Committed, Aborted.
+- [ ] **Build**: `crates/txn/src/manager.rs` —
+  `TxnManager { next_id: AtomicU64, active: DashMap<TxId, Arc<Txn>>, ... }`.
 - [ ] Commit + log
 
 **Wednesday — `txn` 2PL + deadlock detect**
-- [ ] **Build**: `crates/txn/src/locks.rs` — `LockManager` with shared/exclusive lock table per key. Wound-Wait deadlock prevention (newer transactions wound older ones).
-- [ ] **Build**: `crates/txn/src/deadlock.rs` — wait-for graph + cycle detection (Tarjan SCC) as a fallback for explicit deadlock detection.
+
+- [ ] **Build**: `crates/txn/src/locks.rs` — `LockManager` with shared/exclusive lock table per key. Wound-Wait deadlock
+  prevention (newer transactions wound older ones).
+- [ ] **Build**: `crates/txn/src/deadlock.rs` — wait-for graph + cycle detection (Tarjan SCC) as a fallback for explicit
+  deadlock detection.
 - [ ] Test: 4 txs in a cycle, deadlock detector picks the youngest as victim.
 - [ ] Commit + log
 
 **Thursday — `txn` OCC + write phase**
-- [ ] **Build**: `crates/txn/src/occ.rs` — `OccValidator` validates read-set version stamps at commit. Used for read-heavy workloads.
-- [ ] **Build**: `crates/txn/src/commit.rs` — commit path: prepare WAL record → fsync → mark Committed → release locks. Abort path: emit CLRs via `recovery::UndoPass` if necessary.
+
+- [ ] **Build**: `crates/txn/src/occ.rs` — `OccValidator` validates read-set version stamps at commit. Used for
+  read-heavy workloads.
+- [ ] **Build**: `crates/txn/src/commit.rs` — commit path: prepare WAL record → fsync → mark Committed → release locks.
+  Abort path: emit CLRs via `recovery::UndoPass` if necessary.
 - [ ] Commit + log
 
 **Friday — `txn` storage-trie integration**
-- [ ] **Refactor**: storage-trie's existing write-tx now wraps `txn::Txn`. Per-key locks via `txn::LockManager`. WAL records via `txn::commit()`.
+
+- [ ] **Refactor**: storage-trie's existing write-tx now wraps `txn::Txn`. Per-key locks via `txn::LockManager`. WAL
+  records via `txn::commit()`.
 - [ ] Tag `txn v0.5.0`.
 - [ ] Reth PR — pick something simple to keep velocity.
 - [ ] Commit + log
 
 **Saturday — Crate: property tests + fuzz**
+
 - [ ] proptest for MPT invariants.
 - [ ] cargo-fuzz target for `txn::LockManager` (random lock/unlock sequences must never deadlock with Wound-Wait).
 - [ ] Commit + log
@@ -2029,30 +2516,38 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 43 — Crate v1.0 preparation
 
 **Monday — API review**
+
 - [ ] Review all public APIs. Stabilize.
 - [ ] Commit + log
 
 **Tuesday — Documentation pass**
+
 - [ ] Every public item has docs.
 - [ ] Commit + log
 
 **Wednesday — Examples expansion**
+
 - [ ] Multiple examples in examples/.
 - [ ] Commit + log
 
 **Thursday — CI hardening**
+
 - [ ] All CI checks pass. Coverage. MSRV.
 - [ ] Commit + log
 
 **Friday — README + design doc**
-- [ ] Comprehensive README. DESIGN.md showing storage-trie's full inheritance tree: bufpool ← wal ← recovery ← txn ← bloom ← eth-trie ← eth-storage-cache.
+
+- [ ] Comprehensive README. DESIGN.md showing storage-trie's full inheritance tree: bufpool ← wal ← recovery ← txn ←
+  bloom ← eth-trie ← eth-storage-cache.
 - [ ] Commit + log
 
 **Saturday — Reth PR**
+
 - [ ] More PR activity.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] [Tempo] 20 min: Tempo releases skim.
 
 ---
@@ -2060,27 +2555,35 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 44 — `storage-trie` v1.0 ship
 
 **Monday — Final benchmarks**
+
 - [ ] Comprehensive bench suite. Compare vs reth, sled, redb.
-- [ ] **Inheritance audit**: count LOC in storage-trie. Of those, count LOC that calls into bufpool / wal / recovery / txn / bloom / eth-trie / eth-storage-cache. Aim ≥70% wired-up inheritance ratio in LOC or call-site count.
+- [ ] **Inheritance audit**: count LOC in storage-trie. Of those, count LOC that calls into bufpool / wal / recovery /
+  txn / bloom / eth-trie / eth-storage-cache. Aim ≥70% wired-up inheritance ratio in LOC or call-site count.
 - [ ] Commit + log
 
 **Tuesday — Security review self-audit**
+
 - [ ] Review unsafe blocks. Error handling.
 - [ ] Commit + log
 
 **Wednesday — Crate v1.0 tag**
+
 - [ ] Tag `storage-trie v1.0.0`. First Layer-5 product ships.
 - [ ] Commit + log
 
 **Thursday — Blog: crate intro (Phase 3 retrospective option)**
-- [ ] If writing mood, draft "Building storage-trie: how four primitives carry the weight" post. The hook is the inheritance discipline. No deadline.
+
+- [ ] If writing mood, draft "Building storage-trie: how four primitives carry the weight" post. The hook is the
+  inheritance discipline. No deadline.
 - [ ] Commit + log
 
 **Friday — Reth PR**
+
 - [ ] Continue.
 - [ ] Commit + log
 
 **Saturday — Month 11 review**
+
 - [ ] Assess crate quality. PR portfolio.
 - [ ] Commit + log
 
@@ -2093,27 +2596,34 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 45 — Final reth storage feature
 
 **Monday — Identify second feature**
+
 - [ ] Another meaningful opportunity. Design.
 - [ ] Commit notes
 
 **Tuesday — Implement**
+
 - [ ] Code.
 - [ ] Commit + log
 
 **Wednesday — Continue**
+
 - [ ] Commit + log
 
 **Thursday — Tests**
+
 - [ ] Commit + log
 
 **Friday — Submit**
+
 - [ ] Submit PR.
 - [ ] Commit + log
 
 **Saturday — Iterate on reviews**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] [Tempo] 20 min: Tempo releases skim.
 
 ---
@@ -2121,26 +2631,32 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 46 — Recognition signals
 
 **Monday — Review PRs of others**
+
 - [ ] Review others' storage PRs substantively.
 - [ ] Commit notes
 
 **Tuesday — Help newcomers**
+
 - [ ] Answer questions in Telegram.
 - [ ] Commit notes
 
 **Wednesday — More PR reviews**
+
 - [ ] Build reviewing muscle.
 - [ ] Commit notes
 
 **Thursday — Maintainer relationship check**
+
 - [ ] Which maintainers engaged. Update tracker.
 - [ ] Commit notes
 
 **Friday — Active issue engagement**
+
 - [ ] Participate in design discussions.
 - [ ] Commit notes
 
 **Saturday — Another small reth PR**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2150,27 +2666,36 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 47 — revm preview for Phase 4
 
 **Monday — revm architecture refresher**
+
 - [ ] Re-read revm with Phase 3 eyes.
 - [ ] Commit notes
 
 **Tuesday — Identify revm learning gaps**
+
 - [ ] Map what needs deep understanding in Phase 4.
 - [ ] Commit notes
 
 **Wednesday — Reth evm crate**
+
 - [ ] Read reth/crates/evm.
 - [ ] Commit notes
 
 **Thursday — More reth PR**
+
 - [ ] Commit + log
 
 **Friday — Crate maintenance**
+
 - [ ] Any bug fixes on storage-trie.
 - [ ] Commit + log
 
 **Saturday — Phase 4 prep (exec-vm already scaffolded — review state)**
-- [ ] exec-vm seeded W9 + extended W17. Re-read README + opcode coverage matrix. Gap to Phase 4 v1.0. Phase 4 outline in notes/.
-- [ ] [Tempo] 1 hr at end of day: re-read TIP-1020 (signature verification precompile) with exec-vm precompile registry in mind. Sketch in `notes/tempo_evm_ext_design.md` the 3-4 traits and types tempo-evm-ext will need so it can be a downstream crate of exec-vm without forking.
+
+- [ ] exec-vm seeded W9 + extended W17. Re-read README + opcode coverage matrix. Gap to Phase 4 v1.0. Phase 4 outline in
+  notes/.
+- [ ] [Tempo] 1 hr at end of day: re-read TIP-1020 (signature verification precompile) with exec-vm precompile registry
+  in mind. Sketch in `notes/tempo_evm_ext_design.md` the 3-4 traits and types tempo-evm-ext will need so it can be a
+  downstream crate of exec-vm without forking.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2180,35 +2705,48 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 48 — Phase 3 close + M12 Decision Gate
 
 **Monday — Phase 3 reflection**
+
 - [ ] Full assessment vs exit criteria.
 - [ ] Commit notes
 
 **Tuesday — Metrics update**
-- [ ] Update all North Star metrics. Target: 30 storage PRs, 1+ feature, storage-trie v1.0 ✓, 5 new primitive crates shipped (time, backpressure, bufpool, wal, recovery, bloom, lsm-core, txn).
-- [ ] [Tempo] Update M12 Tempo metrics: orientation depth (target 3 — should be there), TIPs read (target 5 — count carefully), PRs merged (target 3 — flag if zero; first Tempo PR scheduled W60-62 so 0 here is acceptable). Do NOT panic-claim if zero.
+
+- [ ] Update all North Star metrics. Target: 30 storage PRs, 1+ feature, storage-trie v1.0 ✓, 5 new primitive crates
+  shipped (time, backpressure, bufpool, wal, recovery, bloom, lsm-core, txn).
+- [ ] [Tempo] Update M12 Tempo metrics: orientation depth (target 3 — should be there), TIPs read (target 5 — count
+  carefully), PRs merged (target 3 — flag if zero; first Tempo PR scheduled W60-62 so 0 here is acceptable). Do NOT
+  panic-claim if zero.
 - [ ] Commit notes
 
 **Wednesday — M12 Decision Gate**
+
 - [ ] Three questions. Answer in `progress.md`.
-    - [ ] **Reth velocity**: am I on track for 35 Reth PRs merged by M18 (need ~3 PR-bundles per month)? If below 60% of trajectory, flag and discuss.
-    - [ ] **Inheritance discipline**: did storage-trie ship with ≥70% inheritance ratio? If no, audit; the discipline failure here will compound through Phases 4-7.
-    - [ ] **Energy / sustainability**: are sleep, fitness, day-job satisfaction green? If any one is red for ≥4 weeks, plan a 2-week rest window before Phase 4.
+    - [ ] **Reth velocity**: am I on track for 35 Reth PRs merged by M18 (need ~3 PR-bundles per month)? If below 60% of
+      trajectory, flag and discuss.
+    - [ ] **Inheritance discipline**: did storage-trie ship with ≥70% inheritance ratio? If no, audit; the discipline
+      failure here will compound through Phases 4-7.
+    - [ ] **Energy / sustainability**: are sleep, fitness, day-job satisfaction green? If any one is red for ≥4 weeks,
+      plan a 2-week rest window before Phase 4.
 - [ ] No path change at M12 — too early. Just calibrate within the Reth-primary plan.
 - [ ] Commit notes
 
 **Thursday — Relationship stock-take**
+
 - [ ] Update maintainer tracker. Identify mentor candidate.
 - [ ] Commit notes
 
 **Friday — Final Phase 3 PRs**
+
 - [ ] Wrap outstanding.
 - [ ] Commit + log
 
 **Saturday — Clean transition prep**
+
 - [ ] Mental prep for Phase 4. Storage maintenance minimum during Phase 4.
 - [ ] Commit notes
 
 **Sunday — End Phase 3 rest**
+
 - [ ] Full rest. Phase 4 starts tomorrow.
 
 ---
@@ -2217,10 +2755,12 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 **Reth Deliverable**: `exec-vm` v1.0 (W68) — full revm-equivalent EVM.
 **[NEW] Layer-4 Deliverables**: `p2p` v0.5 (W55), `consensus-raft` v1.0 (W67), `consensus-bft` v0.5 (W68).
-**[NEW] HFT-track scaffolds**: `matching-engine` scaffold (W58), `matching-engine` v0.5 (W63), `matching-engine` v0.7 (W73). The HFT track begins here as scaffold; primary in Phase 5.
+**[NEW] HFT-track scaffolds**: `matching-engine` scaffold (W58), `matching-engine` v0.5 (W63), `matching-engine` v0.7 (
+W73). The HFT track begins here as scaffold; primary in Phase 5.
 **[NEW] Tempo crate shipments**: `tempo-evm-ext` scaffold (W54), `tempo-tx-envelope` v0.1.0 (W66).
 
-> Tempo Phase 4 budget: 4-5 hrs/wk. First Tempo PR W60 Sat. `tempo-evm-ext` scaffolded W54 Sat. `tempo-tx-envelope` v0.1.0 shipped W66 Fri.
+> Tempo Phase 4 budget: 4-5 hrs/wk. First Tempo PR W60 Sat. `tempo-evm-ext` scaffolded W54 Sat. `tempo-tx-envelope`
+> v0.1.0 shipped W66 Fri.
 > HFT Phase 4 budget: 0 hrs M13 → 0 hrs M14 → ramp to 5 hrs/wk by M16 (W63 matching-engine v0.5) → 7-8 hrs/wk M17-M18.
 
 ## Month 13: Revm Full Codebase + First revm Perf PRs
@@ -2228,27 +2768,36 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 49 — Revm architecture deep
 
 **Monday — Revm top-level**
+
 - [ ] Re-read revm from top. Map all crates.
 - [ ] Commit notes
 
 **Tuesday — Revm interpreter core**
+
 - [ ] Read revm-interpreter in full. Main execution loop.
 - [ ] Commit notes
 
 **Wednesday — Revm Host trait**
+
 - [ ] Read Host trait and impls.
 - [ ] Commit notes
 
 **Thursday — Revm Database trait**
+
 - [ ] Read Database trait. How it integrates with any storage.
 - [ ] Commit notes
 
 **Friday — Revm precompiles**
+
 - [ ] Read revm-precompiles crate. Each precompile.
-- [ ] [Tempo] 1 hr: read revm-precompiles AND tempoxyz/tempo precompile extensions side-by-side. Tempo adds TIP-1020 (P256/WebAuthn/secp256k1 verify) as stateful precompile reusing tx-signature verification. Map: where in exec-vm does this plug in? (Same dispatch point as W19's ECRECOVER, but signature scheme dispatcher must be generic.) Update tempo_evm_ext_design.md.
+- [ ] [Tempo] 1 hr: read revm-precompiles AND tempoxyz/tempo precompile extensions side-by-side. Tempo adds TIP-1020 (
+  P256/WebAuthn/secp256k1 verify) as stateful precompile reusing tx-signature verification. Map: where in exec-vm does
+  this plug in? (Same dispatch point as W19's ECRECOVER, but signature scheme dispatcher must be generic.) Update
+  tempo_evm_ext_design.md.
 - [ ] Commit notes
 
 **Saturday — First revm perf-oriented PR**
+
 - [ ] Find performance issue. Implement.
 - [ ] Commit + log
 
@@ -2259,27 +2808,35 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 50 — Revm journaling
 
 **Monday — Journaling design**
+
 - [ ] Read revm-interpreter journal module. Revert semantics.
 - [ ] Commit notes
 
 **Tuesday — Nested checkpoints**
+
 - [ ] Study nested call handling.
 - [ ] Commit notes
 
 **Wednesday — State access patterns**
+
 - [ ] Read state management in revm.
 - [ ] Commit notes
 
 **Thursday — Second revm PR**
+
 - [ ] Another contribution.
 - [ ] Commit + log
 
 **Friday — `exec-vm`: align traits with revm `Database`/`Host`**
-- [ ] Refactor signatures so any `impl Database for T` from revm Just Works as Host for exec-vm. Goal: swap revm in/out with one type alias change.
-- [ ] [Tempo] 30 min: while refactoring, verify trait shapes are compatible with TempoEvm's extension pattern. Skim tempoxyz/tempo's evm crate to confirm tempo-evm-ext can be downstream consumer without trait-incompatible changes.
+
+- [ ] Refactor signatures so any `impl Database for T` from revm Just Works as Host for exec-vm. Goal: swap revm in/out
+  with one type alias change.
+- [ ] [Tempo] 30 min: while refactoring, verify trait shapes are compatible with TempoEvm's extension pattern. Skim
+  tempoxyz/tempo's evm crate to confirm tempo-evm-ext can be downstream consumer without trait-incompatible changes.
 - [ ] Commit + log
 
 **Saturday — Interpreter loop refactor**
+
 - [ ] Consolidate match-based dispatch from W9 + W17 into `interpreter/dispatch.rs`. Set up W58 jump-table swap.
 - [ ] Commit + log
 
@@ -2289,33 +2846,43 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Week 51 — Opcode coverage gap-fill
 
-**Inheritance**: most basic opcodes DONE (W9 + W17). This week fills missing arithmetic/bitwise and Cancun-specific opcodes.
+**Inheritance**: most basic opcodes DONE (W9 + W17). This week fills missing arithmetic/bitwise and Cancun-specific
+opcodes.
 
 **Monday — Missing arithmetic: SDIV, SMOD, ADDMOD, MULMOD, EXP, SIGNEXTEND**
+
 - [ ] Implement. Unit tests against revm for edge cases.
 - [ ] Commit + log
 
 **Tuesday — Missing bitwise: BYTE, SHL, SHR, SAR**
+
 - [ ] Implement against revm fixtures.
 - [ ] Commit + log
 
 **Wednesday — KECCAK256 + missing call-frame envs**
-- [ ] KECCAK256. CALLDATALOAD, CALLDATASIZE, CALLDATACOPY, CODESIZE, CODECOPY, RETURNDATASIZE, RETURNDATACOPY, GASPRICE, ORIGIN, CALLER, CALLVALUE.
+
+- [ ] KECCAK256. CALLDATALOAD, CALLDATASIZE, CALLDATACOPY, CODESIZE, CODECOPY, RETURNDATASIZE, RETURNDATACOPY, GASPRICE,
+  ORIGIN, CALLER, CALLVALUE.
 - [ ] Commit + log
 
 **Thursday — PREVRANDAO + DIFFICULTY post-Merge handling**
+
 - [ ] Same opcode byte (0x44), different semantics. Fork-aware via CfgEnv::spec_id.
 - [ ] PC, MSIZE, GAS, JUMPDEST coverage check.
 - [ ] Commit + log
 
 **Friday — TLOAD/TSTORE (EIP-1153, Cancun)**
+
 - [ ] Transient storage scoped to call frame. Adds `transient: HashMap` to call-frame state.
 - [ ] Commit + log
 
 **Saturday — MCOPY (EIP-5656, Cancun) + opcode-coverage matrix audit**
+
 - [ ] MCOPY copies memory regions.
 - [ ] Diff opcode coverage table against revm's instruction table.
-- [ ] [Tempo] 30 min: cross-check opcode coverage against Tempo's EVM. They use upstream revm opcodes plus stateful precompiles — no opcode divergence. Note in tempo_evm_ext_design.md: "tempo-evm-ext adds precompiles + tx handler, not opcodes."
+- [ ] [Tempo] 30 min: cross-check opcode coverage against Tempo's EVM. They use upstream revm opcodes plus stateful
+  precompiles — no opcode divergence. Note in tempo_evm_ext_design.md: "tempo-evm-ext adds precompiles + tx handler, not
+  opcodes."
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2324,36 +2891,48 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Week 52 — [NEW] `p2p` crate v0.1: Kademlia discovery
 
-**[NEW] crate created**: `crates/p2p/`. Layer-4 distribution primitive. Inherited by consensus-raft (W56+), consensus-bft (W64+), messaging-aeron (W76 — peer discovery only, not data plane).
+**[NEW] crate created**: `crates/p2p/`. Layer-4 distribution primitive. Inherited by consensus-raft (W56+),
+consensus-bft (W64+), messaging-aeron (W76 — peer discovery only, not data plane).
 
 **Monday — Kademlia paper + p2p scaffold**
+
 - [ ] Read Maymounkov & Mazières Kademlia paper.
 - [ ] **Build**: `crates/p2p/Cargo.toml` workspace member. Deps: `time`, `eth-network-codec`, `backpressure`.
 - [ ] **Build**: `crates/p2p/src/lib.rs` with module headers: `kademlia.rs`, `noise.rs`, `gossip.rs`, `peer.rs`.
 - [ ] Commit + log
 
 **Tuesday — `p2p::peer` + node identity**
-- [ ] **Build**: `crates/p2p/src/peer.rs` — `PeerId(B256)` derived from public key. `Multiaddr` wrapper. `PeerStore` LRU of last-seen peers.
+
+- [ ] **Build**: `crates/p2p/src/peer.rs` — `PeerId(B256)` derived from public key. `Multiaddr` wrapper. `PeerStore` LRU
+  of last-seen peers.
 - [ ] Commit + log
 
 **Wednesday — `p2p::kademlia` routing table**
-- [ ] **Build**: `crates/p2p/src/kademlia/table.rs` — `RoutingTable { buckets: [KBucket; 256] }`. K-bucket eviction with last-seen ordering.
+
+- [ ] **Build**: `crates/p2p/src/kademlia/table.rs` — `RoutingTable { buckets: [KBucket; 256] }`. K-bucket eviction with
+  last-seen ordering.
 - [ ] Commit + log
 
 **Thursday — `p2p::kademlia` FIND_NODE**
+
 - [ ] **Build**: `crates/p2p/src/kademlia/protocol.rs` — FIND_NODE, FIND_VALUE, STORE, PING RPCs. Parallel α=3 lookups.
 - [ ] Commit + log
 
 **Friday — Reth PR (Engine API area preview)**
+
 - [ ] Continue velocity.
 - [ ] Commit + log
 
 **Saturday — `p2p::gossip` skeleton**
-- [ ] **Build**: `crates/p2p/src/gossip.rs` — `GossipBroadcast<T: Encodable>` with `Vec<PeerId>` fan-out, lazy push (IHAVE/IWANT). Inspired by Plumtree but simpler.
+
+- [ ] **Build**: `crates/p2p/src/gossip.rs` — `GossipBroadcast<T: Encodable>` with `Vec<PeerId>` fan-out, lazy push (
+  IHAVE/IWANT). Inspired by Plumtree but simpler.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 13 review**
-- [ ] [Tempo] 20 min: Tempo releases skim. If release touches EVM crate, read diff and note implications for tempo-evm-ext.
+
+- [ ] [Tempo] 20 min: Tempo releases skim. If release touches EVM crate, read diff and note implications for
+  tempo-evm-ext.
 
 ---
 
@@ -2362,26 +2941,32 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 53 — Complete opcode set
 
 **Monday — RETURN, REVERT, INVALID**
+
 - [ ] Terminal opcodes.
 - [ ] Commit + log
 
 **Tuesday — SELFDESTRUCT**
+
 - [ ] Implement.
 - [ ] Commit + log
 
 **Wednesday — EIP-1153 transient storage**
+
 - [ ] TLOAD/TSTORE if not done.
 - [ ] Commit + log
 
 **Thursday — Test vector integration**
+
 - [ ] Integrate Ethereum execution test vectors.
 - [ ] Commit + log
 
 **Friday — revm PR**
+
 - [ ] Contribution.
 - [ ] Commit + log
 
 **Saturday — Reth evm PR**
+
 - [ ] Find reth evm crate issue. Implement.
 - [ ] Commit + log
 
@@ -2392,32 +2977,45 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 54 — Precompiles in `exec-vm` + [Tempo] `tempo-evm-ext` scaffold + [NEW] `p2p::noise`
 
 **Monday — ecrecover + `p2p::noise` skeleton**
+
 - [ ] Implement ecrecover precompile in `exec-vm`. Test vectors.
 - [ ] **Build**: `crates/p2p/src/noise.rs` — Noise_XX_25519_ChaChaPoly_BLAKE2s handshake using `snow` crate.
 - [ ] Commit + log
 
 **Tuesday — sha256, ripemd160, identity + Noise handshake tests**
+
 - [ ] Implement all three precompiles.
 - [ ] Test: two p2p nodes complete Noise_XX handshake over a memory pipe.
 - [ ] Commit + log
 
 **Wednesday — modexp + p2p connection state machine**
+
 - [ ] Implement modexp (using num-bigint).
-- [ ] **Build**: `crates/p2p/src/connection.rs` — type-state state machine: Disconnected → Handshaking → Authenticated → Open → Closed.
+- [ ] **Build**: `crates/p2p/src/connection.rs` — type-state state machine: Disconnected → Handshaking → Authenticated →
+  Open → Closed.
 - [ ] Commit + log
 
 **Thursday — BN256 operations**
+
 - [ ] BN256Add, BN256ScalarMul, BN256Pairing.
 - [ ] Commit + log
 
 **Friday — blake2f + precompile-registry extension hooks**
+
 - [ ] Implement Blake2 F compression in `exec-vm`.
-- [ ] [Tempo] 1 hr at end of day: design exec-vm's precompile dispatch so a downstream tempo-evm-ext can register P256 + WebAuthn verify precompiles without forking. Registry must accept new precompile addresses via registration call (use `Box<dyn Precompile>` over `HashMap<Address, Box<dyn Precompile>>` — W19 skeleton supports this). Add test that registers a dummy "always-return-zero" precompile at address 0x100 to prove extensibility.
+- [ ] [Tempo] 1 hr at end of day: design exec-vm's precompile dispatch so a downstream tempo-evm-ext can register P256 +
+  WebAuthn verify precompiles without forking. Registry must accept new precompile addresses via registration call (use
+  `Box<dyn Precompile>` over `HashMap<Address, Box<dyn Precompile>>` — W19 skeleton supports this). Add test that
+  registers a dummy "always-return-zero" precompile at address 0x100 to prove extensibility.
 - [ ] Commit + log
 
 **Saturday — KZG precompile + `tempo-evm-ext` scaffold**
+
 - [ ] Point evaluation precompile (EIP-4844).
-- [ ] [Tempo] 45 min: **`tempo-evm-ext` scaffold** — create `crates/tempo-evm-ext/` workspace member. `Cargo.toml` depends on exec-vm, eth-primitives, eth-consensus. Empty `lib.rs` with single `register_tempo_precompiles(registry: &mut PrecompileRegistry)` stub function. cargo build --workspace green. No real code yet; lands W66+.
+- [ ] [Tempo] 45 min: **`tempo-evm-ext` scaffold** — create `crates/tempo-evm-ext/` workspace member. `Cargo.toml`
+  depends on exec-vm, eth-primitives, eth-consensus. Empty `lib.rs` with single
+  `register_tempo_precompiles(registry: &mut PrecompileRegistry)` stub function. cargo build --workspace green. No real
+  code yet; lands W66+.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2427,28 +3025,34 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 55 — Journaling in `exec-vm` + [NEW] `p2p` v0.5 ship
 
 **Monday — Journal design + p2p gossip impl**
+
 - [ ] Design journal structure in exec-vm. Mirror revm's approach.
 - [ ] **Build**: `p2p::gossip` push path with bounded fanout (8 peers default), IHAVE pull-back.
 - [ ] Commit + log
 
 **Tuesday — Account journal**
+
 - [ ] Track account changes with undo log.
 - [ ] Commit + log
 
 **Wednesday — Storage journal + p2p tag v0.5**
+
 - [ ] Track storage changes in exec-vm.
 - [ ] Tag `p2p v0.5.0`. The crate is now ready to back consensus-raft (W56).
 - [ ] Commit + log
 
 **Thursday — Nested checkpoints**
+
 - [ ] Support nested call checkpoint/commit.
 - [ ] Commit + log
 
 **Friday — Revert semantics tests**
+
 - [ ] Test revert properly undoes all changes.
 - [ ] Commit + log
 
 **Saturday — revm PR**
+
 - [ ] Contribution.
 - [ ] Commit + log
 
@@ -2458,41 +3062,53 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Week 56 — Test vector push + [NEW] `consensus-raft` v0.1: election
 
-**[NEW] crate created**: `crates/consensus-raft/`. Layer-4 consensus primitive. Inherited by matching-engine v1.0 (W74) and mini-db's distributed mode stub.
+**[NEW] crate created**: `crates/consensus-raft/`. Layer-4 consensus primitive. Inherited by matching-engine v1.0 (W74)
+and mini-db's distributed mode stub.
 
 **Monday — Ethereum tests integration + raft paper re-read**
+
 - [ ] Integrate comprehensive test vectors into exec-vm.
 - [ ] Re-read Ongaro Raft paper. Focus on Figure 2 (RPCs) and Section 5.
 - [ ] Commit + log
 
 **Tuesday — General state tests + raft scaffold**
+
 - [ ] Run general state tests. Fix failures.
 - [ ] **Build**: `crates/consensus-raft/Cargo.toml` workspace member. Deps: `time`, `wal`, `p2p`, `txn`.
-- [ ] **Build**: `crates/consensus-raft/src/lib.rs` with module headers: `state.rs`, `election.rs`, `log.rs`, `rpc.rs`, `membership.rs`, `snapshot.rs`.
+- [ ] **Build**: `crates/consensus-raft/src/lib.rs` with module headers: `state.rs`, `election.rs`, `log.rs`, `rpc.rs`,
+  `membership.rs`, `snapshot.rs`.
 - [ ] Commit + log
 
 **Wednesday — More failure fixing + raft state machine skeleton**
+
 - [ ] Continue exec-vm test-vector fixes.
-- [ ] **Build**: `crates/consensus-raft/src/state.rs` — `Role` enum (Follower, Candidate, Leader). `Persistent { current_term, voted_for, log }` and `Volatile { commit_index, last_applied }`.
+- [ ] **Build**: `crates/consensus-raft/src/state.rs` — `Role` enum (Follower, Candidate, Leader).
+  `Persistent { current_term, voted_for, log }` and `Volatile { commit_index, last_applied }`.
 - [ ] Commit + log
 
 **Thursday — Validator tests + raft election RPCs**
+
 - [ ] Run validator test suite.
 - [ ] **Build**: `crates/consensus-raft/src/rpc.rs` — RequestVote, AppendEntries types.
-- [ ] **Build**: `crates/consensus-raft/src/election.rs` — election timeout (150-300 ms randomized), vote casting, term increment.
+- [ ] **Build**: `crates/consensus-raft/src/election.rs` — election timeout (150-300 ms randomized), vote casting, term
+  increment.
 - [ ] Commit + log
 
 **Friday — reth PR**
+
 - [ ] Storage or evm.
 - [ ] Commit + log
 
 **Saturday — revm PR**
+
 - [ ] Contribution.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 14 review**
+
 - [ ] Crate (exec-vm) passing majority of test vectors.
-- [ ] [Tempo] 20 min: Tempo releases skim. Check Tempo PR queue for any open PRs that look like good-first-issue material. Bookmark for W60.
+- [ ] [Tempo] 20 min: Tempo releases skim. Check Tempo PR queue for any open PRs that look like good-first-issue
+  material. Bookmark for W60.
 
 ---
 
@@ -2501,6 +3117,7 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 57 — EthCC Paris trip
 
 **Monday-Friday — Conference attendance**
+
 - [ ] Attend EthCC sessions.
 - [ ] Target: 1-on-1 with 3 reth core contributors. Arrange via Twitter DM in advance.
 - [ ] Side events (hacker houses, dinners).
@@ -2508,9 +3125,11 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 - [ ] Take notes on talks.
 
 **Saturday — Travel home**
+
 - [ ] Rest.
 
 **Sunday — Post-conference ritual**
+
 - [ ] Update maintainer tracker (Reth + Tempo) with new connections.
 - [ ] Follow-up emails/DMs.
 
@@ -2518,32 +3137,42 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 
 ### Week 58 — Back to work: dispatch strategies + [HFT] `matching-engine` scaffold
 
-**[NEW HFT-track entry point]**: This week the HFT track begins as scaffold. Time budget: 3 hrs/wk through W62, ramping to 5 hrs/wk W63+.
+**[NEW HFT-track entry point]**: This week the HFT track begins as scaffold. Time budget: 3 hrs/wk through W62, ramping
+to 5 hrs/wk W63+.
 
 **Monday — Match dispatch (baseline)**
+
 - [ ] Baseline benchmark.
 - [ ] Commit + log
 
 **Tuesday — Jump table research**
+
 - [ ] Function pointer jump tables.
 - [ ] Commit notes
 
 **Wednesday — Implement jump table dispatch + [HFT] matching-engine scaffold**
+
 - [ ] In exec-vm. Feature-flagged.
-- [ ] [HFT] **Build**: `crates/matching-engine/Cargo.toml` workspace member. Deps: `time`, `backpressure`, `wal`, `recovery`. Empty `lib.rs`. cargo build --workspace green.
-- [ ] [HFT] Sketch in `notes/matching_engine_design.md`: data structures (price levels via RB-tree or skip list — decide W63), order ID generation, deterministic event log via wal, per-symbol shard plan.
-- [ ] [Tempo] 15 min check: ensure tempo-evm-ext can plug into both match-dispatch and jump-table-dispatch code paths. No code today — just a comment in tempo_evm_ext_design.md.
+- [ ] [HFT] **Build**: `crates/matching-engine/Cargo.toml` workspace member. Deps: `time`, `backpressure`, `wal`,
+  `recovery`. Empty `lib.rs`. cargo build --workspace green.
+- [ ] [HFT] Sketch in `notes/matching_engine_design.md`: data structures (price levels via RB-tree or skip list — decide
+  W63), order ID generation, deterministic event log via wal, per-symbol shard plan.
+- [ ] [Tempo] 15 min check: ensure tempo-evm-ext can plug into both match-dispatch and jump-table-dispatch code paths.
+  No code today — just a comment in tempo_evm_ext_design.md.
 - [ ] Commit + log
 
 **Thursday — Computed goto research**
+
 - [ ] Unsafe computed goto via asm. Portability tradeoffs.
 - [ ] Commit notes
 
 **Friday — Benchmark match vs jump table**
+
 - [ ] Measure instruction-level differences.
 - [ ] Commit + log
 
 **Saturday — Dispatch strategy docs**
+
 - [ ] Document findings.
 - [ ] Commit + log
 
@@ -2554,29 +3183,38 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 59 — evmone comparison + [NEW] `consensus-raft` v0.3: log replication
 
 **Monday — evmone overview**
+
 - [ ] Read evmone README deeply.
 - [ ] Commit notes
 
 **Tuesday — evmone basic interpreter + raft log replication**
+
 - [ ] Basic mode (evmone).
-- [ ] **Build**: `crates/consensus-raft/src/log.rs` — `LogEntry { term, index, command, lsn: Lsn }`. Backed by `wal::Wal` for durability.
+- [ ] **Build**: `crates/consensus-raft/src/log.rs` — `LogEntry { term, index, command, lsn: Lsn }`. Backed by
+  `wal::Wal` for durability.
 - [ ] Commit notes
 
 **Wednesday — evmone advanced mode**
+
 - [ ] Advanced interpreter with caching.
 - [ ] Commit notes
 
 **Thursday — Apply learnings to `exec-vm` + raft AppendEntries**
+
 - [ ] Implement applicable optimizations in exec-vm.
-- [ ] **Build**: `crates/consensus-raft/src/replication.rs` — leader sends AppendEntries; followers persist via wal then ack; leader bumps commitIndex when majority replicates.
+- [ ] **Build**: `crates/consensus-raft/src/replication.rs` — leader sends AppendEntries; followers persist via wal then
+  ack; leader bumps commitIndex when majority replicates.
 - [ ] Commit + log
 
 **Friday — Benchmark exec-vm vs revm**
+
 - [ ] Comprehensive benchmark. Identify gaps.
-- [ ] [Tempo] 20 min: note whether tempo-evm-ext's extra precompile dispatch overhead is measurable. (Likely 0 if feature-flagged and not registered.)
+- [ ] [Tempo] 20 min: note whether tempo-evm-ext's extra precompile dispatch overhead is measurable. (Likely 0 if
+  feature-flagged and not registered.)
 - [ ] Commit + log
 
 **Saturday — revm PR**
+
 - [ ] Another contribution.
 - [ ] Commit + log
 
@@ -2587,32 +3225,52 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 60 — Hot path optimization + [Tempo] First Tempo PR + [HFT] matching-engine: order book draft
 
 **Monday — Profile `exec-vm`**
+
 - [ ] Profile with perf or similar.
 - [ ] Commit notes
 
 **Tuesday — Stack optimization + SIMD primer**
-- [ ] 60-90 min reading: `std::simd` (portable SIMD) + `std::arch::x86_64` (target-specific intrinsics). Focus on `__m256i` load/store and the autovectorization patterns rustc already does. Skim the `wide` crate as the stable ecosystem option.
-- [ ] Inline stack ops. While you're in the stack code, evaluate whether U256 push/pop or copy paths can benefit from 256-bit SIMD loads (likely yes for batched memory ops, marginal for single-value push). Note one candidate hot spot in `EXEC_VM_PERF_BACKLOG.md` for SIMD experimentation in W64.
-- [ ] [HFT] 30 min: sketch matching-engine's L2 order book data structure. Decision point: RB-tree (e.g. via std::collections::BTreeMap) vs skip list (cache-friendlier for narrow price spreads, harder to implement correctly). Default RB-tree this week; revisit at W63.
+
+- [ ] 60-90 min reading: `std::simd` (portable SIMD) + `std::arch::x86_64` (target-specific intrinsics). Focus on
+  `__m256i` load/store and the autovectorization patterns rustc already does. Skim the `wide` crate as the stable
+  ecosystem option.
+- [ ] Inline stack ops. While you're in the stack code, evaluate whether U256 push/pop or copy paths can benefit from
+  256-bit SIMD loads (likely yes for batched memory ops, marginal for single-value push). Note one candidate hot spot in
+  `EXEC_VM_PERF_BACKLOG.md` for SIMD experimentation in W64.
+- [ ] [HFT] 30 min: sketch matching-engine's L2 order book data structure. Decision point: RB-tree (e.g. via std::
+  collections::BTreeMap) vs skip list (cache-friendlier for narrow price spreads, harder to implement correctly).
+  Default RB-tree this week; revisit at W63.
 - [ ] Commit + log
 
 **Wednesday — Memory access + matching-engine order book skeleton**
-- [ ] Optimize exec-vm memory reads/writes. MCOPY and CODECOPY are the obvious SIMD candidates — try `std::arch::x86_64::_mm256_loadu_si256` / `_mm256_storeu_si256` for aligned 32-byte block copies and bench against the naive loop. Feature-flag the SIMD path so non-x86_64 targets fall back cleanly.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/book.rs` — `OrderBook { bids: BTreeMap<Price, PriceLevel>, asks: BTreeMap<Price, PriceLevel> }`. `PriceLevel { orders: VecDeque<Order> }` for FIFO/price-time priority.
+
+- [ ] Optimize exec-vm memory reads/writes. MCOPY and CODECOPY are the obvious SIMD candidates — try
+  `std::arch::x86_64::_mm256_loadu_si256` / `_mm256_storeu_si256` for aligned 32-byte block copies and bench against the
+  naive loop. Feature-flag the SIMD path so non-x86_64 targets fall back cleanly.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/book.rs` —
+  `OrderBook { bids: BTreeMap<Price, PriceLevel>, asks: BTreeMap<Price, PriceLevel> }`.
+  `PriceLevel { orders: VecDeque<Order> }` for FIFO/price-time priority.
 - [ ] Commit + log
 
 **Thursday — Gas calculation**
+
 - [ ] Optimize gas tracking in exec-vm hot path.
 - [ ] Commit + log
 
 **Friday — Benchmark improvements**
+
 - [ ] Measure gains.
 - [ ] Commit + log
 
 **Saturday — More reth PRs + [Tempo] First Tempo PR + [HFT] matching-engine: Order type**
+
 - [ ] Keep reth velocity (10+ execution PRs target M18).
-- [ ] [Tempo] 2 hrs: **First Tempo PR claim**. You now have 12+ months of Reth/revm context AND tempo-evm-ext is scaffolded. Browse `tempoxyz/tempo` issues filtered by `good-first-issue` or `help-wanted`. Prefer issues touching TempoEvm or transaction-parsing surfaces. Pick ONE. Comment claiming. Begin implementation.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/order.rs` — `Order { id: u64, side: Side, price: Price, qty: Qty, ts: Monotonic, owner: AccountId, kind: OrderKind }`. OrderKind: Limit, Market, IOC, FOK, PostOnly.
+- [ ] [Tempo] 2 hrs: **First Tempo PR claim**. You now have 12+ months of Reth/revm context AND tempo-evm-ext is
+  scaffolded. Browse `tempoxyz/tempo` issues filtered by `good-first-issue` or `help-wanted`. Prefer issues touching
+  TempoEvm or transaction-parsing surfaces. Pick ONE. Comment claiming. Begin implementation.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/order.rs` —
+  `Order { id: u64, side: Side, price: Price, qty: Qty, ts: Monotonic, owner: AccountId, kind: OrderKind }`. OrderKind:
+  Limit, Market, IOC, FOK, PostOnly.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 15 review**
@@ -2624,31 +3282,41 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 61 — EOF implementation + [Tempo] PR #1 progress + [HFT] matching: cross logic
 
 **Monday — EOF EIP deep re-read**
+
 - [ ] Re-read EIP-3540, 3670. EOF container format.
 - [ ] Commit notes
 
 **Tuesday — EOF validation + [HFT] matching engine: match() impl**
+
 - [ ] Stack validation per EIP-3670.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/match.rs` — `match_order(book: &mut OrderBook, incoming: Order) -> MatchResult`. Returns fills + remainder. Price-time priority.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/match.rs` —
+  `match_order(book: &mut OrderBook, incoming: Order) -> MatchResult`. Returns fills + remainder. Price-time priority.
 - [ ] Commit + log
 
 **Wednesday — Static relative jumps + [HFT] matching: deterministic event log**
+
 - [ ] Implement EIP-4200 opcodes.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/event_log.rs` — every order placed, cancel, fill, partial-fill emits a `MatchEvent` written via `wal::Wal`. Replay reconstructs full book state.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/event_log.rs` — every order placed, cancel, fill, partial-fill emits
+  a `MatchEvent` written via `wal::Wal`. Replay reconstructs full book state.
 - [ ] Commit + log
 
 **Thursday — Functions (EIP-4750)**
+
 - [ ] Implement CALLF, RETF, JUMPF in exec-vm.
 - [ ] Commit + log
 
 **Friday — EOF tests + Tempo PR #1 progress**
+
 - [ ] Integrate EOF test vectors.
-- [ ] [Tempo] 1.5 hrs at end of day: **Tempo PR #1 progress**. Continue implementation. EOF knowledge transfers. Working draft by EOD.
+- [ ] [Tempo] 1.5 hrs at end of day: **Tempo PR #1 progress**. Continue implementation. EOF knowledge transfers. Working
+  draft by EOD.
 - [ ] Commit + log
 
 **Saturday — revm EOF PR + [HFT] matching: risk pre-trade hook**
+
 - [ ] If revm has EOF issues, contribute.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/risk.rs` — `RiskCheck` trait with pre-trade check (balance, position limit, fat-finger). Default impl `NoopRisk` rejects nothing; production impl plugs in W63.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/risk.rs` — `RiskCheck` trait with pre-trade check (balance, position
+  limit, fat-finger). Default impl `NoopRisk` rejects nothing; production impl plugs in W63.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2658,30 +3326,39 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 62 — `exec-vm` + `storage-trie` integration + [NEW] consensus-raft membership
 
 **Monday — Integration design**
+
 - [ ] Design how exec-vm uses storage-trie via Database trait.
 - [ ] Commit + log
 
 **Tuesday — Implement integration + raft membership**
+
 - [ ] Wire up the two crates.
-- [ ] **Build**: `crates/consensus-raft/src/membership.rs` — joint-consensus membership change (C_old → C_old,new → C_new). Tested with one-at-a-time member additions.
+- [ ] **Build**: `crates/consensus-raft/src/membership.rs` — joint-consensus membership change (C_old → C_old,new →
+  C_new). Tested with one-at-a-time member additions.
 - [ ] Commit + log
 
 **Wednesday — Integration tests**
+
 - [ ] End-to-end execution with real storage.
 - [ ] Commit + log
 
 **Thursday — Benchmark integrated stack**
+
 - [ ] Performance vs revm + reth storage.
 - [ ] Commit + log
 
 **Friday — reth evm PR + Tempo PR #1 submit**
+
 - [ ] Reth-side contribution.
-- [ ] [Tempo] 1 hr at end of day: **Tempo PR #1 submit**. Finish, run their CI locally, open the PR with clear motivation + test plan.
+- [ ] [Tempo] 1 hr at end of day: **Tempo PR #1 submit**. Finish, run their CI locally, open the PR with clear
+  motivation + test plan.
 - [ ] Commit + log
 
 **Saturday — Crate maintenance + matching-engine fills emission**
+
 - [ ] storage-trie fixes if needed. exec-vm polish.
-- [ ] [HFT] **Build**: matching-engine emits `Fill` events through a `tokio::sync::broadcast` channel for downstream market-data fan-out. Channel uses `backpressure::BackpressureStrategy::DropOldest` for slow subscribers.
+- [ ] [HFT] **Build**: matching-engine emits `Fill` events through a `tokio::sync::broadcast` channel for downstream
+  market-data fan-out. Channel uses `backpressure::BackpressureStrategy::DropOldest` for slow subscribers.
 - [ ] [Tempo] 30 min: respond to any Tempo PR #1 review feedback. Don't let it sit.
 - [ ] Commit + log
 
@@ -2692,67 +3369,88 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 63 — Fuzz targets + [HFT] matching-engine v0.5 (single-symbol)
 
 **Monday — Fuzz setup**
+
 - [ ] Setup cargo-fuzz on exec-vm. First target on opcode sequences.
 - [ ] Commit + log
 
 **Tuesday — Run fuzz, fix findings + [HFT] matching-engine: differential test against simple reference**
+
 - [ ] Run fuzzer. Address crashes.
-- [ ] [HFT] **Build**: `matching-engine/tests/diff_test.rs` — property test: random sequences of orders → compare matching-engine output to a slow-but-obviously-correct reference matcher (sorted Vec sweep). Must match exactly.
+- [ ] [HFT] **Build**: `matching-engine/tests/diff_test.rs` — property test: random sequences of orders → compare
+  matching-engine output to a slow-but-obviously-correct reference matcher (sorted Vec sweep). Must match exactly.
 - [ ] Commit + log
 
 **Wednesday — More fuzz targets + matching-engine v0.5 polish**
+
 - [ ] Fuzz gas metering. Fuzz call operations.
-- [ ] [HFT] criterion bench: 1M orders/sec single-symbol throughput on a single core; target P99 matching latency <10 µs (we will tighten to <5 µs by W74).
+- [ ] [HFT] criterion bench: 1M orders/sec single-symbol throughput on a single core; target P99 matching latency <10
+  µs (we will tighten to <5 µs by W74).
 - [ ] Commit + log
 
 **Thursday — Differential fuzzing + matching-engine v0.5 tag**
+
 - [ ] Fuzz exec-vm vs revm for consistency.
 - [ ] [HFT] Tag `matching-engine v0.5.0` — single-symbol spot book, deterministic event log, basic risk hook.
 - [ ] Commit + log
 
 **Friday — reth or revm PR**
+
 - [ ] Contribution.
 - [ ] Commit + log
 
 **Saturday — Docs pass**
+
 - [ ] exec-vm documentation.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
-- [ ] [Tempo] 20 min during ritual: review Tempo PR #1 status. If merged, log it and pick next candidate from bookmarked list. If still in review, address feedback.
+
+- [ ] [Tempo] 20 min during ritual: review Tempo PR #1 status. If merged, log it and pick next candidate from bookmarked
+  list. If still in review, address feedback.
 
 ---
 
 ### Week 64 — Revm performance PR push + [NEW] `consensus-bft` v0.1 scaffold
 
-**[NEW] crate created**: `crates/consensus-bft/`. Layer-4 Byzantine-tolerant consensus. Used by `consensus-engine` for fork-choice analogue and BFT-chain experimentation. v0.5 ships W68, v1.0 W73.
+**[NEW] crate created**: `crates/consensus-bft/`. Layer-4 Byzantine-tolerant consensus. Used by `consensus-engine` for
+fork-choice analogue and BFT-chain experimentation. v0.5 ships W68, v1.0 W73.
 
 **Monday — Identify revm perf opportunity + consensus-bft scaffold**
+
 - [ ] Deep profile revm in common scenarios.
-- [ ] Re-open `EXEC_VM_PERF_BACKLOG.md` — specifically the SIMD candidate noted W60 Tue. If profiling confirms it's a hot spot in revm too, the optimization plus benchmark becomes a strong revm PR candidate this week.
-- [ ] **Build**: `crates/consensus-bft/Cargo.toml` workspace member. Deps: `time`, `wal`, `p2p`. Read Buchman et al. "Latest gossip on BFT consensus" (Tendermint paper).
-- [ ] **Build**: `crates/consensus-bft/src/lib.rs` with module headers: `propose.rs`, `prevote.rs`, `precommit.rs`, `lock.rs`, `evidence.rs`.
+- [ ] Re-open `EXEC_VM_PERF_BACKLOG.md` — specifically the SIMD candidate noted W60 Tue. If profiling confirms it's a
+  hot spot in revm too, the optimization plus benchmark becomes a strong revm PR candidate this week.
+- [ ] **Build**: `crates/consensus-bft/Cargo.toml` workspace member. Deps: `time`, `wal`, `p2p`. Read Buchman et al. "
+  Latest gossip on BFT consensus" (Tendermint paper).
+- [ ] **Build**: `crates/consensus-bft/src/lib.rs` with module headers: `propose.rs`, `prevote.rs`, `precommit.rs`,
+  `lock.rs`, `evidence.rs`.
 - [ ] Commit notes
 
 **Tuesday — Design optimization**
+
 - [ ] Plan revm perf approach.
 - [ ] Commit notes
 
 **Wednesday — Implement**
+
 - [ ] Code revm optimization.
 - [ ] Commit + log
 
 **Thursday — Benchmark**
+
 - [ ] Measure improvement.
 - [ ] Commit + log
 
 **Friday — Submit revm PR**
+
 - [ ] Clean PR.
 - [ ] Commit + log
 
 **Saturday — Respond to reviews + consensus-bft propose phase**
+
 - [ ] Iterate revm PR.
-- [ ] **Build**: `crates/consensus-bft/src/propose.rs` — round R proposer broadcasts proposal. Validators wait `propose_timeout` then vote.
+- [ ] **Build**: `crates/consensus-bft/src/propose.rs` — round R proposer broadcasts proposal. Validators wait
+  `propose_timeout` then vote.
 - [ ] [Tempo] 30 min: address Tempo PR #1 feedback. If merged, claim Tempo PR #2 candidate from bookmarks.
 - [ ] Commit + log
 
@@ -2765,30 +3463,42 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 65 — Architectural engagement + [HFT] matching-engine multi-symbol
 
 **Monday — GitHub discussions + [HFT] matching: multi-symbol shard plan**
+
 - [ ] Browse ongoing execution-layer architecture discussions.
-- [ ] [HFT] Sketch: per-symbol Disruptor-style ring buffer, single-writer per symbol, multiple-reader fan-out. Each shard has its own `wal::Wal` segment. Symbol selection by hash.
+- [ ] [HFT] Sketch: per-symbol Disruptor-style ring buffer, single-writer per symbol, multiple-reader fan-out. Each
+  shard has its own `wal::Wal` segment. Symbol selection by hash.
 - [ ] Commit notes
 
 **Tuesday — Substantive comment + [HFT] symbol-sharded engine impl**
+
 - [ ] Write substantive architectural comment.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/shard.rs` — `SymbolShard { book: OrderBook, wal: wal::Wal, event_tx: broadcast::Sender<MatchEvent> }`. `Engine { shards: HashMap<Symbol, Arc<Mutex<SymbolShard>>> }`.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/shard.rs` —
+  `SymbolShard { book: OrderBook, wal: wal::Wal, event_tx: broadcast::Sender<MatchEvent> }`.
+  `Engine { shards: HashMap<Symbol, Arc<Mutex<SymbolShard>>> }`.
 - [ ] Commit notes
 
 **Wednesday — Proposal draft + consensus-bft prevote**
+
 - [ ] Draft small design proposal for reth evm.
-- [ ] **Build**: `crates/consensus-bft/src/prevote.rs` — prevote phase. 2f+1 prevotes for a value advance the validator to precommit.
+- [ ] **Build**: `crates/consensus-bft/src/prevote.rs` — prevote phase. 2f+1 prevotes for a value advance the validator
+  to precommit.
 - [ ] Commit notes
 
 **Thursday — Submit proposal**
+
 - [ ] Post as GitHub discussion.
 - [ ] Commit notes
 
 **Friday — Engage discussion + Tempo discussions reconnaissance**
+
 - [ ] Respond to feedback on Reth proposal.
-- [ ] [Tempo] 30 min: scan Tempo discussions tab on GitHub. Pick one substantive thread to read fully (not to comment). Note in `notes/tempo_discussions.md` who's driving the design conversation and what the open questions are. Reconnaissance, not engagement.
+- [ ] [Tempo] 30 min: scan Tempo discussions tab on GitHub. Pick one substantive thread to read fully (not to comment).
+  Note in `notes/tempo_discussions.md` who's driving the design conversation and what the open questions are.
+  Reconnaissance, not engagement.
 - [ ] Commit notes
 
 **Saturday — Reth PR + consensus-bft precommit**
+
 - [ ] Storage or evm.
 - [ ] **Build**: `crates/consensus-bft/src/precommit.rs` — precommit phase. 2f+1 precommits commits the block.
 - [ ] Commit + log
@@ -2800,33 +3510,47 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 66 — Reth evm feature + [Tempo] `tempo-tx-envelope` v0.1.0 + [HFT] perpetuals scaffold
 
 **Monday — Feature identification**
+
 - [ ] Find meaningful reth evm improvement. Design.
 - [ ] Commit notes
 
 **Tuesday — Implementation + [HFT] perpetuals contract types**
+
 - [ ] Start coding reth feature.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/contract.rs` — `LinearContract { mark_price, index_price, funding_rate, open_interest }` per TigerBeetle-style determinism.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/contract.rs` —
+  `LinearContract { mark_price, index_price, funding_rate, open_interest }` per TigerBeetle-style determinism.
 - [ ] Commit + log
 
 **Wednesday — Continue + [HFT] perpetuals margin**
+
 - [ ] Reth feature.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/margin.rs` — initial-margin / maintenance-margin formulas. Cross vs isolated.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/margin.rs` — initial-margin / maintenance-margin formulas.
+  Cross vs isolated.
 - [ ] Commit + log
 
 **Thursday — Tests**
+
 - [ ] Reth feature tests.
 - [ ] Commit + log
 
 **Friday — Submit + `tempo-tx-envelope` v0.1.0 ship**
+
 - [ ] Reth feature PR ready.
-- [ ] [Tempo] 3 hrs split across the day: **`tempo-tx-envelope` v0.1.0 build**. Mirror `tempoxyz/tempo`'s primitives crate. Define `TempoTransaction` (EIP-2718 type 0x76) struct with fields: chain_id, nonce, max_fee_per_gas, max_priority_fee_per_gas, gas, calls: Vec<Call>, fee_token: Address, valid_before: Option<NonZeroU64>, valid_after: Option<NonZeroU64>, auth: Authorization. Use eth-rlp derive (W5). Reuse eth-primitives types. valid_before/valid_after timestamps source from `time::HybridLogicalClock`.
-- [ ] [Tempo] Test: encode transaction with hard-coded fields, assert bytes match fixture pulled from tempoxyz/tempo's test data.
+- [ ] [Tempo] 3 hrs split across the day: **`tempo-tx-envelope` v0.1.0 build**. Mirror `tempoxyz/tempo`'s primitives
+  crate. Define `TempoTransaction` (EIP-2718 type 0x76) struct with fields: chain_id, nonce, max_fee_per_gas,
+  max_priority_fee_per_gas, gas, calls: Vec<Call>, fee_token: Address, valid_before: Option<NonZeroU64>, valid_after:
+  Option<NonZeroU64>, auth: Authorization. Use eth-rlp derive (W5). Reuse eth-primitives types. valid_before/valid_after
+  timestamps source from `time::HybridLogicalClock`.
+- [ ] [Tempo] Test: encode transaction with hard-coded fields, assert bytes match fixture pulled from tempoxyz/tempo's
+  test data.
 - [ ] [Tempo] Tag `tempo-tx-envelope v0.1.0` if tests pass.
 - [ ] Commit + log
 
 **Saturday — Another storage PR (maintain velocity)**
+
 - [ ] Commit + log
-- [ ] [Tempo] 1 hr: test `tempo-tx-envelope` end-to-end. Use `tempo-foundry`'s `cast` to send transaction to Tempo testnet (stablecoins from docs.tempo.xyz faucet). Assert acceptance. If fails, debug — likely an RLP edge case.
+- [ ] [Tempo] 1 hr: test `tempo-tx-envelope` end-to-end. Use `tempo-foundry`'s `cast` to send transaction to Tempo
+  testnet (stablecoins from docs.tempo.xyz faucet). Assert acceptance. If fails, debug — likely an RLP edge case.
 
 **Sunday — Rest + Weekly Ritual**
 
@@ -2835,31 +3559,39 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 67 — exec-vm v1.0 prep + [NEW] consensus-raft v1.0 ship
 
 **Monday — API stabilization + raft compaction**
+
 - [ ] Review all exec-vm public APIs. Freeze signatures.
-- [ ] **Build**: `crates/consensus-raft/src/snapshot.rs` — InstallSnapshot RPC + log compaction. Snapshots stored as `wal::Segment`s with special type tag.
+- [ ] **Build**: `crates/consensus-raft/src/snapshot.rs` — InstallSnapshot RPC + log compaction. Snapshots stored as
+  `wal::Segment`s with special type tag.
 - [ ] Commit + log
 
 **Tuesday — Docs pass**
+
 - [ ] exec-vm: every item documented. Examples.
 - [ ] Commit + log
 
 **Wednesday — Final benchmarks + consensus-raft v1.0 tag**
+
 - [ ] Comprehensive bench suite.
 - [ ] Tag `consensus-raft v1.0.0`. Ready to back matching-engine v1.0 (W74).
 - [ ] Commit + log
 
 **Thursday — DESIGN.md**
+
 - [ ] Document architectural decisions in exec-vm.
 - [ ] Commit + log
 
 **Friday — Reth PR**
+
 - [ ] Continue.
 - [ ] [Tempo] 30 min: Tempo PR #2 progress check. By now you should have 2 Tempo PRs merged or 1 merged + 1 in review.
 - [ ] Commit + log
 
 **Saturday — Crate polish + [HFT] matching-engine v0.7 (multi-symbol + perps scaffolded)**
+
 - [ ] Final cleanup on exec-vm.
-- [ ] [HFT] Tag `matching-engine v0.7.0` — multi-symbol + perpetuals contract types + margin scaffold. Raft replication arrives at v1.0 (W74).
+- [ ] [HFT] Tag `matching-engine v0.7.0` — multi-symbol + perpetuals contract types + margin scaffold. Raft replication
+  arrives at v1.0 (W74).
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2869,31 +3601,42 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 68 — exec-vm v1.0 ship + [NEW] consensus-bft v0.5 ship
 
 **Monday — Tag exec-vm v1.0**
+
 - [ ] Tag `exec-vm v1.0.0`. Second Reth flagship deliverable.
-- [ ] **Inheritance audit**: count exec-vm LOC. Calls into eth-primitives / eth-consensus / eth-storage-cache should be obvious. Native opcode/gas logic is ≤30% of LOC — that's healthy for an interpreter crate (the rest is plumbing into the rest of the workspace).
+- [ ] **Inheritance audit**: count exec-vm LOC. Calls into eth-primitives / eth-consensus / eth-storage-cache should be
+  obvious. Native opcode/gas logic is ≤30% of LOC — that's healthy for an interpreter crate (the rest is plumbing into
+  the rest of the workspace).
 - [ ] Commit + log
 
 **Tuesday — consensus-bft v0.5 ship + Blog if ready**
+
 - [ ] **Build**: `crates/consensus-bft/src/lock.rs` — locking on prevoted value across rounds (Tendermint locking).
 - [ ] Tag `consensus-bft v0.5.0`.
 - [ ] Consider writing exec-vm intro blog. No pressure.
-- [ ] [Tempo] Update M18 Tempo metrics row: PRs merged (target 10 — flag if below 6), TIPs read (target 10), crates (target 2 — tempo-tx-envelope ✓ + tempo-evm-ext scaffold ✓), maintainer relationships (target 2 — anyone who reviewed Tempo PRs).
+- [ ] [Tempo] Update M18 Tempo metrics row: PRs merged (target 10 — flag if below 6), TIPs read (target 10), crates (
+  target 2 — tempo-tx-envelope ✓ + tempo-evm-ext scaffold ✓), maintainer relationships (target 2 — anyone who reviewed
+  Tempo PRs).
 - [ ] Commit + log
 
 **Wednesday — Reth feature iteration**
+
 - [ ] Address reviews on feature PR.
 - [ ] Commit + log
 
 **Thursday — More reth**
+
 - [ ] Continue velocity.
 - [ ] Commit + log
 
 **Friday — Reviews given**
+
 - [ ] Review 3 others' Reth PRs substantively.
-- [ ] [Tempo] Review 2 others' Tempo PRs substantively. Even one substantive Tempo review is a relationship-warming signal worth more than three Reth reviews at this stage. Note who you reviewed; goes in Tempo maintainer tracker.
+- [ ] [Tempo] Review 2 others' Tempo PRs substantively. Even one substantive Tempo review is a relationship-warming
+  signal worth more than three Reth reviews at this stage. Note who you reviewed; goes in Tempo maintainer tracker.
 - [ ] Commit notes
 
 **Saturday — Month 17 close**
+
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 17 review**
@@ -2905,22 +3648,28 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 69 — Final execution PRs
 
 **Monday — Final feature push**
+
 - [ ] Last medium-sized feature.
 - [ ] Commit + log
 
 **Tuesday — Implementation**
+
 - [ ] Commit + log
 
 **Wednesday — Tests + submit**
+
 - [ ] Commit + log
 
 **Thursday — Reviews**
+
 - [ ] Commit + log
 
 **Friday — Another small PR**
+
 - [ ] Commit + log
 
 **Saturday — Close outstanding work**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2930,27 +3679,34 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 70 — Consensus layer preview
 
 **Monday — Ethereum consensus overview**
+
 - [ ] Read Ethereum consensus layer intro. PoS high level.
 - [ ] Commit notes
 
 **Tuesday — Engine API spec preview**
+
 - [ ] Read Engine API specification at high level.
 - [ ] Commit notes
 
 **Wednesday — Lighthouse survey**
+
 - [ ] Browse Lighthouse code at high level.
 - [ ] Commit notes
 
 **Thursday — Reth engine crate preview**
+
 - [ ] Browse reth/crates/engine.
 - [ ] Commit notes
 
 **Friday — Reth consensus crate preview**
+
 - [ ] Browse reth/crates/consensus.
 - [ ] Commit notes
 
 **Saturday — Phase 5 prep (consensus-engine already scaffolded W24)**
-- [ ] Re-read consensus-engine empty lib.rs. Sketch module layout in notes/ (engine_api, fork_choice, payload_builder, jwt, builder_api, state_root_validator). Note fork-choice will lean on `consensus-bft` v1.0 primitives shipping W73.
+
+- [ ] Re-read consensus-engine empty lib.rs. Sketch module layout in notes/ (engine_api, fork_choice, payload_builder,
+  jwt, builder_api, state_root_validator). Note fork-choice will lean on `consensus-bft` v1.0 primitives shipping W73.
 - [ ] Identify which eth-* crates each module imports. Confirm dependency graph builds.
 - [ ] Commit + log
 
@@ -2961,30 +3717,39 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 71 — Phase 4 reflection + [HFT] matching-engine: ADL + funding scaffold
 
 **Monday — Full Phase 4 assessment**
+
 - [ ] Check exit criteria.
 - [ ] Commit notes
 
 **Tuesday — Metrics**
+
 - [ ] Update North Star M18. Check 20+ execution PRs.
 - [ ] Commit notes
 
 **Wednesday — Relationship update**
+
 - [ ] Which maintainers engaged. Depth.
 - [ ] Commit notes
 
 **Thursday — Blog consideration + [HFT] funding scaffold**
+
 - [ ] Phase 4 retrospective. No deadline.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/funding.rs` — funding-rate calc via TWAP of (mark - index). Hourly tick.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/funding.rs` — funding-rate calc via TWAP of (mark - index).
+  Hourly tick.
 - [ ] Commit notes
 
 **Friday — Wrap + [HFT] liquidation scaffold**
+
 - [ ] Close outstanding Reth PRs.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/liquidation.rs` — liquidation threshold check (maintenance margin breach). Partial liquidation. Insurance-fund hook.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/liquidation.rs` — liquidation threshold check (maintenance
+  margin breach). Partial liquidation. Insurance-fund hook.
 - [ ] Commit + log
 
 **Saturday — Rest prep + [HFT] ADL scaffold**
+
 - [ ] Light day.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/adl.rs` — Auto-Deleveraging queue (rank by profit × leverage). Skeleton only; complete in Phase 5 (W74).
+- [ ] [HFT] **Build**: `crates/matching-engine/src/perps/adl.rs` — Auto-Deleveraging queue (rank by profit × leverage).
+  Skeleton only; complete in Phase 5 (W74).
 - [ ] Commit notes
 
 **Sunday — Rest**
@@ -2994,34 +3759,45 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 ### Week 72 — Transition week + [NEW] `txn` v1.0 (2PC for distributed)
 
 **Monday — Mental prep Phase 5 + txn 2PC design**
+
 - [ ] Read Phase 5 section. Outline Month 19.
-- [ ] **Build**: `crates/txn/src/two_phase_commit.rs` — `TwoPhaseCoordinator` and `TwoPhaseParticipant`. Standard 2PC with Prepare / Commit messages and timeout-based abort.
+- [ ] **Build**: `crates/txn/src/two_phase_commit.rs` — `TwoPhaseCoordinator` and `TwoPhaseParticipant`. Standard 2PC
+  with Prepare / Commit messages and timeout-based abort.
 - [ ] Commit notes
 
 **Tuesday — Reading list for consensus + txn 2PC test**
+
 - [ ] Compile reading list.
-- [ ] Test: 3-participant 2PC, kill coordinator mid-prepare, participants timeout and abort. Restart coordinator, recovers from txn log to retry from last-known state.
+- [ ] Test: 3-participant 2PC, kill coordinator mid-prepare, participants timeout and abort. Restart coordinator,
+  recovers from txn log to retry from last-known state.
 - [ ] Commit notes
 
 **Wednesday — Reach out to Lighthouse folks**
+
 - [ ] If any connections, warm up.
 - [ ] Commit notes
 
 **Thursday — Maintenance on previous crates + txn v1.0 tag**
+
 - [ ] storage-trie, exec-vm bug fixes.
-- [ ] Tag `txn v1.0.0`. Adds 2PC for distributed transactions. Ready for `ledger-deterministic` distributed mode (Phase 5).
+- [ ] Tag `txn v1.0.0`. Adds 2PC for distributed transactions. Ready for `ledger-deterministic` distributed mode (Phase
+  5).
 - [ ] Commit + log
 
 **Friday — Final exec-vm polish**
+
 - [ ] Any remaining items.
 - [ ] Commit + log
 
 **Saturday — Month 18 close**
+
 - [ ] Final PRs.
-- [ ] **Phase 4 deliverable check**: `exec-vm v1.0` ✓, `consensus-raft v1.0` ✓, `consensus-bft v0.5` ✓, `matching-engine v0.7` ✓, `tempo-tx-envelope v0.1.0` ✓, `tempo-evm-ext` scaffold ✓, `p2p v0.5` ✓, `txn v1.0` ✓.
+- [ ] **Phase 4 deliverable check**: `exec-vm v1.0` ✓, `consensus-raft v1.0` ✓, `consensus-bft v0.5` ✓,
+  `matching-engine v0.7` ✓, `tempo-tx-envelope v0.1.0` ✓, `tempo-evm-ext` scaffold ✓, `p2p v0.5` ✓, `txn v1.0` ✓.
 - [ ] Commit + log
 
 **Sunday — Rest**
+
 - [ ] Phase 5 starts tomorrow.
 
 ---
@@ -3029,49 +3805,66 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 # PHASE 5: CONSENSUS + ENGINE API + [HFT] PRIMARY (Month 19-24)
 
 **Reth Deliverable**: `consensus-engine` v1.0 (W91) + end-to-end integration capable of syncing Sepolia (W85).
-**[NEW] HFT Deliverables**: `consensus-bft` v1.0 (W73), `matching-engine` v1.0 (W74), `messaging-aeron` v0.5 (W79), `ledger-deterministic` v0.5 (W83), `marketdata-kernelbypass` v0.5 (W90).
+**[NEW] HFT Deliverables**: `consensus-bft` v1.0 (W73), `matching-engine` v1.0 (W74), `messaging-aeron` v0.5 (W79),
+`ledger-deterministic` v0.5 (W83), `marketdata-kernelbypass` v0.5 (W90).
 **[NEW] Tempo Deliverables**: `tempo-payment-lane` scaffold (W83) → v0.1.0 (W91); `tempo-evm-ext` v0.1.0 (W91).
-**M24 Decision Gate (W96)**: 5 paths (A: extend Reth, B: post-Reth systems, C: catch-up, D: Tempo pivot conditional, E: HFT destination-tier IC track).
+**M24 Decision Gate (W96)**: 5 paths (A: extend Reth, B: post-Reth systems, C: catch-up, D: Tempo pivot conditional, E:
+HFT destination-tier IC track).
 
-> Tempo Phase 5 budget: 5-7 hrs/wk. Payment lane design W82 Fri. `tempo-payment-lane` scaffold W83 Wed. Both Tempo crates v0.1.0 W91 Thu.
+> Tempo Phase 5 budget: 5-7 hrs/wk. Payment lane design W82 Fri. `tempo-payment-lane` scaffold W83 Wed. Both Tempo
+> crates v0.1.0 W91 Thu.
 > HFT Phase 5 budget: 12-15 hrs/wk (HFT becomes primary M19-M34, sharing budget with consensus-engine work).
-> Reth Phase 5: consensus-engine flagship continues primary in name; in practice budget is split 50/50 with HFT from W74 onward.
+> Reth Phase 5: consensus-engine flagship continues primary in name; in practice budget is split 50/50 with HFT from W74
+> onward.
 
-Three-crate Reth integration target (W85 Sepolia sync): consensus-engine orchestrates eth-network-codec → block ingestion → eth-stage::Pipeline (driving exec-vm + storage-trie + eth-trie::StateRoot) → engine_api for CL coordination.
+Three-crate Reth integration target (W85 Sepolia sync): consensus-engine orchestrates eth-network-codec → block
+ingestion → eth-stage::Pipeline (driving exec-vm + storage-trie + eth-trie::StateRoot) → engine_api for CL coordination.
 
-HFT five-crate integration target (W90 paper-trade rig): matching-engine ←consensus-raft for replication, ←messaging-aeron for market-data fan-out, ←wal+recovery for crash safety, →ledger-deterministic for settlement, ←marketdata-kernelbypass for inbound external feed handling.
+HFT five-crate integration target (W90 paper-trade rig): matching-engine ←consensus-raft for replication,
+←messaging-aeron for market-data fan-out, ←wal+recovery for crash safety, →ledger-deterministic for settlement,
+←marketdata-kernelbypass for inbound external feed handling.
 
 ## Month 19: Engine API + [NEW] consensus-bft v1.0 + [HFT] matching-engine v1.0 (raft-replicated)
 
 ### Week 73 — Engine API spec + [NEW] consensus-bft v1.0 + [HFT] matching-engine v0.7 → wire raft
 
 **Monday — Engine API full read part 1 + consensus-bft fork-choice**
+
 - [ ] Read Engine API spec sections 1-3.
-- [ ] **Build**: `crates/consensus-bft/src/fork_choice.rs` — fork-choice rule for chained BFT blocks. Honest validators with locking guarantees agreement under partial sync.
+- [ ] **Build**: `crates/consensus-bft/src/fork_choice.rs` — fork-choice rule for chained BFT blocks. Honest validators
+  with locking guarantees agreement under partial sync.
 - [ ] Commit notes
 
 **Tuesday — Engine API full read part 2 + consensus-bft evidence**
+
 - [ ] Read Engine API sections 4-6.
-- [ ] **Build**: `crates/consensus-bft/src/evidence.rs` — slashable-fault collection. Double-sign detector. Equivocation proof.
+- [ ] **Build**: `crates/consensus-bft/src/evidence.rs` — slashable-fault collection. Double-sign detector. Equivocation
+  proof.
 - [ ] Commit notes
 
 **Wednesday — newPayload deep + consensus-bft v1.0 tag**
+
 - [ ] Study newPayload V1, V2, V3, V4.
 - [ ] Tag `consensus-bft v1.0.0`.
 - [ ] Commit notes
 
 **Thursday — forkchoiceUpdated deep**
+
 - [ ] Study fcU variants.
 - [ ] Commit notes
 
 **Friday — getPayload deep + [HFT] matching-engine: raft integration design**
+
 - [ ] Study getPayload variants.
-- [ ] [HFT] Design: matching-engine commands serialized as `MatchCommand` enum → submitted to consensus-raft → applied in order on each replica. Raft log entries ARE the deterministic event log.
+- [ ] [HFT] Design: matching-engine commands serialized as `MatchCommand` enum → submitted to consensus-raft → applied
+  in order on each replica. Raft log entries ARE the deterministic event log.
 - [ ] Commit notes
 
 **Saturday — JWT auth**
+
 - [ ] Study JWT auth used by Engine API.
-- [ ] [Tempo] 30 min: while JWT is fresh, read how Tempo handles engine API auth. Tempo's CL-EL split is different (validator set is permissioned). Note implications in `notes/tempo_engine_diff.md`.
+- [ ] [Tempo] 30 min: while JWT is fresh, read how Tempo handles engine API auth. Tempo's CL-EL split is different (
+  validator set is permissioned). Note implications in `notes/tempo_engine_diff.md`.
 - [ ] Commit notes
 
 **Sunday — Rest + Weekly Ritual**
@@ -3081,34 +3874,48 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 74 — Reth engine crate + [HFT] `matching-engine` v1.0 (raft-replicated)
 
 **Monday — reth-engine structure + matching-engine: raft wire-up**
+
 - [ ] Browse reth/crates/engine. Map files.
-- [ ] [HFT] **Build**: `crates/matching-engine/src/replication.rs` — `RaftBackedEngine` wraps `Engine` from W67. Submits incoming `MatchCommand` to a `consensus_raft::RaftNode`. Replicas receive `apply(cmd)` callbacks and mutate their local OrderBook deterministically.
+- [ ] [HFT] **Build**: `crates/matching-engine/src/replication.rs` — `RaftBackedEngine` wraps `Engine` from W67. Submits
+  incoming `MatchCommand` to a `consensus_raft::RaftNode`. Replicas receive `apply(cmd)` callbacks and mutate their
+  local OrderBook deterministically.
 - [ ] Commit notes
 
 **Tuesday — Engine tree + matching-engine: raft test**
+
 - [ ] Read engine tree implementation. Block tree for forks.
-- [ ] [HFT] Test: 3-replica cluster, leader takes 100k orders, kill leader mid-burst, new leader elected, replicated state matches.
+- [ ] [HFT] Test: 3-replica cluster, leader takes 100k orders, kill leader mid-burst, new leader elected, replicated
+  state matches.
 - [ ] Commit notes
 
 **Wednesday — Payload builder**
+
 - [ ] Read reth payload builder.
 - [ ] Commit notes
 
 **Thursday — First engine PR + [HFT] matching-engine v1.0 tag**
+
 - [ ] Find docs or small fix in reth-engine.
-- [ ] [HFT] **Inheritance audit**: matching-engine LOC count vs LOC calling into time / backpressure / wal / recovery / consensus-raft / messaging-aeron-trait-shapes. Target ≥70%. Adjust scope if below.
-- [ ] [HFT] Tag `matching-engine v1.0.0`. Multi-symbol + perpetuals (margin, funding, liquidation, ADL) + raft-replicated.
-- [ ] [Tempo] 30 min: scan Tempo's engine-API-adjacent PRs to see what kinds of issues are open there. Bookmark candidates.
+- [ ] [HFT] **Inheritance audit**: matching-engine LOC count vs LOC calling into time / backpressure / wal / recovery /
+  consensus-raft / messaging-aeron-trait-shapes. Target ≥70%. Adjust scope if below.
+- [ ] [HFT] Tag `matching-engine v1.0.0`. Multi-symbol + perpetuals (margin, funding, liquidation, ADL) +
+  raft-replicated.
+- [ ] [Tempo] 30 min: scan Tempo's engine-API-adjacent PRs to see what kinds of issues are open there. Bookmark
+  candidates.
 - [ ] Commit + log
 
 **Friday — `consensus-engine::engine_api` module skeleton**
-- [ ] Create `consensus-engine/src/engine_api/{mod.rs, server.rs, types.rs}`. Define EngineApi trait with V1-V4 method signatures. Wire eth-network-codec::Codec for JSON-RPC framing.
+
+- [ ] Create `consensus-engine/src/engine_api/{mod.rs, server.rs, types.rs}`. Define EngineApi trait with V1-V4 method
+  signatures. Wire eth-network-codec::Codec for JSON-RPC framing.
 - [ ] Re-export eth-rpc-types request/response types.
 - [ ] Commit + log
 
 **Saturday — JWT auth in `consensus-engine::engine_api::jwt`**
+
 - [ ] Implement HS256 JWT auth middleware. Test against fixture token from Lighthouse deployment.
-- [ ] [Tempo] 30 min: confirm JWT module is agnostic enough to work for both Ethereum-style engine API and Tempo's variant. If not, parameterize.
+- [ ] [Tempo] 30 min: confirm JWT module is agnostic enough to work for both Ethereum-style engine API and Tempo's
+  variant. If not, parameterize.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -3118,28 +3925,37 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 75 — `consensus-engine`: core methods + [HFT] matching-engine: post-v1 polish
 
 **Monday — newPayload implementation**
+
 - [ ] Implement newPayload V3 handler in consensus-engine.
 - [ ] Commit + log
 
 **Tuesday — Payload validation**
+
 - [ ] Block header validation in consensus-engine.
 - [ ] Commit + log
 
 **Wednesday — forkchoiceUpdated**
-- [ ] Implement fcU handler. Use `consensus-bft::fork_choice` as the underlying rule engine (parameterized; Ethereum's actual fork choice differs but the abstraction holds).
+
+- [ ] Implement fcU handler. Use `consensus-bft::fork_choice` as the underlying rule engine (parameterized; Ethereum's
+  actual fork choice differs but the abstraction holds).
 - [ ] Commit + log
 
 **Thursday — getPayload**
+
 - [ ] Implement getPayload.
 - [ ] Commit + log
 
 **Friday — Storage + engine integration**
+
 - [ ] Wire consensus-engine up with storage-trie.
 - [ ] Commit + log
 
 **Saturday — Engine + exec-vm integration**
+
 - [ ] Execute payload using exec-vm.
-- [ ] [Tempo] 1 hr: **TIP-1031 reads-side wiring**. Confirm consensus-engine engine_newPayload handler can carry Tempo-style consensus-context field without breaking upstream Ethereum path. Cargo features (`tempo-consensus-context`) guard the field. Groundwork for W82-83 payment lane work.
+- [ ] [Tempo] 1 hr: **TIP-1031 reads-side wiring**. Confirm consensus-engine engine_newPayload handler can carry
+  Tempo-style consensus-context field without breaking upstream Ethereum path. Cargo features (
+  `tempo-consensus-context`) guard the field. Groundwork for W82-83 payment lane work.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -3151,30 +3967,40 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 **[NEW] crate created**: `crates/messaging-aeron/`. Layer-4 reliable IPC + UDP messaging. v0.5 W79.
 
 **Monday — Lighthouse code survey + messaging-aeron scaffold**
+
 - [ ] Browse Lighthouse execution interaction layer.
-- [ ] **Build**: `crates/messaging-aeron/Cargo.toml` workspace member. Deps: `time`, `backpressure`, `bufpool`, `p2p` (peer discovery only).
-- [ ] **Build**: `crates/messaging-aeron/src/lib.rs` with module headers: `media_driver.rs`, `term_buffer.rs`, `flow_control.rs`, `nak.rs`, `transport_ipc.rs`, `transport_udp.rs`.
+- [ ] **Build**: `crates/messaging-aeron/Cargo.toml` workspace member. Deps: `time`, `backpressure`, `bufpool`, `p2p` (
+  peer discovery only).
+- [ ] **Build**: `crates/messaging-aeron/src/lib.rs` with module headers: `media_driver.rs`, `term_buffer.rs`,
+  `flow_control.rs`, `nak.rs`, `transport_ipc.rs`, `transport_udp.rs`.
 - [ ] Commit notes
 
 **Tuesday — Lighthouse Engine API client + messaging-aeron media driver**
+
 - [ ] Read Lighthouse's side of Engine API.
-- [ ] **Build**: `crates/messaging-aeron/src/media_driver.rs` — `MediaDriver { shm_dir: PathBuf, conductor: ConductorThread }`. Conductor owns subscription/publication state.
+- [ ] **Build**: `crates/messaging-aeron/src/media_driver.rs` —
+  `MediaDriver { shm_dir: PathBuf, conductor: ConductorThread }`. Conductor owns subscription/publication state.
 - [ ] Commit notes
 
 **Wednesday — Prysm perspective**
+
 - [ ] Read Prysm equivalent (less depth).
 - [ ] Commit notes
 
 **Thursday — CL/EL lifecycle**
+
 - [ ] Map full CL/EL communication flow.
 - [ ] Commit notes
 
 **Friday — Another reth engine PR**
+
 - [ ] Continue velocity.
-- [ ] [Tempo] 30 min: pick Tempo PR candidate from W74 bookmarks. If good one available, claim and begin. Otherwise push to W78.
+- [ ] [Tempo] 30 min: pick Tempo PR candidate from W74 bookmarks. If good one available, claim and begin. Otherwise push
+  to W78.
 - [ ] Commit + log
 
 **Saturday — Crate: connection handling**
+
 - [ ] Websocket/HTTP Engine API transport in consensus-engine.
 - [ ] Commit + log
 
@@ -3187,29 +4013,38 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 77 — State transition validation + messaging-aeron term buffer
 
 **Monday — STF theory + messaging-aeron term-buffer design**
+
 - [ ] Read state transition function theory.
-- [ ] **Build**: `crates/messaging-aeron/src/term_buffer.rs` — fixed-size (default 1 MiB) ring with frame headers. Single writer, single reader per term. Three terms rotate (active, in-recovery, dirty). Lock-free.
+- [ ] **Build**: `crates/messaging-aeron/src/term_buffer.rs` — fixed-size (default 1 MiB) ring with frame headers.
+  Single writer, single reader per term. Three terms rotate (active, in-recovery, dirty). Lock-free.
 - [ ] Commit notes
 
 **Tuesday — Consensus rules in execution + messaging-aeron flow control**
+
 - [ ] What execution layer validates per consensus rules.
-- [ ] **Build**: `crates/messaging-aeron/src/flow_control.rs` — sliding window. Subscriber publishes a position; publisher cannot advance past last-position + window. Uses `backpressure::CreditFlowControl` underneath.
+- [ ] **Build**: `crates/messaging-aeron/src/flow_control.rs` — sliding window. Subscriber publishes a position;
+  publisher cannot advance past last-position + window. Uses `backpressure::CreditFlowControl` underneath.
 - [ ] Commit notes
 
 **Wednesday — Block validation**
+
 - [ ] Implement block validation in consensus-engine.
 - [ ] Commit + log
 
 **Thursday — Receipt validation**
+
 - [ ] Receipt consistency checks.
 - [ ] Commit + log
 
 **Friday — Gas limit validation + messaging-aeron IPC transport**
+
 - [ ] Block gas limit checks.
-- [ ] **Build**: `crates/messaging-aeron/src/transport_ipc.rs` — shared-memory regions over the term buffer. Hot path: no syscalls per message.
+- [ ] **Build**: `crates/messaging-aeron/src/transport_ipc.rs` — shared-memory regions over the term buffer. Hot path:
+  no syscalls per message.
 - [ ] Commit + log
 
 **Saturday — Reth PR + messaging-aeron IPC bench**
+
 - [ ] Engine or consensus area.
 - [ ] criterion: 10M messages through IPC. Target <1µs P99 single-hop.
 - [ ] [Tempo] 1 hr: continue Tempo PR or claim new one. Aim for Tempo PR #3-4 merged by end of M20.
@@ -3222,35 +4057,44 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 78 — Fork choice integration + messaging-aeron UDP unicast
 
 **Monday — Fork choice theory + UDP unicast design**
+
 - [ ] Read fork choice rule (LMD-GHOST, Casper FFG).
 - [ ] Design UDP unicast: socket per subscriber, batching, framing.
 - [ ] Commit notes
 
 **Tuesday — Reth fork choice code + messaging-aeron UDP impl**
+
 - [ ] Read reth's fork choice handling.
-- [ ] **Build**: `crates/messaging-aeron/src/transport_udp.rs` — UDP socket pool, recvmmsg/sendmmsg batching, MTU-aware fragmentation.
+- [ ] **Build**: `crates/messaging-aeron/src/transport_udp.rs` — UDP socket pool, recvmmsg/sendmmsg batching, MTU-aware
+  fragmentation.
 - [ ] Commit notes
 
 **Wednesday — Crate: fork choice + messaging-aeron NAK protocol**
+
 - [ ] Implement consensus-engine fork choice processing.
-- [ ] **Build**: `crates/messaging-aeron/src/nak.rs` — gap detection by sequence number, NAK back to publisher, replay from term buffer's recovery slot.
+- [ ] **Build**: `crates/messaging-aeron/src/nak.rs` — gap detection by sequence number, NAK back to publisher, replay
+  from term buffer's recovery slot.
 - [ ] Commit + log
 
 **Thursday — Safe/finalized tracking**
+
 - [ ] Track safe, finalized, head blocks.
 - [ ] Commit + log
 
 **Friday — Reorg detection**
+
 - [ ] Detect reorgs from fork choice updates.
 - [ ] Commit + log
 
 **Saturday — More reth PRs + messaging-aeron NAK test**
+
 - [ ] Consensus or engine.
 - [ ] Test: induce 5% UDP packet loss, NAK recovery achieves zero-loss delivery within bounded delay.
 - [ ] [Tempo] 1 hr: Tempo PR work.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] [Tempo] 20 min: Tempo releases skim.
 
 ---
@@ -3258,30 +4102,38 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 79 — Reorg handling + [NEW] `messaging-aeron` v0.5 ship
 
 **Monday — Reorg theory + messaging-aeron multi-subscriber**
+
 - [ ] Deep understand reorg handling in execution.
-- [ ] **Build**: `crates/messaging-aeron/src/subscription.rs` — multi-subscriber fan-out over term buffer. Each subscriber has its own position cursor. Slow subscribers don't block fast ones (configurable: lag-tolerant or kicked).
+- [ ] **Build**: `crates/messaging-aeron/src/subscription.rs` — multi-subscriber fan-out over term buffer. Each
+  subscriber has its own position cursor. Slow subscribers don't block fast ones (configurable: lag-tolerant or kicked).
 - [ ] Commit notes
 
 **Tuesday — State rollback + messaging-aeron v0.5 tag**
+
 - [ ] Implement state rollback on reorg. Leverage storage-trie snapshots.
 - [ ] Tag `messaging-aeron v0.5.0`. Term buffer + IPC + UDP unicast + flow control + NAK recovery.
 - [ ] Commit + log
 
 **Wednesday — Receipt reindexing**
+
 - [ ] Handle receipt/log reindexing.
 - [ ] Commit + log
 
 **Thursday — Transaction re-pool**
+
 - [ ] Handle moving txs back to mempool on reorg.
 - [ ] Commit + log
 
 **Friday — Reorg integration tests**
+
 - [ ] Test various reorg scenarios.
 - [ ] Commit + log
 
 **Saturday — Reth PR + [HFT] matching-engine wires messaging-aeron**
+
 - [ ] Reth contribution.
-- [ ] [HFT] **Build**: matching-engine market-data fan-out now goes via `messaging-aeron::Publication`. Subscribers receive L2 deltas over IPC for in-process clients, UDP unicast for out-of-process.
+- [ ] [HFT] **Build**: matching-engine market-data fan-out now goes via `messaging-aeron::Publication`. Subscribers
+  receive L2 deltas over IPC for in-process clients, UDP unicast for out-of-process.
 - [ ] [Tempo] 1 hr: Tempo PR.
 - [ ] Commit + log
 
@@ -3291,35 +4143,50 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 
 ### Week 80 — Multi-branch state + [NEW] `ledger-deterministic` v0.1 scaffold
 
-**[NEW] crate created**: `crates/ledger-deterministic/`. TigerBeetle-style deterministic state machine + double-entry. v0.5 W83.
+**[NEW] crate created**: `crates/ledger-deterministic/`. TigerBeetle-style deterministic state machine + double-entry.
+v0.5 W83.
 
 **Monday — Multi-branch theory + ledger scaffold**
+
 - [ ] Maintaining state across forks.
-- [ ] **Build**: `crates/ledger-deterministic/Cargo.toml` workspace member. Deps: `time` (monotonic only, no wall clock!), `wal`, `recovery`, `txn`.
-- [ ] **Build**: `crates/ledger-deterministic/src/lib.rs` with module headers: `state_machine.rs`, `account.rs`, `transfer.rs`, `journal.rs`.
+- [ ] **Build**: `crates/ledger-deterministic/Cargo.toml` workspace member. Deps: `time` (monotonic only, no wall
+  clock!), `wal`, `recovery`, `txn`.
+- [ ] **Build**: `crates/ledger-deterministic/src/lib.rs` with module headers: `state_machine.rs`, `account.rs`,
+  `transfer.rs`, `journal.rs`.
 - [ ] Commit notes
 
 **Tuesday — Branch state design + ledger account schema**
+
 - [ ] Design multi-branch state in consensus-engine.
-- [ ] **Build**: `crates/ledger-deterministic/src/account.rs` — `Account { id: u128, ledger: u32, code: u16, flags: u16, debits_pending: u64, debits_posted: u64, credits_pending: u64, credits_posted: u64, timestamp: u64 }` — TigerBeetle account layout.
+- [ ] **Build**: `crates/ledger-deterministic/src/account.rs` —
+  `Account { id: u128, ledger: u32, code: u16, flags: u16, debits_pending: u64, debits_posted: u64, credits_pending: u64, credits_posted: u64, timestamp: u64 }` —
+  TigerBeetle account layout.
 - [ ] Commit + log
 
 **Wednesday — Implement multi-branch + ledger transfer schema**
+
 - [ ] Code branch state management.
-- [ ] **Build**: `crates/ledger-deterministic/src/transfer.rs` — `Transfer { id: u128, debit_account_id: u128, credit_account_id: u128, amount: u64, code: u16, flags: u16, timestamp: u64 }`. Constraints: same ledger, both accounts exist, no overflow.
+- [ ] **Build**: `crates/ledger-deterministic/src/transfer.rs` —
+  `Transfer { id: u128, debit_account_id: u128, credit_account_id: u128, amount: u64, code: u16, flags: u16, timestamp: u64 }`.
+  Constraints: same ledger, both accounts exist, no overflow.
 - [ ] Commit + log
 
 **Thursday — Tests**
+
 - [ ] consensus-engine multi-branch tests.
 - [ ] Commit + log
 
 **Friday — Integration with exec-vm**
+
 - [ ] Speculative execution across branches.
 - [ ] Commit + log
 
 **Saturday — Reth PR + ledger: state machine framework**
+
 - [ ] Reth PR.
-- [ ] **Build**: `crates/ledger-deterministic/src/state_machine.rs` — `StateMachine { accounts: BTreeMap<u128, Account>, ... }`. `apply(op: Op) -> Result<OpResult>` is deterministic: no `time::wall()`, no `rand`, no f64. Only `time::Monotonic` is allowed and only for instrumentation, never for logic.
+- [ ] **Build**: `crates/ledger-deterministic/src/state_machine.rs` —
+  `StateMachine { accounts: BTreeMap<u128, Account>, ... }`. `apply(op: Op) -> Result<OpResult>` is deterministic: no
+  `time::wall()`, no `rand`, no f64. Only `time::Monotonic` is allowed and only for instrumentation, never for logic.
 - [ ] [Tempo] 1 hr: Tempo PR. Tempo PR count should be 6-8 merged; flag if below 4.
 - [ ] Commit + log
 
@@ -3332,29 +4199,42 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 81 — Invalid payload handling + Tempo payment-lane prior-art read
 
 **Monday — Invalid payload scenarios**
+
 - [ ] Catalog all invalid payload cases from spec.
 - [ ] Commit notes
 
 **Tuesday — Invalid header**
+
 - [ ] Handle invalid headers.
 - [ ] Commit + log
 
 **Wednesday — Invalid transactions**
+
 - [ ] Handle invalid tx in payload.
 - [ ] Commit + log
 
 **Thursday — Invalid state root**
+
 - [ ] Handle state root mismatch.
 - [ ] Commit + log
 
 **Friday — Latest valid hash logic**
+
 - [ ] Implement LVH tracking.
 - [ ] Commit + log
 
 **Saturday — Reth PR + Tempo payment-lane prior-art read + [HFT] ledger: journaled apply**
+
 - [ ] Reth PR work.
-- [ ] [HFT] **Build**: `crates/ledger-deterministic/src/journal.rs` — every `apply(op)` writes a `JournalRecord` to wal BEFORE mutating state. recovery::Recovery replays journal on open. Output: a state machine that survives crashes byte-identically.
-- [ ] [Tempo] 2 hrs at end of day: **payment-lane prior-art read** (no code). Read tempoxyz/tempo's payment-lane / payload-builder implementation end-to-end. Locate the lane reservation logic — likely under `consensus/`, `payload-builder/`, or `block-builder/`. For each non-obvious choice (priority queue shape, fairness rule, unused-reservation handling, tip20-detection mechanism), one sentence in `notes/payment_lane_prior_art.md` capturing what they did and your first guess at why. This is the reading scaffold for W82 Fri's design sketch — do NOT design your own yet.
+- [ ] [HFT] **Build**: `crates/ledger-deterministic/src/journal.rs` — every `apply(op)` writes a `JournalRecord` to wal
+  BEFORE mutating state. recovery::Recovery replays journal on open. Output: a state machine that survives crashes
+  byte-identically.
+- [ ] [Tempo] 2 hrs at end of day: **payment-lane prior-art read** (no code). Read tempoxyz/tempo's payment-lane /
+  payload-builder implementation end-to-end. Locate the lane reservation logic — likely under `consensus/`,
+  `payload-builder/`, or `block-builder/`. For each non-obvious choice (priority queue shape, fairness rule,
+  unused-reservation handling, tip20-detection mechanism), one sentence in `notes/payment_lane_prior_art.md` capturing
+  what they did and your first guess at why. This is the reading scaffold for W82 Fri's design sketch — do NOT design
+  your own yet.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -3364,29 +4244,41 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 82 — PBS + Builder API + [Tempo] payment-lane design
 
 **Monday — PBS theory**
+
 - [ ] Read PBS (Proposer-Builder Separation) spec.
 - [ ] Commit notes
 
 **Tuesday — MEV-Boost architecture**
+
 - [ ] Read MEV-Boost architecture.
 - [ ] Commit notes
 
 **Wednesday — Builder API spec**
+
 - [ ] Read Builder API specification.
 - [ ] Commit notes
 
 **Thursday — Builder API in reth**
+
 - [ ] Check reth's builder API support.
 - [ ] Commit notes
 
 **Friday — Crate: Builder API compat + Tempo payment lane design**
+
 - [ ] Design builder API support in consensus-engine.
-- [ ] [Tempo] 2 hrs: **Tempo design-partner-facing feature design start**. Open `notes/payment_lane_prior_art.md` from W81 Sat as reference. Design "payment lane" support in payload builder. Rule: configurable percentage of block gas (default 30%) reserved for TIP-20 transfers. If TIP-20 demand below reservation, rest is general. If above, TIP-20 wins. Sketch algorithm in `notes/payment_lane_design.md`: priority queue per category, fairness, what happens when reservation fully unused (give to general or burn slot). For each design choice, note whether it matches upstream Tempo or intentionally diverges (with reason).
+- [ ] [Tempo] 2 hrs: **Tempo design-partner-facing feature design start**. Open `notes/payment_lane_prior_art.md` from
+  W81 Sat as reference. Design "payment lane" support in payload builder. Rule: configurable percentage of block gas (
+  default 30%) reserved for TIP-20 transfers. If TIP-20 demand below reservation, rest is general. If above, TIP-20
+  wins. Sketch algorithm in `notes/payment_lane_design.md`: priority queue per category, fairness, what happens when
+  reservation fully unused (give to general or burn slot). For each design choice, note whether it matches upstream
+  Tempo or intentionally diverges (with reason).
 - [ ] Commit + log
 
 **Saturday — Implementation start**
+
 - [ ] Begin builder API endpoints in consensus-engine.
-- [ ] [Tempo] 30 min: review payment lane sketch from yesterday. Identify the 2-3 hardest design choices. Note them; don't solve yet.
+- [ ] [Tempo] 30 min: review payment lane sketch from yesterday. Identify the 2-3 hardest design choices. Note them;
+  don't solve yet.
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -3396,33 +4288,47 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 83 — Builder API impl + [Tempo] `tempo-payment-lane` scaffold + [NEW] ledger v0.5
 
 **Monday — Header submissions**
+
 - [ ] Implement header submission flow in consensus-engine.
 - [ ] Commit + log
 
 **Tuesday — Block submissions + ledger v0.5 polish**
+
 - [ ] Implement block submission flow.
-- [ ] [HFT] Polish ledger-deterministic: snapshot/restore + replay test. 1M transfers, crash mid-batch, recovery yields byte-identical state.
+- [ ] [HFT] Polish ledger-deterministic: snapshot/restore + replay test. 1M transfers, crash mid-batch, recovery yields
+  byte-identical state.
 - [ ] Commit + log
 
 **Wednesday — Builder client + `tempo-payment-lane` scaffold + ledger v0.5 tag**
+
 - [ ] Implement builder client perspective.
 - [ ] [HFT] Tag `ledger-deterministic v0.5.0`. Deterministic SM + double-entry + journal.
-- [ ] [Tempo] 2 hrs: **`tempo-payment-lane` scaffold**. Create `crates/tempo-payment-lane/` workspace member depending on consensus-engine. Define `LaneStrategy` trait: `fn select_transactions(&self, pool: &[PoolTx], gas_limit: u64) -> Vec<PoolTx>`. Empty default impl + `TempoLaneStrategy { tip20_reservation_pct: u8 }` skeleton.
+- [ ] [Tempo] 2 hrs: **`tempo-payment-lane` scaffold**. Create `crates/tempo-payment-lane/` workspace member depending
+  on consensus-engine. Define `LaneStrategy` trait:
+  `fn select_transactions(&self, pool: &[PoolTx], gas_limit: u64) -> Vec<PoolTx>`. Empty default impl +
+  `TempoLaneStrategy { tip20_reservation_pct: u8 }` skeleton.
 - [ ] Commit + log
 
 **Thursday — Builder integration tests + lane strategy impl**
+
 - [ ] Existing builder integration tests.
-- [ ] [Tempo] 1 hr: implement `TempoLaneStrategy::select_transactions` for simple case: split pool into tip20 vs general buckets (check fee_token field from tempo-tx-envelope), fill reservation from tip20 first, then general. Test against synthetic pool of 100 txs.
+- [ ] [Tempo] 1 hr: implement `TempoLaneStrategy::select_transactions` for simple case: split pool into tip20 vs general
+  buckets (check fee_token field from tempo-tx-envelope), fill reservation from tip20 first, then general. Test against
+  synthetic pool of 100 txs.
 - [ ] Commit + log
 
 **Friday — Reth PR + lane edge case**
+
 - [ ] Reth PR.
 - [ ] [Tempo] 1 hr: continue tempo-payment-lane. Handle edge case where tip20 reservation is unused — give to general.
 - [ ] Commit + log
 
 **Saturday — Flashbots docs + diff against upstream**
+
 - [ ] Study Flashbots additional docs.
-- [ ] [Tempo] 1.5 hrs: **Diff your prototype against upstream**. Read Tempo's payment-lane implementation in `tempoxyz/tempo`. Compare to your tempo-payment-lane prototype. Note 3 design choices that differ. For each, decide: port upstream, keep yours, or document trade. Add to payment_lane_design.md.
+- [ ] [Tempo] 1.5 hrs: **Diff your prototype against upstream**. Read Tempo's payment-lane implementation in
+  `tempoxyz/tempo`. Compare to your tempo-payment-lane prototype. Note 3 design choices that differ. For each, decide:
+  port upstream, keep yours, or document trade. Add to payment_lane_design.md.
 - [ ] Commit notes
 
 **Sunday — Rest + Weekly Ritual**
@@ -3432,30 +4338,39 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 84 — Test harness + [HFT] matching-engine + ledger settlement integration
 
 **Monday — Test harness design**
+
 - [ ] Design CL/EL test harness for consensus-engine.
 - [ ] Commit notes
 
 **Tuesday — Deterministic CL**
+
 - [ ] Implement mock CL for testing.
 - [ ] Commit + log
 
 **Wednesday — Scenario DSL + matching-engine settlement hook**
+
 - [ ] Define DSL for test scenarios.
-- [ ] [HFT] **Build**: matching-engine fills emit `Settlement` events. A new bridge in `crates/matching-engine/src/settle.rs` maps Settlement → ledger-deterministic Transfers. Now matching, replication, and accounting are end-to-end.
+- [ ] [HFT] **Build**: matching-engine fills emit `Settlement` events. A new bridge in
+  `crates/matching-engine/src/settle.rs` maps Settlement → ledger-deterministic Transfers. Now matching, replication,
+  and accounting are end-to-end.
 - [ ] Commit + log
 
 **Thursday — Reorg scenarios**
+
 - [ ] Reorg simulation tests in consensus-engine.
 - [ ] Commit + log
 
 **Friday — Engine API conformance**
+
 - [ ] Run crate against spec conformance tests.
 - [ ] [Tempo] 30 min: also run stack against any public Tempo conformance suite if one exists. If not, note as gap.
 - [ ] Commit + log
 
 **Saturday — Reth PR + [HFT] full-stack integration test**
+
 - [ ] Reth PR.
-- [ ] [HFT] Test: 3-replica matching-engine + ledger. Submit 100k orders. Verify all replicas converge AND ledger balances reconcile to zero net change.
+- [ ] [HFT] Test: 3-replica matching-engine + ledger. Submit 100k orders. Verify all replicas converge AND ledger
+  balances reconcile to zero net change.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 21 review**
@@ -3469,31 +4384,42 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 **[NEW] crate created**: `crates/marketdata-kernelbypass/`. Layer-4 ingestion-path primitive. v0.5 W90.
 
 **Monday — Integration architecture + marketdata scaffold**
+
 - [ ] Design toy execution client using all 3 Reth crates (storage-trie, exec-vm, consensus-engine).
-- [ ] **Build**: `crates/marketdata-kernelbypass/Cargo.toml` workspace member. Deps: `time`, `backpressure`. Optional features: `io-uring`, `af-xdp`.
-- [ ] **Build**: `crates/marketdata-kernelbypass/src/lib.rs` with module headers: `epoll.rs`, `io_uring.rs`, `af_xdp.rs`, `feed_handler.rs`, `parse.rs`.
+- [ ] **Build**: `crates/marketdata-kernelbypass/Cargo.toml` workspace member. Deps: `time`, `backpressure`. Optional
+  features: `io-uring`, `af-xdp`.
+- [ ] **Build**: `crates/marketdata-kernelbypass/src/lib.rs` with module headers: `epoll.rs`, `io_uring.rs`,
+  `af_xdp.rs`, `feed_handler.rs`, `parse.rs`.
 - [ ] Commit + log
 
 **Tuesday — Boot sequence**
+
 - [ ] Implement node startup.
 - [ ] Commit + log
 
 **Wednesday — Engine API → execution → storage flow**
+
 - [ ] End-to-end flow.
 - [ ] Commit + log
 
 **Thursday — Sync from testnet**
+
 - [ ] Attempt Sepolia sync using own stack (PRIMARY GOAL — THE Phase 5 deliverable).
-- [ ] [Tempo] **Secondary stretch goal** (cap at 4 hrs total this week, not just today): attempt Tempo testnet sync using your stack with tempo-tx-envelope + tempo-evm-ext + tempo-payment-lane plugged in. Document blockers in `notes/tempo_sync_blockers.md`. Do NOT let this eat Sepolia time. If Sepolia isn't working, Tempo gets zero time.
+- [ ] [Tempo] **Secondary stretch goal** (cap at 4 hrs total this week, not just today): attempt Tempo testnet sync
+  using your stack with tempo-tx-envelope + tempo-evm-ext + tempo-payment-lane plugged in. Document blockers in
+  `notes/tempo_sync_blockers.md`. Do NOT let this eat Sepolia time. If Sepolia isn't working, Tempo gets zero time.
 - [ ] Commit + log
 
 **Friday — Debug failures + marketdata: epoll baseline**
+
 - [ ] Fix Sepolia sync issues.
-- [ ] **Build**: `crates/marketdata-kernelbypass/src/epoll.rs` — epoll-based receiver. Baseline for io_uring/AF_XDP comparisons.
+- [ ] **Build**: `crates/marketdata-kernelbypass/src/epoll.rs` — epoll-based receiver. Baseline for io_uring/AF_XDP
+  comparisons.
 - [ ] [Tempo] 30 min only if Sepolia is green: continue Tempo sync attempt.
 - [ ] Commit + log
 
 **Saturday — More debugging**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -3503,28 +4429,36 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 86 — Cross-subsystem reth feature + marketdata: io_uring path
 
 **Monday — Feature identification + marketdata: io_uring design**
+
 - [ ] Find reth feature touching engine + storage.
 - [ ] Read tokio-uring + io_uring liburing docs.
 - [ ] Commit notes
 
 **Tuesday — Design + io_uring impl**
+
 - [ ] consensus-engine cross-subsystem feature design.
-- [ ] **Build**: `crates/marketdata-kernelbypass/src/io_uring.rs` — `IoUringReceiver` using `io_uring` crate directly. Submit-queue / completion-queue patterns. Multi-shot read with fixed buffers.
+- [ ] **Build**: `crates/marketdata-kernelbypass/src/io_uring.rs` — `IoUringReceiver` using `io_uring` crate directly.
+  Submit-queue / completion-queue patterns. Multi-shot read with fixed buffers.
 - [ ] Commit notes
 
 **Wednesday — Implementation**
+
 - [ ] Reth feature.
 - [ ] Commit + log
 
 **Thursday — Continue**
+
 - [ ] Commit + log
 
 **Friday — Tests**
+
 - [ ] Commit + log
 
 **Saturday — Submit + marketdata: parser scaffold**
+
 - [ ] Submit Reth feature PR.
-- [ ] **Build**: `crates/marketdata-kernelbypass/src/parse.rs` — generic `FeedParser` trait. Two reference impls: `ItchParser` (NASDAQ ITCH 5.0 subset), `FixParser` (FIX 4.4 binary subset).
+- [ ] **Build**: `crates/marketdata-kernelbypass/src/parse.rs` — generic `FeedParser` trait. Two reference impls:
+  `ItchParser` (NASDAQ ITCH 5.0 subset), `FixParser` (FIX 4.4 binary subset).
 - [ ] [Tempo] 30 min: Tempo PR work. Target Tempo PR count by end of M22: 12-15 merged.
 - [ ] Commit + log
 
@@ -3535,26 +4469,33 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 87 — PR reviews velocity + marketdata: feed handler
 
 **Monday — Review 2 PRs substantively**
+
 - [ ] [Tempo] 1 Reth + 1 Tempo PR. Mix sources from now on.
 - [ ] Commit notes
 
 **Tuesday — Review 2 more + marketdata: feed handler**
+
 - [ ] [Tempo] 1 Reth + 1 Tempo PR.
-- [ ] **Build**: `crates/marketdata-kernelbypass/src/feed_handler.rs` — `FeedHandler<P: FeedParser, T: Transport>` glues receiver → parse → emit. Emit goes through `messaging-aeron::Publication`.
+- [ ] **Build**: `crates/marketdata-kernelbypass/src/feed_handler.rs` — `FeedHandler<P: FeedParser, T: Transport>` glues
+  receiver → parse → emit. Emit goes through `messaging-aeron::Publication`.
 - [ ] Commit + log
 
 **Wednesday — Review discussion comments**
+
 - [ ] Engage design discussions.
 - [ ] Commit notes
 
 **Thursday — Reth PR**
+
 - [ ] Commit + log
 
 **Friday — Review 2 more**
+
 - [ ] [Tempo] 1 Reth + 1 Tempo PR.
 - [ ] Commit notes
 
 **Saturday — Crate maintenance**
+
 - [ ] All Reth + HFT + Tempo crates.
 - [ ] Commit + log
 
@@ -3565,13 +4506,16 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 88 — Devcon attendance
 
 **Monday-Friday — Devcon (dates vary)**
+
 - [ ] Attend Devcon. Meet maintainers in person. Side events.
-- [ ] [Tempo] If any Tempo team members or design partners at Devcon, request 1-on-1 in advance. Same priority as Reth core 1-on-1s. Update Tempo maintainer tracker after.
+- [ ] [Tempo] If any Tempo team members or design partners at Devcon, request 1-on-1 in advance. Same priority as Reth
+  core 1-on-1s. Update Tempo maintainer tracker after.
 - [ ] Notes.
 
 **Saturday — Travel home**
 
 **Sunday — Post-conference ritual**
+
 - [ ] Update Reth + Tempo trackers.
 - [ ] Follow-ups.
 
@@ -3582,30 +4526,39 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 89 — RFC consideration + marketdata: AF_XDP path
 
 **Monday — Identify RFC opportunity + AF_XDP design**
+
 - [ ] Find area needing design doc in Reth.
 - [ ] Read XDP + AF_XDP kernel docs. The `xdp` crate.
 - [ ] Commit notes
 
 **Tuesday — Draft RFC + Tempo TIP decision + AF_XDP impl**
+
 - [ ] Write initial draft.
-- [ ] [Tempo] Decide RFC target this week: Reth proposal OR Tempo TIP. Tempo TIPs are numbered like EIPs; bar is high but process is open. If your tempo-payment-lane prototype surfaced a real design issue (W83 Sat diff), a Tempo TIP draft is the right vehicle. Otherwise Reth RFC. Commit to one — don't do both.
-- [ ] **Build**: `crates/marketdata-kernelbypass/src/af_xdp.rs` — AF_XDP socket using `xdp` crate. Zero-copy receive path; requires CAP_NET_ADMIN.
+- [ ] [Tempo] Decide RFC target this week: Reth proposal OR Tempo TIP. Tempo TIPs are numbered like EIPs; bar is high
+  but process is open. If your tempo-payment-lane prototype surfaced a real design issue (W83 Sat diff), a Tempo TIP
+  draft is the right vehicle. Otherwise Reth RFC. Commit to one — don't do both.
+- [ ] **Build**: `crates/marketdata-kernelbypass/src/af_xdp.rs` — AF_XDP socket using `xdp` crate. Zero-copy receive
+  path; requires CAP_NET_ADMIN.
 - [ ] Commit notes
 
 **Wednesday — Refine RFC**
+
 - [ ] Iterate.
 - [ ] Commit notes
 
 **Thursday — Post RFC**
+
 - [ ] Post as GitHub discussion (Reth OR Tempo per Tuesday's decision).
 - [ ] Commit notes
 
 **Friday — Respond to feedback + AF_XDP bench**
+
 - [ ] Engage commenters.
 - [ ] criterion: epoll vs io_uring vs AF_XDP at 10M, 50M, 100M packets/sec on a single NIC queue. Plot.
 - [ ] Commit notes
 
 **Saturday — Reth PR**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -3615,30 +4568,37 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 90 — Mentorship practice + [NEW] marketdata-kernelbypass v0.5 ship
 
 **Monday — Identify newcomer + marketdata polish**
+
 - [ ] Find newer contributor in Telegram. Offer help on their first PR.
 - [ ] marketdata-kernelbypass polish: error handling, tracing spans.
 - [ ] [Tempo] 15 min: identify any newcomer on Tempo side. Same offer.
 - [ ] Commit notes
 
 **Tuesday — Help them + marketdata v0.5 tag**
+
 - [ ] Pair review on Reth side.
 - [ ] Tag `marketdata-kernelbypass v0.5.0`. epoll + io_uring + AF_XDP + ITCH/FIX parsers + feed handler.
 - [ ] Commit notes
 
 **Wednesday — Another mentee + matching-engine end-to-end integration**
+
 - [ ] Help another newcomer.
-- [ ] [HFT] **Integration test**: marketdata-kernelbypass receives synthetic ITCH feed at 5M msg/s → matching-engine ingests → fills emit via messaging-aeron → ledger settles. End-to-end on one machine. Capture latencies at each hop.
+- [ ] [HFT] **Integration test**: marketdata-kernelbypass receives synthetic ITCH feed at 5M msg/s → matching-engine
+  ingests → fills emit via messaging-aeron → ledger settles. End-to-end on one machine. Capture latencies at each hop.
 - [ ] Commit notes
 
 **Thursday — Crate PR**
+
 - [ ] Reth contribution.
 - [ ] Commit + log
 
 **Friday — Consensus-engine v1.0 prep**
+
 - [ ] API review.
 - [ ] Commit + log
 
 **Saturday — Docs pass**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -3648,30 +4608,41 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 91 — consensus-engine v1.0 ship + [Tempo] both Tempo crates v0.1.0
 
 **Monday — Final benchmarks**
+
 - [ ] Commit + log
 
 **Tuesday — DESIGN.md**
+
 - [ ] consensus-engine DESIGN.md showing inheritance tree.
 - [ ] Commit + log
 
 **Wednesday — Release tag**
+
 - [ ] `consensus-engine v1.0.0` tag. Third Reth flagship deliverable.
-- [ ] **Inheritance audit**: consensus-engine LOC vs LOC calling into eth-consensus / eth-stage / exec-vm / storage-trie / consensus-bft. Target ≥70%.
+- [ ] **Inheritance audit**: consensus-engine LOC vs LOC calling into eth-consensus / eth-stage / exec-vm /
+  storage-trie / consensus-bft. Target ≥70%.
 - [ ] Commit + log
 
 **Thursday — Tempo crates ship**
+
 - [ ] Integration example: full 3-crate Reth example.
-- [ ] [Tempo] 1 hr: **Tag `tempo-evm-ext v0.1.0`**. Finalize at least TIP-1020 P256/WebAuthn precompile impls registered against exec-vm's registry. Test that registration works without forking exec-vm.
-- [ ] [Tempo] 30 min: **Tag `tempo-payment-lane v0.1.0`**. Finalize lane reservation strategy from W83. Update README documenting strategy and trade-offs vs upstream Tempo.
-- [ ] [Tempo] Update workspace root README to document all 3 Tempo crates alongside the 13 Reth crates AND the 6 HFT crates AND the 8 Layer-1/2/3/4 primitive crates.
+- [ ] [Tempo] 1 hr: **Tag `tempo-evm-ext v0.1.0`**. Finalize at least TIP-1020 P256/WebAuthn precompile impls registered
+  against exec-vm's registry. Test that registration works without forking exec-vm.
+- [ ] [Tempo] 30 min: **Tag `tempo-payment-lane v0.1.0`**. Finalize lane reservation strategy from W83. Update README
+  documenting strategy and trade-offs vs upstream Tempo.
+- [ ] [Tempo] Update workspace root README to document all 3 Tempo crates alongside the 13 Reth crates AND the 6 HFT
+  crates AND the 8 Layer-1/2/3/4 primitive crates.
 - [ ] Commit + log
 
 **Friday — Blog consideration**
+
 - [ ] If ready, draft consensus-engine post.
-- [ ] [Tempo] If writing Phase 5 blog, decide framing: "consensus-engine + Tempo payment lanes" reads more distinctive than just "consensus-engine." Lean into Tempo angle for distribution reach.
+- [ ] [Tempo] If writing Phase 5 blog, decide framing: "consensus-engine + Tempo payment lanes" reads more distinctive
+  than just "consensus-engine." Lean into Tempo angle for distribution reach.
 - [ ] Commit + log
 
 **Saturday — Reth PR**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -3681,28 +4652,37 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 92 — Recognition push + [HFT] paper-trade rig setup
 
 **Monday — Engage major discussions + paper-trade rig planning**
+
 - [ ] Architecture-level discussion contributions on Reth.
-- [ ] [HFT] Plan a single-machine paper-trade rig: synthetic feed → matching-engine → ledger. Goal: 200 runtime hours by M24, building toward 2000 by M30, 4000 by M36.
+- [ ] [HFT] Plan a single-machine paper-trade rig: synthetic feed → matching-engine → ledger. Goal: 200 runtime hours by
+  M24, building toward 2000 by M30, 4000 by M36.
 - [ ] Commit notes
 
 **Tuesday — More PR reviews**
+
 - [ ] 5+ substantive reviews (mixed Reth + Tempo).
 - [ ] Commit notes
 
 **Wednesday — Second RFC + paper-trade rig: 24hr soak**
+
 - [ ] If applicable, another design proposal.
-- [ ] [HFT] Start a 24-hour paper-trade soak. Monitor: replica divergence (should be 0), ledger reconciliation drift (should be 0), P99 matching latency.
+- [ ] [HFT] Start a 24-hour paper-trade soak. Monitor: replica divergence (should be 0), ledger reconciliation drift (
+  should be 0), P99 matching latency.
 - [ ] Commit notes
 
 **Thursday — Reth PR**
+
 - [ ] Commit + log
 
 **Friday — Maintainer touch points**
+
 - [ ] Engage each target Reth maintainer at least once.
-- [ ] [Tempo] Tempo maintainer touch points: engage each of 2-4 Tempo maintainers you've built relationship with. Reference your tempo-payment-lane prototype. Ask for design feedback on one specific point, not generic input.
+- [ ] [Tempo] Tempo maintainer touch points: engage each of 2-4 Tempo maintainers you've built relationship with.
+  Reference your tempo-payment-lane prototype. Ask for design feedback on one specific point, not generic input.
 - [ ] Commit notes
 
 **Saturday — End Month 23**
+
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 23 review**
@@ -3714,26 +4694,33 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 93 — Final feature push + [HFT] 72hr soak
 
 **Monday — Feature identification + soak start**
+
 - [ ] Last major reth feature for Phase 5.
-- [ ] [HFT] Start a 72-hour paper-trade soak with deliberate chaos: occasional process kills (via `ops-chaos`'s eventual scaffold — but we can do shell `kill -9` for now). Goal: replicas converge after every kill.
+- [ ] [HFT] Start a 72-hour paper-trade soak with deliberate chaos: occasional process kills (via `ops-chaos`'s eventual
+  scaffold — but we can do shell `kill -9` for now). Goal: replicas converge after every kill.
 - [ ] Commit notes
 
 **Tuesday — Implementation**
+
 - [ ] Commit + log
 
 **Wednesday — Continue + 72hr soak audit**
+
 - [ ] Audit soak: divergence count, recovery times, ledger reconciliation.
 - [ ] Commit + log
 
 **Thursday — Tests**
+
 - [ ] Commit + log
 
 **Friday — Submit**
+
 - [ ] Submit final Reth feature PR.
 - [ ] [Tempo] 30 min: Tempo PR final push if below 15 merged.
 - [ ] Commit + log
 
 **Saturday — Reviews**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -3743,24 +4730,30 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 94 — Final PR push
 
 **Monday — PR volume**
+
 - [ ] Multiple smaller Reth PRs.
 - [ ] [Tempo] 1 hr: any final Tempo PRs you can ship before reassessment.
 - [ ] Commit + log
 
 **Tuesday — Continue**
+
 - [ ] Commit + log
 
 **Wednesday — Reviews given**
+
 - [ ] 5+ reviews across Reth + Tempo, mixed.
 - [ ] Commit notes
 
 **Thursday — Continue**
+
 - [ ] Commit + log
 
 **Friday — Final PRs**
+
 - [ ] Commit + log
 
 **Saturday — Wrap up**
+
 - [ ] All outstanding items.
 - [ ] Commit + log
 
@@ -3771,37 +4764,51 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 95 — Reassessment preparation (M24 calibration)
 
 **Monday — Data collection**
+
 - [ ] Count all Reth PRs merged. List features shipped. Update maintainer tracker.
-- [ ] [HFT] Count HFT runtime hours (target 200 by M24). matching-engine P99 latency. ledger reconciliation drift. messaging-aeron throughput.
+- [ ] [HFT] Count HFT runtime hours (target 200 by M24). matching-engine P99 latency. ledger reconciliation drift.
+  messaging-aeron throughput.
 - [ ] [Tempo] Count Tempo PRs merged. Target: 25. Acceptable: 15+. Below 10 = flag the gap honestly.
 - [ ] [Tempo] Count Tempo crates shipped. Target: 3 (all live). Acceptable: 2.
 - [ ] [Tempo] Update Tempo maintainer tracker depth scores.
 - [ ] Commit notes
 
 **Tuesday — Signal assessment**
+
 - [ ] Any approaches from Reth-adjacent firms? Mentions by maintainers?
 - [ ] Any approaches from HFT firms (Tier A firm A/B/C/D/E/F responses to your public artifacts)?
-- [ ] [Tempo] Any approaches from Tempo team? From Tempo design partners? Has anyone from upstream Tempo engaged substantively with tempo-payment-lane?
+- [ ] [Tempo] Any approaches from Tempo team? From Tempo design partners? Has anyone from upstream Tempo engaged
+  substantively with tempo-payment-lane?
 - [ ] Commit notes
 
 **Wednesday — Nine crates assessment**
+
 - [ ] Quality of each Reth: storage-trie, exec-vm, consensus-engine.
-- [ ] Quality of each HFT: matching-engine, ledger-deterministic, messaging-aeron, marketdata-kernelbypass (consensus-bft v1.0 is foundational).
+- [ ] Quality of each HFT: matching-engine, ledger-deterministic, messaging-aeron, marketdata-kernelbypass (
+  consensus-bft v1.0 is foundational).
 - [ ] Quality of each Tempo: tempo-tx-envelope, tempo-evm-ext, tempo-payment-lane.
 - [ ] Commit notes
 
 **Thursday — Energy assessment**
+
 - [ ] Sustainability check.
 - [ ] Commit notes
 
 **Friday — Three pulls to evaluate honestly**
-- [ ] **Reth-deepening pull**: do I want another 6-12 months of Reth core? Network strong enough to land Tier A Reth-adjacent role?
-- [ ] **HFT IC track pull**: matching-engine v1.0 + 200 runtime hours is a strong signal. Tier A firm A/B/C/D/E/F have all hired solo systems engineers off public artifacts in past 5 years. Should HFT IC track be the new primary?
-- [ ] [Tempo] **Tempo gravity check**: have you been pulled into Tempo strongly enough that "Tempo full-time" is now a credible path? Specifically: ≥15 Tempo PRs merged AND ≥2 direct Tempo maintainer relationships AND has your tempo-payment-lane been substantively engaged by upstream? If yes to all three, Path D is real.
+
+- [ ] **Reth-deepening pull**: do I want another 6-12 months of Reth core? Network strong enough to land Tier A
+  Reth-adjacent role?
+- [ ] **HFT IC track pull**: matching-engine v1.0 + 200 runtime hours is a strong signal. Tier A firm A/B/C/D/E/F have
+  all hired solo systems engineers off public artifacts in past 5 years. Should HFT IC track be the new primary?
+- [ ] [Tempo] **Tempo gravity check**: have you been pulled into Tempo strongly enough that "Tempo full-time" is now a
+  credible path? Specifically: ≥15 Tempo PRs merged AND ≥2 direct Tempo maintainer relationships AND has your
+  tempo-payment-lane been substantively engaged by upstream? If yes to all three, Path D is real.
 - [ ] Commit notes
 
 **Saturday — Market state**
-- [ ] Crypto cycle. Rust infra hiring climate. Stablecoin payments market state. HFT hiring (Tier A firms A-F + Tier B firms A-D).
+
+- [ ] Crypto cycle. Rust infra hiring climate. Stablecoin payments market state. HFT hiring (Tier A firms A-F + Tier B
+  firms A-D).
 - [ ] Commit notes
 
 **Sunday — Rest + Weekly Ritual**
@@ -3811,55 +4818,79 @@ HFT five-crate integration target (W90 paper-trade rig): matching-engine ←cons
 ### Week 96 — Month 24 Decision (Five Paths)
 
 **Monday — Path A analysis (extend Reth core)**
+
 - [ ] Extend Reth core for 6-12 months. What does this look like? Likelihood you accept a Reth-adjacent Tier A offer?
-- [ ] Strong if: ≥3 Reth maintainer Depth-3+ relationships, ≥1 feature merged, public visibility growing, no HFT inbound.
+- [ ] Strong if: ≥3 Reth maintainer Depth-3+ relationships, ≥1 feature merged, public visibility growing, no HFT
+  inbound.
 - [ ] Commit notes
 
 **Tuesday — Path B analysis (post-Reth systems)**
+
 - [ ] Pivot to post-Reth systems (Chronicle Queue replacement, deeper Aeron, distributed mini-db).
 - [ ] Strong if: you want to keep building distributed-systems primitives for another 12 months before any job change.
 - [ ] Commit notes
 
 **Wednesday — Path C analysis (catch-up)**
+
 - [ ] Catch-up if Phase 5 slipped (some weeks shifted right).
-- [ ] Triggered if: consensus-engine v1.0 not shipped, OR matching-engine v1.0 not raft-replicated, OR Sepolia sync not green, OR <100 runtime hours.
+- [ ] Triggered if: consensus-engine v1.0 not shipped, OR matching-engine v1.0 not raft-replicated, OR Sepolia sync not
+  green, OR <100 runtime hours.
 - [ ] Commit notes
 
 **Thursday — Path D analysis (Tempo pivot, conditional)**
-- [ ] [Tempo] **Path D**: pivot to Tempo full-time. Apply to Tempo directly, OR to a Tempo design partner. Real option ONLY if W95 Friday's three-condition test passed. Otherwise, Path D drops back into Tier A/B as generic "stablecoin payments infra" track.
-- [ ] [Tempo] If Path D is real: what does next 6-12 months look like? Direct application, or build-in-public to attract inbound? Remote-friendliness check (Tempo is distributed; check if remote roles are open from home geography).
+
+- [ ] [Tempo] **Path D**: pivot to Tempo full-time. Apply to Tempo directly, OR to a Tempo design partner. Real option
+  ONLY if W95 Friday's three-condition test passed. Otherwise, Path D drops back into Tier A/B as generic "stablecoin
+  payments infra" track.
+- [ ] [Tempo] If Path D is real: what does next 6-12 months look like? Direct application, or build-in-public to attract
+  inbound? Remote-friendliness check (Tempo is distributed; check if remote roles are open from home geography).
 - [ ] Commit notes
 
 **Friday — Path E analysis ([NEW] HFT destination-tier IC track) — NEW DEFAULT IF SIGNALS STRONG**
-- [ ] [HFT] **Path E**: HFT destination-tier IC track. Target: Tier A HFT firm (A/B/C/D/E/F) as IC4/IC5 systems engineer. Compensation: destination-tier (top-of-band). Geography: destination geography (firm-dependent, typically major financial hub).
-- [ ] Strong if: matching-engine v1.0 ✓, ledger v0.5 ✓, messaging-aeron v0.5 ✓, marketdata-kernelbypass v0.5 ✓, ≥200 runtime hours, ≥1 blog post live, ≥1 inbound from HFT recruiter.
-- [ ] Phase 6 (M25–M30) plan: continue HFT track to v0.7 + add mini-db CAPSTONE + vector-db, run 2000+ runtime hours by M30. Phase 7 (M31–M36): interview prep, applications, destination landing.
+
+- [ ] [HFT] **Path E**: HFT destination-tier IC track. Target: Tier A HFT firm (A/B/C/D/E/F) as IC4/IC5 systems
+  engineer. Compensation: destination-tier (top-of-band). Geography: destination geography (firm-dependent, typically
+  major financial hub).
+- [ ] Strong if: matching-engine v1.0 ✓, ledger v0.5 ✓, messaging-aeron v0.5 ✓, marketdata-kernelbypass v0.5 ✓, ≥200
+  runtime hours, ≥1 blog post live, ≥1 inbound from HFT recruiter.
+- [ ] Phase 6 (M25–M30) plan: continue HFT track to v0.7 + add mini-db CAPSTONE + vector-db, run 2000+ runtime hours by
+  M30. Phase 7 (M31–M36): interview prep, applications, destination landing.
 - [ ] Commit notes
 
 **Saturday — Decision + Phase 5 close + Tempo addendum close**
+
 - [ ] Pick one path. Don't pick "do both." Five paths; pick one for next 6-12 months.
 - [ ] Write decision in `progress.md` with supporting evidence.
 - [ ] Full Phase 5 review.
 - [ ] Final Tempo metrics tally. Update North Star.
-- [ ] [Tempo] Note in progress.md: what the Tempo extension was worth. Honest assessment: did Tempo pay off as optionality, or did it cost Reth velocity without proportional return?
-- [ ] [HFT] Note in progress.md: where the HFT track stands. matching-engine + ledger + messaging-aeron + marketdata are 4 production-tier crates that didn't exist 24 months ago.
+- [ ] [Tempo] Note in progress.md: what the Tempo extension was worth. Honest assessment: did Tempo pay off as
+  optionality, or did it cost Reth velocity without proportional return?
+- [ ] [HFT] Note in progress.md: where the HFT track stands. matching-engine + ledger + messaging-aeron + marketdata are
+  4 production-tier crates that didn't exist 24 months ago.
 - [ ] Commit + log
 
 **Sunday — End 24-month frame**
-- [ ] Full rest. Celebrate milestone (3 Reth + 5 HFT + 3 Tempo = 11 product crates shipped on top of 8 Layer-1/2/3/4 primitives).
-- [ ] **Default Path going forward (this plan assumes)**: Path E (HFT destination-tier IC track) if signals are strong, with Reth maintenance + Tempo optionality continuing in background. The remainder of this plan (Phase 6 + Phase 7) is written under Path E. If you pick A/B/C/D, derive new W97+ from this plan's structure but redirect daily focus.
+
+- [ ] Full rest. Celebrate milestone (3 Reth + 5 HFT + 3 Tempo = 11 product crates shipped on top of 8 Layer-1/2/3/4
+  primitives).
+- [ ] **Default Path going forward (this plan assumes)**: Path E (HFT destination-tier IC track) if signals are strong,
+  with Reth maintenance + Tempo optionality continuing in background. The remainder of this plan (Phase 6 + Phase 7) is
+  written under Path E. If you pick A/B/C/D, derive new W97+ from this plan's structure but redirect daily focus.
 
 ---
 
 # PHASE 6: CAPSTONE + OPERATIONS + DESTINATION RECON (Month 25-30)
 
 **[NEW] CAPSTONE Deliverables**: `mini-db` v1.0 (W100), `vector-db` v0.5 (W104).
-**[NEW] Operations Deliverables**: `ops-monitoring` + `ops-deploy` + `ops-chaos` + `ops-runbooks` (W105-W109). Live deployment W106. 2000+ runtime hours target M30.
+**[NEW] Operations Deliverables**: `ops-monitoring` + `ops-deploy` + `ops-chaos` + `ops-runbooks` (W105-W109). Live
+deployment W106. 2000+ runtime hours target M30.
 **Reth track**: maintenance only (~3-5 hrs/wk).
 **Tempo track**: maintenance only (~3-5 hrs/wk, ~5-8 hrs/wk M31-M34 if design-partner inbound is real).
-**Blog posts**: #4 (W109 — chaos engineering), #5 (W112 — mini-db inheritance), #6 (W115 — vector-db single-node), #7 (W117 — Phase 6 retrospective).
+**Blog posts**: #4 (W109 — chaos engineering), #5 (W112 — mini-db inheritance), #6 (W115 — vector-db single-node), #7 (
+W117 — Phase 6 retrospective).
 
-Phase 6 is written under Path E assumption (HFT destination-tier IC track). If Path A/B/C/D was picked at W96, redirect daily focus but keep the same primitive-extraction discipline.
+Phase 6 is written under Path E assumption (HFT destination-tier IC track). If Path A/B/C/D was picked at W96, redirect
+daily focus but keep the same primitive-extraction discipline.
 
 ## Month 25: mini-db CAPSTONE — proving the inheritance principle
 
@@ -3868,34 +4899,47 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 **[NEW] crate created**: `crates/mini-db/`. The CAPSTONE. Inheritance target ≥0.70 LOC ratio.
 
 **Monday — mini-db scaffold + skyzh mini-lsm refresher**
-- [ ] **Build**: `crates/mini-db/Cargo.toml` workspace member. Deps: `lsm-core` (W40), `wal` (W26), `recovery` (W30), `txn` (W72), `bufpool` (W14), `bloom` (W34), `time` (W6), `backpressure` (W11).
-- [ ] **Build**: `crates/mini-db/src/lib.rs` empty module headers: `kv.rs`, `scan.rs`, `executor.rs`, `mvcc.rs`, `gc.rs`, `engine.rs`, `metrics.rs`, `cli.rs`.
+
+- [ ] **Build**: `crates/mini-db/Cargo.toml` workspace member. Deps: `lsm-core` (W40), `wal` (W26), `recovery` (W30),
+  `txn` (W72), `bufpool` (W14), `bloom` (W34), `time` (W6), `backpressure` (W11).
+- [ ] **Build**: `crates/mini-db/src/lib.rs` empty module headers: `kv.rs`, `scan.rs`, `executor.rs`, `mvcc.rs`,
+  `gc.rs`, `engine.rs`, `metrics.rs`, `cli.rs`.
 - [ ] Re-read skyzh mini-lsm Week 1 (Storage format). Confirm `lsm-core` covers it.
 - [ ] Commit + log
 
 **Tuesday — mini-db engine glue + read path**
-- [ ] **Build**: `crates/mini-db/src/engine.rs` — `MiniDb { lsm: lsm_core::LsmTree, wal: wal::Wal, txn_manager: txn::TxnManager, bufpool: bufpool::BufferPool, ... }`.
-- [ ] **Build**: `crates/mini-db/src/kv.rs` — `get(key) -> Option<Value>` checks memtable → SSTables in order. Bloom-filter rejection per `bloom::ClassicBloomFilter`.
+
+- [ ] **Build**: `crates/mini-db/src/engine.rs` —
+  `MiniDb { lsm: lsm_core::LsmTree, wal: wal::Wal, txn_manager: txn::TxnManager, bufpool: bufpool::BufferPool, ... }`.
+- [ ] **Build**: `crates/mini-db/src/kv.rs` — `get(key) -> Option<Value>` checks memtable → SSTables in order.
+  Bloom-filter rejection per `bloom::ClassicBloomFilter`.
 - [ ] Test: insert + get round-trip.
 - [ ] Commit + log
 
 **Wednesday — mini-db write path**
-- [ ] **Build**: `crates/mini-db/src/kv.rs` — `put(key, value) -> Result<()>` writes WAL via `wal::Wal::append()`, then memtable. Group commit honored.
+
+- [ ] **Build**: `crates/mini-db/src/kv.rs` — `put(key, value) -> Result<()>` writes WAL via `wal::Wal::append()`, then
+  memtable. Group commit honored.
 - [ ] **Build**: `delete(key)` writes tombstone.
 - [ ] Test: 1M ops mixed put/get; verify WAL replay yields same state.
 - [ ] Commit + log
 
 **Thursday — mini-db scan path**
+
 - [ ] **Build**: `crates/mini-db/src/scan.rs` — `Scan { iter: lsm_core::MergeIterator }`. Inclusive range scans.
 - [ ] Test against fixture: insert 100k keys, scan [10k, 90k), assert 80k results in order.
 - [ ] Commit + log
 
 **Friday — mini-db crash recovery via `recovery`**
-- [ ] **Build**: `MiniDb::open()` calls `recovery::Recovery::recover(&wal, &mut page_provider)`. ARIES analysis → redo → undo from the txn log.
-- [ ] Test: write 10k records, panic mid-write, re-open, assert state matches "everything that fsynced before panic" and nothing else.
+
+- [ ] **Build**: `MiniDb::open()` calls `recovery::Recovery::recover(&wal, &mut page_provider)`. ARIES analysis → redo →
+  undo from the txn log.
+- [ ] Test: write 10k records, panic mid-write, re-open, assert state matches "everything that fsynced before panic" and
+  nothing else.
 - [ ] Commit + log
 
 **Saturday — Reth maintenance + Tempo maintenance**
+
 - [ ] One Reth PR review.
 - [ ] [Tempo] Skim Tempo releases (weekly ritual continues).
 - [ ] Commit + log
@@ -3907,29 +4951,39 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 98 — mini-db transactions + MVCC
 
 **Monday — mini-db txn integration**
-- [ ] **Build**: `crates/mini-db/src/mvcc.rs` — `Txn::begin() -> Snapshot` via `txn::TxnManager`. Each key-value pair carries an HLC timestamp.
+
+- [ ] **Build**: `crates/mini-db/src/mvcc.rs` — `Txn::begin() -> Snapshot` via `txn::TxnManager`. Each key-value pair
+  carries an HLC timestamp.
 - [ ] Commit + log
 
 **Tuesday — mini-db snapshot isolation**
+
 - [ ] Reads against snapshot see only versions visible at snapshot timestamp.
 - [ ] Test: T1 begins → T2 writes K=1 → T1 reads K, sees old value or NotFound.
 - [ ] Commit + log
 
 **Wednesday — mini-db GC**
-- [ ] **Build**: `crates/mini-db/src/gc.rs` — `GcWorker` runs every N seconds, drops versions older than the oldest active snapshot. Coordinates with txn_manager's active-set.
+
+- [ ] **Build**: `crates/mini-db/src/gc.rs` — `GcWorker` runs every N seconds, drops versions older than the oldest
+  active snapshot. Coordinates with txn_manager's active-set.
 - [ ] Commit + log
 
 **Thursday — mini-db: executor wrapper**
-- [ ] **Build**: `crates/mini-db/src/executor.rs` — `Executor` thin layer for batch ops (BatchGet, BatchPut). No SQL — this is a KV store, not RDBMS.
+
+- [ ] **Build**: `crates/mini-db/src/executor.rs` — `Executor` thin layer for batch ops (BatchGet, BatchPut). No SQL —
+  this is a KV store, not RDBMS.
 - [ ] Commit + log
 
 **Friday — mini-db: criterion bench**
+
 - [ ] Target: 1M ops/sec single-node, <1ms P99 on a 50/50 read/write workload at 1M-key scale.
 - [ ] Compare against sled, redb on the same hardware.
 - [ ] Commit + log
 
 **Saturday — mini-db: inheritance audit**
-- [ ] Count LOC. Native logic (kv glue, scan glue, executor wrapper, GC orchestrator): target <30% of total LOC. Inheritance: ≥70% calls into lsm-core / wal / recovery / txn / bufpool / bloom.
+
+- [ ] Count LOC. Native logic (kv glue, scan glue, executor wrapper, GC orchestrator): target <30% of total LOC.
+  Inheritance: ≥70% calls into lsm-core / wal / recovery / txn / bufpool / bloom.
 - [ ] If <70%, audit the wrappers — chances are something is being reimplemented that should be inherited.
 - [ ] Commit + log
 
@@ -3940,26 +4994,35 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 99 — mini-db distributed-stub (raft-replicated kv) + tag v0.5
 
 **Monday — mini-db: distributed plan**
-- [ ] Design distribution as a thin layer: each shard is a `consensus-raft::RaftNode` group of 3-5 nodes. Each replicates a `MiniDb` instance.
+
+- [ ] Design distribution as a thin layer: each shard is a `consensus-raft::RaftNode` group of 3-5 nodes. Each
+  replicates a `MiniDb` instance.
 - [ ] Commit notes
 
 **Tuesday — mini-db: raft wire-up**
-- [ ] **Build**: `crates/mini-db/src/raft_replicated.rs` — `RaftKv` wraps `MiniDb`. Submits `KvCommand` enum (Put, Delete) through `consensus_raft::RaftNode`. apply() mutates local MiniDb.
+
+- [ ] **Build**: `crates/mini-db/src/raft_replicated.rs` — `RaftKv` wraps `MiniDb`. Submits `KvCommand` enum (Put,
+  Delete) through `consensus_raft::RaftNode`. apply() mutates local MiniDb.
 - [ ] Commit + log
 
 **Wednesday — mini-db: sharding stub**
-- [ ] **Build**: `crates/mini-db/src/sharding.rs` — consistent-hash shard router, fixed N-shard cluster. NOT a research project — minimum viable.
+
+- [ ] **Build**: `crates/mini-db/src/sharding.rs` — consistent-hash shard router, fixed N-shard cluster. NOT a research
+  project — minimum viable.
 - [ ] Commit + log
 
 **Thursday — mini-db v0.5 tag**
+
 - [ ] Tag `mini-db v0.5.0`. Single-node + raft-replicated + sharded stub.
 - [ ] Commit + log
 
 **Friday — Reth PR maintenance**
+
 - [ ] One Reth contribution to keep relationships warm.
 - [ ] Commit + log
 
 **Saturday — Tempo maintenance**
+
 - [ ] [Tempo] Sunday-ritual-equivalent skim.
 - [ ] Commit + log
 
@@ -3970,34 +5033,43 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 100 — mini-db v1.0 ship + integration with operations infrastructure
 
 **Monday — mini-db: comprehensive test suite**
+
 - [ ] proptest: random op sequences must satisfy linearizability.
 - [ ] Loom test for the txn_manager lock interactions.
 - [ ] Commit + log
 
 **Tuesday — mini-db: chaos test**
+
 - [ ] Kill replicas mid-batch. Verify final convergence + linearizability.
 - [ ] Commit + log
 
 **Wednesday — mini-db v1.0 tag**
+
 - [ ] Tag `mini-db v1.0.0`. **CAPSTONE deliverable shipped**.
 - [ ] Re-run inheritance audit: ≥70% LOC inheritance ratio.
 - [ ] Commit + log
 
 **Thursday — Documentation pass**
+
 - [ ] DESIGN.md showing inheritance tree as ASCII art.
 - [ ] Commit + log
 
 **Friday — Blog post draft: "mini-db: how 8 crates wrote my database"**
-- [ ] Draft post centered on the inheritance discipline. The hook: how many LOC of mini-db are wrapper-only because the primitives carry the weight.
+
+- [ ] Draft post centered on the inheritance discipline. The hook: how many LOC of mini-db are wrapper-only because the
+  primitives carry the weight.
 - [ ] No deadline yet — post #5 at W112.
 - [ ] Commit + log
 
 **Saturday — Reth + Tempo maintenance**
+
 - [ ] One Reth PR. One Tempo skim.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 25 review**
-- [ ] North Star: mini-db v1.0 ✓. HFT-track crate count: 5 (matching-engine, ledger, messaging-aeron, marketdata-kernelbypass, mini-db).
+
+- [ ] North Star: mini-db v1.0 ✓. HFT-track crate count: 5 (matching-engine, ledger, messaging-aeron,
+  marketdata-kernelbypass, mini-db).
 
 ---
 
@@ -4008,29 +5080,39 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 **[NEW] crate created**: `crates/vector-db/`. Final HFT-track product, single-node only. v0.5 W104.
 
 **Monday — vector-db scaffold + HNSW paper re-read**
+
 - [ ] **Build**: `crates/vector-db/Cargo.toml` workspace member. Deps: `bufpool`, `bloom`, `txn` (limited), `time`.
-- [ ] **Build**: `crates/vector-db/src/lib.rs` empty module headers: `hnsw.rs`, `quantize.rs`, `filter.rs`, `index.rs`, `engine.rs`.
+- [ ] **Build**: `crates/vector-db/src/lib.rs` empty module headers: `hnsw.rs`, `quantize.rs`, `filter.rs`, `index.rs`,
+  `engine.rs`.
 - [ ] Re-read Malkov & Yashunin HNSW paper. Sections on multi-layer construction.
 - [ ] Commit + log
 
 **Tuesday — vector-db: vector type + distances**
-- [ ] **Build**: `crates/vector-db/src/lib.rs` — `Vector<const D: usize>(Box<[f32; D]>)`. Distance trait: `cosine`, `dot`, `l2`.
+
+- [ ] **Build**: `crates/vector-db/src/lib.rs` — `Vector<const D: usize>(Box<[f32; D]>)`. Distance trait: `cosine`,
+  `dot`, `l2`.
 - [ ] SIMD-accelerated L2 with `std::arch::x86_64::_mm256_*`.
 - [ ] Commit + log
 
 **Wednesday — vector-db: HNSW graph layer**
-- [ ] **Build**: `crates/vector-db/src/hnsw/graph.rs` — `HnswGraph { layers: Vec<Layer>, ep: NodeId }` with `Layer { neighbors: HashMap<NodeId, Vec<NodeId>> }`.
+
+- [ ] **Build**: `crates/vector-db/src/hnsw/graph.rs` — `HnswGraph { layers: Vec<Layer>, ep: NodeId }` with
+  `Layer { neighbors: HashMap<NodeId, Vec<NodeId>> }`.
 - [ ] Commit + log
 
 **Thursday — vector-db: HNSW insert**
-- [ ] **Build**: `crates/vector-db/src/hnsw/insert.rs` — multi-layer insert per paper Algorithm 1. M = 16, efConstruction = 200 defaults.
+
+- [ ] **Build**: `crates/vector-db/src/hnsw/insert.rs` — multi-layer insert per paper Algorithm 1. M = 16,
+  efConstruction = 200 defaults.
 - [ ] Commit + log
 
 **Friday — vector-db: HNSW search**
+
 - [ ] **Build**: `crates/vector-db/src/hnsw/search.rs` — greedy search per Algorithm 5. ef parameter for recall tuning.
 - [ ] Commit + log
 
 **Saturday — vector-db: HNSW test**
+
 - [ ] Test: 100k random 128-d vectors, recall@10 ≥ 0.95 vs brute-force ground truth.
 - [ ] Commit + log
 
@@ -4041,28 +5123,38 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 102 — vector-db: quantization + filtered search
 
 **Monday — vector-db: Scalar Quantization (SQ)**
-- [ ] **Build**: `crates/vector-db/src/quantize/sq.rs` — `ScalarQuantizer { min: f32, max: f32, scale: f32 }`. Each f32 → u8.
+
+- [ ] **Build**: `crates/vector-db/src/quantize/sq.rs` — `ScalarQuantizer { min: f32, max: f32, scale: f32 }`. Each
+  f32 → u8.
 - [ ] Test: SQ + HNSW, recall@10 ≥ 0.93 at 4× memory reduction.
 - [ ] Commit + log
 
 **Tuesday — vector-db: Product Quantization (PQ)**
-- [ ] **Build**: `crates/vector-db/src/quantize/pq.rs` — `ProductQuantizer { num_subq: usize, codebook: Vec<Vec<Vector<8>>> }`. Train via k-means per subspace.
+
+- [ ] **Build**: `crates/vector-db/src/quantize/pq.rs` —
+  `ProductQuantizer { num_subq: usize, codebook: Vec<Vec<Vector<8>>> }`. Train via k-means per subspace.
 - [ ] Test: 128-d → 8 sub-vectors × 8-d, recall@10 ≥ 0.90 at 16× memory reduction.
 - [ ] Commit + log
 
 **Wednesday — vector-db: filtered search via bloom-bitmap**
-- [ ] **Build**: `crates/vector-db/src/filter.rs` — `FilterMask` is a `bloom::ClassicBloomFilter` or precomputed bitmap. Search prunes candidates against filter before distance compute.
+
+- [ ] **Build**: `crates/vector-db/src/filter.rs` — `FilterMask` is a `bloom::ClassicBloomFilter` or precomputed bitmap.
+  Search prunes candidates against filter before distance compute.
 - [ ] Commit + log
 
 **Thursday — vector-db: payload storage via mini-db**
-- [ ] **Build**: `crates/vector-db/src/payload.rs` — payload (per-vector JSON metadata) stored in an embedded `mini_db::MiniDb`. Cross-crate inheritance: vector-db doesn't reimplement KV.
+
+- [ ] **Build**: `crates/vector-db/src/payload.rs` — payload (per-vector JSON metadata) stored in an embedded
+  `mini_db::MiniDb`. Cross-crate inheritance: vector-db doesn't reimplement KV.
 - [ ] Commit + log
 
 **Friday — Reth + Tempo maintenance**
+
 - [ ] One Reth review, one Tempo skim.
 - [ ] Commit + log
 
 **Saturday — vector-db: bench**
+
 - [ ] criterion: HNSW build at 1M vectors, search throughput, recall@10. Compare against qdrant, hnswlib.
 - [ ] Commit + log
 
@@ -4073,25 +5165,34 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 103 — vector-db: persistence + crash recovery
 
 **Monday — vector-db: HNSW graph serialization**
-- [ ] **Build**: `crates/vector-db/src/index/persist.rs` — graph + vectors + payload + bloom serialized to a directory. Use mmap for fast cold-start.
+
+- [ ] **Build**: `crates/vector-db/src/index/persist.rs` — graph + vectors + payload + bloom serialized to a directory.
+  Use mmap for fast cold-start.
 - [ ] Commit + log
 
 **Tuesday — vector-db: wal for writes**
-- [ ] **Build**: insertions write a WAL record (via `wal::Wal`) BEFORE updating graph. Crash recovery replays into in-memory graph.
+
+- [ ] **Build**: insertions write a WAL record (via `wal::Wal`) BEFORE updating graph. Crash recovery replays into
+  in-memory graph.
 - [ ] Commit + log
 
 **Wednesday — vector-db: txn wrapper (limited)**
-- [ ] `Txn::insert(id, vec, payload)` is atomic. No long-running read transactions (HNSW under graph mutation is hard; punt).
+
+- [ ] `Txn::insert(id, vec, payload)` is atomic. No long-running read transactions (HNSW under graph mutation is hard;
+  punt).
 - [ ] Commit + log
 
 **Thursday — vector-db: integration test**
+
 - [ ] Insert 100k vectors, crash, re-open, search recall ≥ 0.95.
 - [ ] Commit + log
 
 **Friday — Reth PR maintenance**
+
 - [ ] Commit + log
 
 **Saturday — vector-db: docs**
+
 - [ ] DESIGN.md showing inheritance tree (bufpool, bloom, mini-db, wal, time).
 - [ ] Commit + log
 
@@ -4102,27 +5203,35 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 104 — vector-db v0.5 ship (STOPS HERE) + operations planning
 
 **Monday — vector-db: final benchmarks**
+
 - [ ] Comprehensive bench suite. Compare vs Qdrant single-node.
 - [ ] Commit + log
 
 **Tuesday — vector-db: security review**
+
 - [ ] Audit unsafe blocks (SIMD).
 - [ ] Commit + log
 
 **Wednesday — vector-db v0.5 tag (FINAL)**
-- [ ] Tag `vector-db v0.5.0`. **STOPS HERE** — not pursued to distributed. Raft + sharding for vector-db would be a 6-month detour; mini-db already proves the pattern.
+
+- [ ] Tag `vector-db v0.5.0`. **STOPS HERE** — not pursued to distributed. Raft + sharding for vector-db would be a
+  6-month detour; mini-db already proves the pattern.
 - [ ] Commit + log
 
 **Thursday — Operations planning: hardware**
-- [ ] Order the operations rig. Target: 2× small servers (single-socket Xeon or Ryzen, 64 GB RAM, NVMe SSD, 10 GbE NIC). Total cost ≤ runway-tier-acceptable.
+
+- [ ] Order the operations rig. Target: 2× small servers (single-socket Xeon or Ryzen, 64 GB RAM, NVMe SSD, 10 GbE NIC).
+  Total cost ≤ runway-tier-acceptable.
 - [ ] Off-site backup plan (git remote + rsync to a third machine or cloud bucket).
 - [ ] Commit notes
 
 **Friday — Reth + Tempo maintenance**
+
 - [ ] Reth PR review. Tempo skim.
 - [ ] Commit + log
 
 **Saturday — Operations: software plan**
+
 - [ ] Decide on monitoring stack (Prometheus + Grafana + Alertmanager + Loki for logs).
 - [ ] Decide on deploy (k8s overkill; use systemd units + a shared filesystem).
 - [ ] Commit notes
@@ -4138,30 +5247,42 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 **[NEW] crates**: `crates/ops-monitoring/`, `crates/ops-deploy/` scaffolds.
 
 **Monday — ops-monitoring scaffold**
-- [ ] **Build**: `crates/ops-monitoring/Cargo.toml` workspace member. Deps: `time`, `metrics`, `tracing`, `tracing-opentelemetry`.
-- [ ] **Build**: `crates/ops-monitoring/src/prometheus.rs` — `PromExporter` wrapping the `prometheus` crate. Standard recorders bound at `/metrics`.
+
+- [ ] **Build**: `crates/ops-monitoring/Cargo.toml` workspace member. Deps: `time`, `metrics`, `tracing`,
+  `tracing-opentelemetry`.
+- [ ] **Build**: `crates/ops-monitoring/src/prometheus.rs` — `PromExporter` wrapping the `prometheus` crate. Standard
+  recorders bound at `/metrics`.
 - [ ] **Build**: `crates/ops-monitoring/src/tracing_bridge.rs` — tracing → OTLP exporter.
 - [ ] Commit + log
 
 **Tuesday — Wire ops-monitoring into matching-engine + mini-db + vector-db**
-- [ ] Every product crate now emits standard metrics: `requests_total`, `request_duration_seconds`, `errors_total`, plus crate-specific (matching-engine: `orders_matched_total`, `orderbook_depth`; mini-db: `lsm_compactions_total`, `wal_group_commit_size`).
+
+- [ ] Every product crate now emits standard metrics: `requests_total`, `request_duration_seconds`, `errors_total`, plus
+  crate-specific (matching-engine: `orders_matched_total`, `orderbook_depth`; mini-db: `lsm_compactions_total`,
+  `wal_group_commit_size`).
 - [ ] Commit + log
 
 **Wednesday — ops-deploy scaffold + systemd units**
+
 - [ ] **Build**: `crates/ops-deploy/Cargo.toml` workspace member.
-- [ ] **Build**: `ops-deploy/templates/` — systemd unit templates for each product binary (matching-engine, mini-db, vector-db).
+- [ ] **Build**: `ops-deploy/templates/` — systemd unit templates for each product binary (matching-engine, mini-db,
+  vector-db).
 - [ ] **Build**: `ops-deploy/scripts/blue_green.sh` — blue/green deployment via systemd socket activation.
 - [ ] Commit + log
 
 **Thursday — Grafana dashboards**
+
 - [ ] One dashboard per product crate. Standard panels: latency P50/P99/P999, throughput, error rate, queue depth.
 - [ ] Commit (dashboards as JSON in `ops-monitoring/dashboards/`).
 
 **Friday — Alertmanager rules**
-- [ ] Alert on: P99 latency > target, error rate > 0.1%, queue depth > 80% capacity, replica divergence (matching-engine).
+
+- [ ] Alert on: P99 latency > target, error rate > 0.1%, queue depth > 80% capacity, replica divergence (
+  matching-engine).
 - [ ] Commit + log
 
 **Saturday — Operations rig: provision**
+
 - [ ] Set up the two servers. Install Debian/Ubuntu LTS, harden ssh, set up monitoring agent.
 - [ ] Commit (provisioning scripts).
 
@@ -4172,28 +5293,38 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 106 — Live deployment begins (paper-trade rig)
 
 **Monday — Deploy matching-engine to operations rig**
-- [ ] systemd unit running. 3-replica raft cluster across 2 machines (2 on one, 1 on other — small cluster). Bind to localhost first.
+
+- [ ] systemd unit running. 3-replica raft cluster across 2 machines (2 on one, 1 on other — small cluster). Bind to
+  localhost first.
 - [ ] Commit + log
 
 **Tuesday — Deploy mini-db + vector-db**
+
 - [ ] All three products running. Monitoring stack scraping them.
 - [ ] Commit + log
 
 **Wednesday — Synthetic feed generator**
-- [ ] **Build**: `crates/marketdata-kernelbypass/examples/synthetic_feed.rs` — generates realistic ITCH messages at configurable rate.
+
+- [ ] **Build**: `crates/marketdata-kernelbypass/examples/synthetic_feed.rs` — generates realistic ITCH messages at
+  configurable rate.
 - [ ] Run at 100k msg/s. Observe matching-engine throughput, dashboard panels light up.
 - [ ] Commit + log
 
 **Thursday — Ledger settlement loop**
-- [ ] matching-engine fills route to ledger-deterministic. Reconciliation report runs every 5 min, must show zero net-change.
+
+- [ ] matching-engine fills route to ledger-deterministic. Reconciliation report runs every 5 min, must show zero
+  net-change.
 - [ ] Commit + log
 
 **Friday — Begin uptime tracking**
-- [ ] Operations runtime hours: hour 0. Tracking starts. Target M30: 2000 hrs. (≈83 days at 24/7 — possible if we start now.)
+
+- [ ] Operations runtime hours: hour 0. Tracking starts. Target M30: 2000 hrs. (≈83 days at 24/7 — possible if we start
+  now.)
 - [ ] Reth maintenance PR.
 - [ ] Commit + log
 
 **Saturday — Tempo maintenance**
+
 - [ ] [Tempo] Tempo PR or skim. Maintenance level only.
 - [ ] Commit + log
 
@@ -4204,25 +5335,31 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 107 — `ops-deploy` polish + first uptime week
 
 **Monday — Verify uptime: 7 days of synthetic feed**
+
 - [ ] Audit logs. Any panics? Any replica divergence? Any latency outliers?
 - [ ] Commit notes
 
 **Tuesday — ops-deploy: rolling restart**
+
 - [ ] Validate blue/green deploy on a binary change. Zero downtime target.
 - [ ] Commit + log
 
 **Wednesday — ops-deploy: tag v0.5**
+
 - [ ] Tag `ops-deploy v0.5.0`. Tag `ops-monitoring v0.5.0`.
 - [ ] Commit + log
 
 **Thursday — Uptime: address findings**
+
 - [ ] Fix any issues from Monday's audit.
 - [ ] Commit + log
 
 **Friday — Reth PR**
+
 - [ ] Commit + log
 
 **Saturday — Tempo maintenance**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -4234,28 +5371,40 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 **[NEW] crate created**: `crates/ops-chaos/`.
 
 **Monday — ops-chaos scaffold**
-- [ ] **Build**: `crates/ops-chaos/Cargo.toml` workspace member. Deps: `time` (deterministic time control via test-only fixtures), `tokio`, `rand` (seeded, deterministic).
+
+- [ ] **Build**: `crates/ops-chaos/Cargo.toml` workspace member. Deps: `time` (deterministic time control via test-only
+  fixtures), `tokio`, `rand` (seeded, deterministic).
 - [ ] **Build**: `crates/ops-chaos/src/lib.rs` with module headers: `fault.rs`, `scenario.rs`, `runner.rs`.
 - [ ] Commit + log
 
 **Tuesday — ops-chaos: fault types**
-- [ ] **Build**: `crates/ops-chaos/src/fault.rs` — Fault enum: `KillProcess(Pid)`, `NetworkPartition { from: NodeId, to: NodeId }`, `LatencyInject { ms: u32 }`, `DiskFull(MountPoint)`, `ClockSkew { delta_ms: i64 }`.
+
+- [ ] **Build**: `crates/ops-chaos/src/fault.rs` — Fault enum: `KillProcess(Pid)`,
+  `NetworkPartition { from: NodeId, to: NodeId }`, `LatencyInject { ms: u32 }`, `DiskFull(MountPoint)`,
+  `ClockSkew { delta_ms: i64 }`.
 - [ ] Commit + log
 
 **Wednesday — ops-chaos: scenario DSL**
-- [ ] **Build**: `crates/ops-chaos/src/scenario.rs` — `Scenario { steps: Vec<ScenarioStep> }`. Step is fault + delay + assertion.
+
+- [ ] **Build**: `crates/ops-chaos/src/scenario.rs` — `Scenario { steps: Vec<ScenarioStep> }`. Step is fault + delay +
+  assertion.
 - [ ] Commit + log
 
 **Thursday — ops-chaos: runner**
+
 - [ ] **Build**: `crates/ops-chaos/src/runner.rs` — executes scenarios against a live deployment. Logs results.
 - [ ] Commit + log
 
 **Friday — First chaos drill: kill matching-engine leader**
-- [ ] Run a chaos drill: kill the matching-engine raft leader during a 100k order burst. Verify new leader elected ≤500ms, replicated state converges, no ledger reconciliation drift.
+
+- [ ] Run a chaos drill: kill the matching-engine raft leader during a 100k order burst. Verify new leader elected
+  ≤500ms, replicated state converges, no ledger reconciliation drift.
 - [ ] Commit + log
 
 **Saturday — Chaos drill: network partition**
-- [ ] Partition 2 of 3 raft replicas from the third. Verify minority side stops accepting writes, majority makes progress.
+
+- [ ] Partition 2 of 3 raft replicas from the third. Verify minority side stops accepting writes, majority makes
+  progress.
 - [ ] Reth PR.
 - [ ] Commit + log
 
@@ -4268,32 +5417,40 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 **[NEW] dir created**: `ops-runbooks/`. Markdown only; not a crate. Each runbook is "what to do when X alert fires."
 
 **Monday — Runbook: matching-engine replica divergence**
-- [ ] Write a step-by-step runbook for replica divergence: identify diverged replica, capture its state, snapshot from majority, restart with snapshot.
+
+- [ ] Write a step-by-step runbook for replica divergence: identify diverged replica, capture its state, snapshot from
+  majority, restart with snapshot.
 - [ ] Commit (`ops-runbooks/matching-engine-replica-divergence.md`).
 
 **Tuesday — Runbook: mini-db wal corruption**
+
 - [ ] Steps when wal checksum mismatch detected.
 - [ ] Commit.
 
 **Wednesday — Runbook: vector-db OOM**
+
 - [ ] Steps when HNSW graph eats all RAM.
 - [ ] Commit.
 
 **Thursday — Runbook: monitoring stack down**
+
 - [ ] When Prometheus or Grafana stops scraping.
 - [ ] Commit.
 
 **Friday — Blog post #4: "Chaos engineering on the operations rig"**
+
 - [ ] First public blog post. Draft, edit, post. Topic: how ops-chaos works, what we found.
 - [ ] Cross-post to dev.to or hashnode. Twitter announcement.
 - [ ] Commit (`blog/2027-XX-XX-chaos-on-the-rig.md`).
 
 **Saturday — Reth PR + Tempo skim**
+
 - [ ] Reth contribution.
 - [ ] [Tempo] Sunday-ritual-equivalent.
 - [ ] Commit + log
 
 **Sunday — Rest + End Month 27 review**
+
 - [ ] Runtime hours by M27 end: target 400-500 hrs.
 
 ---
@@ -4303,25 +5460,31 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 110 — Sustained operations + dashboard polish
 
 **Monday — Audit alerts**
+
 - [ ] Are alerts firing at appropriate thresholds? Adjust.
 - [ ] Commit + log
 
 **Tuesday — Dashboard refinement**
+
 - [ ] Add panels exposing blame-able runaway tail latencies.
 - [ ] Commit + log
 
 **Wednesday — Tuning pass: matching-engine**
+
 - [ ] Profile in production. CPU pinning. NUMA awareness if rig supports.
 - [ ] Commit + log
 
 **Thursday — Tuning pass: mini-db**
+
 - [ ] Bufpool capacity tuning. WAL group commit window.
 - [ ] Commit + log
 
 **Friday — Reth + Tempo maintenance**
+
 - [ ] Commit + log
 
 **Saturday — Higher-throughput synthetic load**
+
 - [ ] Push matching-engine to 1M orders/sec. Where does it break?
 - [ ] Commit + log
 
@@ -4332,26 +5495,34 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 111 — matching-engine performance pass
 
 **Monday — Identify hot spot**
+
 - [ ] perf top under 1M orders/sec sustained load. Top 3 functions.
 - [ ] Commit notes
 
 **Tuesday — Order book tree comparison redux**
-- [ ] We chose BTreeMap at W60. With profile data, consider replacing the per-price-level VecDeque with a fixed-size ring (cache-friendlier).
+
+- [ ] We chose BTreeMap at W60. With profile data, consider replacing the per-price-level VecDeque with a fixed-size
+  ring (cache-friendlier).
 - [ ] Commit + log
 
 **Wednesday — Lock-free price level**
-- [ ] One bid + one ask per symbol at any time has 99% of contention. Consider a lock-free price level for the top-of-book.
+
+- [ ] One bid + one ask per symbol at any time has 99% of contention. Consider a lock-free price level for the
+  top-of-book.
 - [ ] Commit + log
 
 **Thursday — Bench: P99 latency**
+
 - [ ] Target <2µs P99 single-symbol single-core at 500k orders/sec. Current state captured.
 - [ ] Commit + log
 
 **Friday — matching-engine v1.0 → v1.1 tag**
+
 - [ ] Tag `matching-engine v1.1.0` capturing the tuning work.
 - [ ] Commit + log
 
 **Saturday — Reth PR**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -4361,25 +5532,32 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 112 — Blog post #5: mini-db inheritance + sustained operations
 
 **Monday — Blog post #5 draft**
-- [ ] "How 8 crates wrote my LSM database" — center on inheritance discipline. Show the dependency graph. Show the LOC inheritance ratio.
+
+- [ ] "How 8 crates wrote my LSM database" — center on inheritance discipline. Show the dependency graph. Show the LOC
+  inheritance ratio.
 - [ ] Commit (`blog/2027-XX-XX-mini-db-inheritance.md` draft).
 
 **Tuesday — Blog post #5 edit**
+
 - [ ] Edit pass. Hold for review.
 - [ ] Commit + log
 
 **Wednesday — Post + amplify**
+
 - [ ] Post. Cross-post. Twitter announcement. r/rust submission optional.
 - [ ] Commit + log
 
 **Thursday — Sustained operations check**
+
 - [ ] Uptime hours total: target ~700-800 by W112 end. On track for 2000 by M30.
 - [ ] Commit notes
 
 **Friday — Reth PR + Tempo skim**
+
 - [ ] Commit + log
 
 **Saturday — Open issue triage on own repos**
+
 - [ ] Any GitHub issues opened by people who tried to use the crates? Respond.
 - [ ] Commit + log
 
@@ -4390,26 +5568,35 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 113 — Network warm-up + interview-prep ramp
 
 **Monday — Map warm network**
-- [ ] List of warm connections: Reth maintainers (depth ≥2), Tempo maintainers, HFT folks met via conferences or Twitter, prior colleagues at tier-A / tier-B firms.
+
+- [ ] List of warm connections: Reth maintainers (depth ≥2), Tempo maintainers, HFT folks met via conferences or
+  Twitter, prior colleagues at tier-A / tier-B firms.
 - [ ] Commit notes (`network_map.md`).
 
 **Tuesday — Interview-prep ramp begins**
+
 - [ ] LeetCode reactivation. 1 hard problem per workday from now through W125.
 - [ ] Commit notes.
 
 **Wednesday — Systems design refresh**
+
 - [ ] Re-read "Designing Data-Intensive Applications" key chapters (5-7, 9).
 - [ ] Commit notes.
 
 **Thursday — Resume draft**
-- [ ] Update CV. Emphasize: 11 production crates, 25 in workspace, 60+ Reth PRs, matching-engine v1.1 at 1M+ orders/sec, 700+ runtime hours, mini-db CAPSTONE with inheritance discipline. No geography, no comp figures, no firm names.
+
+- [ ] Update CV. Emphasize: 11 production crates, 25 in workspace, 60+ Reth PRs, matching-engine v1.1 at 1M+ orders/sec,
+  700+ runtime hours, mini-db CAPSTONE with inheritance discipline. No geography, no comp figures, no firm names.
 - [ ] Commit (`resume_2027.md` private).
 
 **Friday — Reth + Tempo maintenance**
+
 - [ ] Commit + log
 
 **Saturday — Identify gap: low-latency networking interview topics**
-- [ ] Topics to refresh: TCP/IP stack tuning, kernel-bypass, NIC queues, NUMA. (You've built marketdata-kernelbypass — cement the explanations.)
+
+- [ ] Topics to refresh: TCP/IP stack tuning, kernel-bypass, NIC queues, NUMA. (You've built marketdata-kernelbypass —
+  cement the explanations.)
 - [ ] Commit notes
 
 **Sunday — Rest + End Month 28 review**
@@ -4421,29 +5608,36 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 114 — Public visibility + M30 calibration prep
 
 **Monday — Twitter / Mastodon activity**
+
 - [ ] One thoughtful technical post per week from this point. Pin the mini-db blog post.
 - [ ] Commit notes.
 
 **Tuesday — Talk proposal**
+
 - [ ] Submit a talk to QCon or P99 CONF: "Inheritance discipline in systems engineering."
 - [ ] Commit notes.
 
 **Wednesday — Engage HFT-adjacent community**
+
 - [ ] Identify 3-5 HFT engineers visible on Twitter / blogs. Respectful technical replies on relevant threads.
 - [ ] Commit notes.
 
 **Thursday — Reth PR (high-visibility opportunity)**
+
 - [ ] Pick a Reth PR that touches an area where multiple maintainers will see it.
 - [ ] Commit + log
 
 **Friday — M30 calibration prep**
+
 - [ ] Three questions ahead of W117 M30 decision review.
     - [ ] Public visibility: is there inbound? recruiters, maintainers, conference invites?
     - [ ] Runtime hours trajectory: on track for 2000 by M30 end?
-    - [ ] HFT crate quality: are matching-engine, ledger, messaging-aeron, marketdata production-deployable for a paper-trade rig at a real firm?
+    - [ ] HFT crate quality: are matching-engine, ledger, messaging-aeron, marketdata production-deployable for a
+      paper-trade rig at a real firm?
 - [ ] Commit notes.
 
 **Saturday — Tempo maintenance**
+
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -4453,25 +5647,32 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 115 — Blog post #6: vector-db + interview prep deepening
 
 **Monday — Blog post #6 draft**
-- [ ] "vector-db: HNSW + quantization + filtered search in one weekend" — center on how mini-db backed the payload store. Inheritance again.
+
+- [ ] "vector-db: HNSW + quantization + filtered search in one weekend" — center on how mini-db backed the payload
+  store. Inheritance again.
 - [ ] Commit.
 
 **Tuesday — Blog post #6 edit + post**
+
 - [ ] Post. Amplify.
 - [ ] Commit + log.
 
 **Wednesday — LeetCode harder**
+
 - [ ] Shift to LeetCode Hard daily.
 - [ ] Commit notes.
 
 **Thursday — Distributed systems mock**
+
 - [ ] Find a friend or AI for mock systems-design interview. Topic: "design a market data fan-out for 10M msg/s."
 - [ ] Commit notes.
 
 **Friday — Reth PR maintenance**
+
 - [ ] Commit + log.
 
 **Saturday — Tempo maintenance**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4481,25 +5682,32 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 116 — Interview prep concentrated week
 
 **Monday — Mock interview: matching engine deep**
+
 - [ ] Mock: "explain your matching engine design from order ingress to fill emission." 60 minutes whiteboard-style.
 - [ ] Commit notes.
 
 **Tuesday — Mock interview: storage**
+
 - [ ] "Walk me through your storage-trie design. Where does it differ from MDBX?"
 - [ ] Commit notes.
 
 **Wednesday — Mock interview: distributed**
+
 - [ ] "How does your matching-engine handle leader failover? What invariants must hold?"
 - [ ] Commit notes.
 
 **Thursday — Reth PR + visibility**
+
 - [ ] Commit + log
 
 **Friday — Skill audit**
-- [ ] Honest gaps: which interview topics am I weak on? (Likely: detailed JVM/HotSpot knowledge, distributed-DB internals beyond what you've built, MEV economics.) Schedule remediation weeks W118-W120.
+
+- [ ] Honest gaps: which interview topics am I weak on? (Likely: detailed JVM/HotSpot knowledge, distributed-DB
+  internals beyond what you've built, MEV economics.) Schedule remediation weeks W118-W120.
 - [ ] Commit notes.
 
 **Saturday — Tempo maintenance**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4509,33 +5717,41 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 117 — M30 Decision Gate + Blog #7 (Phase 6 retro)
 
 **Monday — Data collection**
+
 - [ ] Runtime hours total. Target 2000 by today.
 - [ ] PR portfolio: Reth count, Tempo count, HFT runtime, blog posts (#4-#7 should be done with #7 today).
 - [ ] Inbound: any approaches? Recruiter pings? Maintainer DMs?
 - [ ] Commit notes.
 
 **Tuesday — M30 Decision review**
+
 - [ ] Confirm Path E still right path: HFT destination-tier IC track.
 - [ ] If inbound has been strong from Tempo / Reth / general crypto, reconsider Path D / Path A.
 - [ ] Commit decision in `progress.md`.
 
 **Wednesday — Blog post #7 draft: Phase 6 retro**
+
 - [ ] "30 months in: 11 production crates, 2000 runtime hours, what worked." Honest retrospective.
 - [ ] Commit.
 
 **Thursday — Blog #7 edit + post**
+
 - [ ] Post. Amplify. This is the most-likely-to-attract-inbound post; lean into the data (LOC, latency, uptime).
 - [ ] Commit + log.
 
 **Friday — Phase 7 kickoff prep**
-- [ ] Phase 7 plan review. Application target list (Tier A firm A/B/C/D/E/F + Tier B firm A/B/C/D — no firm names committed yet).
+
+- [ ] Phase 7 plan review. Application target list (Tier A firm A/B/C/D/E/F + Tier B firm A/B/C/D — no firm names
+  committed yet).
 - [ ] Commit notes.
 
 **Saturday — Light week wrap**
+
 - [ ] Reth + Tempo maintenance.
 - [ ] Commit + log.
 
 **Sunday — End Phase 6**
+
 - [ ] Full rest.
 - [ ] Phase 7 starts tomorrow.
 
@@ -4543,38 +5759,47 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 
 # PHASE 7: DESTINATION LANDING (Month 31-36)
 
-**Goal**: Land destination-tier IC role at a Tier A HFT firm (Path E). Continued operations push to 4000+ hours by M36. Interview prep concentrated. Warm-network activation. Flagship blog post. Recon trip. Applications. Interviews. Offer decision. Resignation + relocation. Arrival. First month at new firm.
+**Goal**: Land destination-tier IC role at a Tier A HFT firm (Path E). Continued operations push to 4000+ hours by M36.
+Interview prep concentrated. Warm-network activation. Flagship blog post. Recon trip. Applications. Interviews. Offer
+decision. Resignation + relocation. Arrival. First month at new firm.
 
 **Operations**: continue sustained operation. Target 4000+ runtime hours by M36.
 **Reth maintenance**: ~2-3 hrs/wk.
 **Tempo maintenance**: ~3-5 hrs/wk, ~5-8 hrs/wk M31-M34 only if inbound from Tempo or design partner is real.
-**HFT polish**: matching-engine v1.2, ledger v0.7, messaging-aeron v0.7, marketdata-kernelbypass v0.7 along the way. Quality bumps via real-load discoveries on the rig.
+**HFT polish**: matching-engine v1.2, ledger v0.7, messaging-aeron v0.7, marketdata-kernelbypass v0.7 along the way.
+Quality bumps via real-load discoveries on the rig.
 
 ## Month 31: Skill gap remediation + interview prep curriculum
 
 ### Week 118 — Interview prep curriculum: data structures + algorithms
 
 **Monday — Interview-curriculum gap remediation: graph algorithms**
+
 - [ ] Refresh DFS/BFS, Dijkstra, A*, Union-Find. 5 problems each.
 - [ ] Commit notes.
 
 **Tuesday — DP review**
+
 - [ ] Top 20 DP patterns. 1-hr/topic.
 - [ ] Commit notes.
 
 **Wednesday — String algorithms**
+
 - [ ] KMP, suffix arrays, rolling hash.
 - [ ] Commit notes.
 
 **Thursday — Segment trees + lazy propagation**
+
 - [ ] One problem per pattern.
 - [ ] Commit notes.
 
 **Friday — Mock: 2 LeetCode Hard back-to-back, 45 min each**
+
 - [ ] Both must be no-help solves to be a green signal.
 - [ ] Commit notes.
 
 **Saturday — Reth + Tempo maintenance**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4584,27 +5809,34 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 119 — Interview prep curriculum: systems design
 
 **Monday — Systems design: classic problems**
+
 - [ ] Twitter feed, URL shortener, rate limiter, distributed cache. 1 design per day, 60 min each.
 - [ ] Commit notes (`interview_notes/sd_<topic>.md` private).
 
 **Tuesday — Systems design: HFT-flavored**
-- [ ] Design an order book server. Design a market data fan-out. Design a fill router. Each comes from real matching-engine experience — leverage the depth.
+
+- [ ] Design an order book server. Design a market data fan-out. Design a fill router. Each comes from real
+  matching-engine experience — leverage the depth.
 - [ ] Commit notes.
 
 **Wednesday — Systems design: distributed**
+
 - [ ] Design a distributed KV. Design a vector search service. Design a settlement ledger.
 - [ ] Commit notes.
 
 **Thursday — Mock: full 4-round on-site simulation**
+
 - [ ] 60 min coding (Hard), 60 min systems design, 60 min behavioral, 60 min "deep dive into prior work."
 - [ ] AI for coding/SD; rehearse behavioral solo.
 - [ ] Commit notes.
 
 **Friday — Resume final pass**
+
 - [ ] Tightened, one-pager. PDF + ATS-friendly. Generic geography in resume header.
 - [ ] Commit (private).
 
 **Saturday — Reth PR**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4614,26 +5846,35 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 120 — Warm-network activation
 
 **Monday — Outreach: Reth maintainers**
-- [ ] Reach out to 2-3 Reth maintainers with Depth-3+ relationship. Honest message: "I'm exploring HFT-adjacent IC roles in destination-tier firms. If you have intros to your network there, would love to hear them. Happy to share my portfolio." No pressure, no urgency.
+
+- [ ] Reach out to 2-3 Reth maintainers with Depth-3+ relationship. Honest message: "I'm exploring HFT-adjacent IC roles
+  in destination-tier firms. If you have intros to your network there, would love to hear them. Happy to share my
+  portfolio." No pressure, no urgency.
 - [ ] Commit notes.
 
 **Tuesday — Outreach: HFT engineers met via conferences**
+
 - [ ] Same script, tuned to context.
 - [ ] Commit notes.
 
 **Wednesday — Outreach: prior colleagues at tier-A / tier-B firms**
+
 - [ ] Same. Anyone who'd vouch.
 - [ ] Commit notes.
 
 **Thursday — Outreach: Tempo maintainers (if Path D still active)**
+
 - [ ] [Tempo] If Path D criteria still active, send the same outreach to Tempo maintainers as a parallel option.
 - [ ] Commit notes.
 
 **Friday — Visa / relocation research**
-- [ ] Destination geography visa categories. Timeline (typical 4-12 weeks for skilled-worker visa, varies by destination). What employer-sponsored vs self-sponsored looks like.
+
+- [ ] Destination geography visa categories. Timeline (typical 4-12 weeks for skilled-worker visa, varies by
+  destination). What employer-sponsored vs self-sponsored looks like.
 - [ ] Commit notes (`relocation_research.md` private).
 
 **Saturday — Tempo maintenance**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4645,30 +5886,39 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 121 — Flagship blog post (the public artifact for inbound)
 
 **Monday — Outline**
-- [ ] Title: "32 months of inheritance: how 8 primitives built 5 production systems." Wide hook. Story arc: started with Reth, extended into HFT, ended with a database that's mostly other people's primitives.
+
+- [ ] Title: "32 months of inheritance: how 8 primitives built 5 production systems." Wide hook. Story arc: started with
+  Reth, extended into HFT, ended with a database that's mostly other people's primitives.
 - [ ] Commit (outline).
 
 **Tuesday — Draft section 1: the inheritance principle**
+
 - [ ] Concrete LOC ratios across mini-db, matching-engine, storage-trie.
 - [ ] Commit.
 
 **Wednesday — Draft section 2: the workspace tour**
+
 - [ ] Walk through the 25 crates in layers.
 - [ ] Commit.
 
 **Thursday — Draft section 3: what went wrong**
-- [ ] Honest section: scope creep on matching-engine perpetuals, the txn 2PC undertaking, weeks where Tempo crowded Reth.
+
+- [ ] Honest section: scope creep on matching-engine perpetuals, the txn 2PC undertaking, weeks where Tempo crowded
+  Reth.
 - [ ] Commit.
 
 **Friday — Draft section 4: how to use this**
+
 - [ ] If you're a junior engineer wanting to build serious systems: the workspace layout is the curriculum. Steal it.
 - [ ] Commit.
 
 **Saturday — Final edit + post**
+
 - [ ] Submit to Hacker News, r/rust, r/programming, X/Twitter. Cross-post.
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
+
 - [ ] Monitor reach. Any inbound? Track in `inbound.md`.
 
 ---
@@ -4676,24 +5926,31 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 122 — Inbound triage + interview prep
 
 **Monday — Inbound triage**
-- [ ] Anyone reach out from the flagship post? Categorize: hiring (HFT), hiring (crypto), curiosity, sales pitch (ignore).
+
+- [ ] Anyone reach out from the flagship post? Categorize: hiring (HFT), hiring (crypto), curiosity, sales pitch (
+  ignore).
 - [ ] Commit notes.
 
 **Tuesday — Calls scheduled**
+
 - [ ] If any genuine inbound, schedule 30-min intro calls for W123-W124.
 - [ ] Commit notes.
 
 **Wednesday — Continue interview prep**
+
 - [ ] Daily LeetCode + one systems design.
 - [ ] Commit.
 
 **Thursday — Continue interview prep**
+
 - [ ] Commit.
 
 **Friday — Reth PR**
+
 - [ ] Commit + log.
 
 **Saturday — Tempo maintenance**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4703,14 +5960,19 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 123 — Destination geography recon trip (part 1)
 
 **Monday-Friday — Travel to destination geography**
-- [ ] Recon trip purpose: (a) meet warm contacts in person, (b) attend a meetup or industry event, (c) get a feel for cost of living / housing / quality of life relative to home, (d) preliminary conversations with target firms (even early-stage, not formal interviews).
+
+- [ ] Recon trip purpose: (a) meet warm contacts in person, (b) attend a meetup or industry event, (c) get a feel for
+  cost of living / housing / quality of life relative to home, (d) preliminary conversations with target firms (even
+  early-stage, not formal interviews).
 - [ ] Daily: 2 coffee meetings minimum. One firm office visit if possible.
 - [ ] Notes nightly into `recon_notes.md` (private, no firm names; recorded as Tier A firm A/B/C/D/E/F).
 
 **Saturday — Travel back**
+
 - [ ] Rest.
 
 **Sunday — Recon debrief**
+
 - [ ] Update `inbound.md` with new contacts and any tentative interview offers.
 - [ ] If a firm offered a casual chat → next-step on-site, calibrate Phase 7 timeline forward.
 
@@ -4719,26 +5981,35 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 124 — Destination geography recon trip (part 2 OR post-trip wrap)
 
 **Monday — Recon notes synthesis**
+
 - [ ] What did I learn that changes my plan? Particularly cost-of-living and housing — adjust runway expectations.
 - [ ] Commit notes.
 
 **Tuesday — Firm shortlist**
+
 - [ ] Top 4-6 firms to formally apply to. Tier A primary, Tier B as floor.
 - [ ] Commit notes.
 
 **Wednesday — Application strategy**
-- [ ] Approach: warm intro where available, direct recruiter for the rest. Stagger so I don't have all 6 final-rounds in one week.
+
+- [ ] Approach: warm intro where available, direct recruiter for the rest. Stagger so I don't have all 6 final-rounds in
+  one week.
 - [ ] Commit notes.
 
 **Thursday — Interview prep concentrated session**
-- [ ] Topic to drill: matching-engine deep-dive. Be able to explain every design decision and trade-off in 5 min and in 30 min.
+
+- [ ] Topic to drill: matching-engine deep-dive. Be able to explain every design decision and trade-off in 5 min and in
+  30 min.
 - [ ] Commit notes.
 
 **Friday — Reth + Tempo maintenance**
+
 - [ ] Commit + log.
 
 **Saturday — Tempo activity check**
-- [ ] [Tempo] If Path D still active in background, what's status with Tempo maintainers? Any active design partner conversations?
+
+- [ ] [Tempo] If Path D still active in background, what's status with Tempo maintainers? Any active design partner
+  conversations?
 - [ ] Commit notes.
 
 **Sunday — Rest + End Month 32 review**
@@ -4750,23 +6021,30 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 125 — Active applications begin
 
 **Monday — Submit applications to firms 1-2**
+
 - [ ] First-pass applications. Warm intros activated.
 - [ ] Commit notes.
 
 **Tuesday — Submit to firms 3-4**
+
 - [ ] Commit notes.
 
 **Wednesday — Submit to firms 5-6**
+
 - [ ] Commit notes.
 
 **Thursday — Day-job notice planning**
-- [ ] Mental rehearsal of resignation conversation. Plan 30-day notice with offer of transition help. Identify the specific day-job projects you'd want to wrap before leaving. No action yet — wait until offer in hand.
+
+- [ ] Mental rehearsal of resignation conversation. Plan 30-day notice with offer of transition help. Identify the
+  specific day-job projects you'd want to wrap before leaving. No action yet — wait until offer in hand.
 - [ ] Commit notes.
 
 **Friday — Reth + Tempo maintenance**
+
 - [ ] Commit + log.
 
 **Saturday — Operations rig: 3000-hour milestone audit**
+
 - [ ] Total runtime hours: target 3000+ by M33 mid.
 - [ ] Commit notes.
 
@@ -4777,23 +6055,29 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 126 — First-round interviews begin
 
 **Monday — Phone screen: firm 1**
+
 - [ ] Coding round 1.
 - [ ] Commit notes (post-mortem; what went well, where I stalled).
 
 **Tuesday — Phone screen: firm 2**
+
 - [ ] Commit notes.
 
 **Wednesday — Day-job balancing**
+
 - [ ] Coast-mode hours. Don't burn out on the day-job during interview cycle.
 - [ ] Commit notes.
 
 **Thursday — Phone screen: firm 3**
+
 - [ ] Commit notes.
 
 **Friday — Phone screen: firm 4**
+
 - [ ] Commit notes.
 
 **Saturday — Recover + post-mortem all 4 screens**
+
 - [ ] What patterns? Where am I weak?
 - [ ] Commit notes.
 
@@ -4804,23 +6088,29 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 127 — Second-round interviews begin
 
 **Monday — Technical round: firm 1**
+
 - [ ] 90-120 min deep technical. Coding + systems design.
 - [ ] Commit notes.
 
 **Tuesday — Recover**
+
 - [ ] Re-energize. Maybe 4-hour day on the day-job.
 - [ ] Commit notes.
 
 **Wednesday — Technical round: firm 2**
+
 - [ ] Commit notes.
 
 **Thursday — Recover**
+
 - [ ] Commit notes.
 
 **Friday — Technical round: firm 3**
+
 - [ ] Commit notes.
 
 **Saturday — Recover + Reth PR maintenance**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4830,22 +6120,28 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 128 — On-site / final rounds begin
 
 **Monday — Final round: firm 1 (4-5 interviewers, full day)**
+
 - [ ] Coding, systems design, behavioral, deep-dive into matching-engine.
 - [ ] Commit notes.
 
 **Tuesday — Recover**
+
 - [ ] Commit notes.
 
 **Wednesday — Final round: firm 2**
+
 - [ ] Commit notes.
 
 **Thursday — Recover**
+
 - [ ] Commit notes.
 
 **Friday — Final round: firm 3**
+
 - [ ] Commit notes.
 
 **Saturday — Recover + flush**
+
 - [ ] Reflect on which firm fits best. By now you have impression-data from 3 final rounds.
 - [ ] Commit notes.
 
@@ -4858,21 +6154,27 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 129 — Remaining final rounds
 
 **Monday — Final round: firm 4**
+
 - [ ] Commit notes.
 
 **Tuesday — Recover**
+
 - [ ] Commit notes.
 
 **Wednesday — Final round: firm 5 (if scheduled)**
+
 - [ ] Commit notes.
 
 **Thursday — Recover**
+
 - [ ] Commit notes.
 
 **Friday — Final round: firm 6 (if scheduled)**
+
 - [ ] Commit notes.
 
 **Saturday — Wrap interviews**
+
 - [ ] Commit notes.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4882,24 +6184,32 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 130 — Offer wait + tier-B safety net activation
 
 **Monday — Tier-B firm A application**
-- [ ] If by W130 there's no Tier A offer in hand, activate Tier B applications. Safety-net tier compensation is materially below destination-tier but still well above home; floor option.
+
+- [ ] If by W130 there's no Tier A offer in hand, activate Tier B applications. Safety-net tier compensation is
+  materially below destination-tier but still well above home; floor option.
 - [ ] Commit notes.
 
 **Tuesday — Tier-B firm B application**
+
 - [ ] Commit notes.
 
 **Wednesday — Track Tier A status**
+
 - [ ] Check in with each Tier A firm. Polite "any update on next steps?" message. Don't be needy; do be present.
 - [ ] Commit notes.
 
 **Thursday — Reth + Tempo maintenance**
+
 - [ ] Commit + log.
 
 **Friday — Tier-B firms C/D follow-through if needed**
+
 - [ ] Commit notes.
 
 **Saturday — Decision criteria pre-write**
-- [ ] BEFORE offers land: write down decision criteria in `progress.md`. Compensation rank, team/manager fit, work-from-home flexibility, relocation logistics, role scope. Pre-writing reduces emotional bias when offers arrive.
+
+- [ ] BEFORE offers land: write down decision criteria in `progress.md`. Compensation rank, team/manager fit,
+  work-from-home flexibility, relocation logistics, role scope. Pre-writing reduces emotional bias when offers arrive.
 - [ ] Commit notes.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4909,26 +6219,32 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 131 — Offer decision
 
 **Monday — Initial offers in**
+
 - [ ] By now, expect 1-3 Tier A offers OR 1-2 Tier B offers + 1 pending Tier A.
 - [ ] Commit notes (offer details private; sums recorded as destination-tier or safety-net-tier).
 
 **Tuesday — Negotiate**
+
 - [ ] Use competing offers leverage. Polite, direct asks: base, sign-on, year-1 RSU/bonus. Standard playbook.
 - [ ] Commit notes.
 
 **Wednesday — Compare against pre-written criteria**
+
 - [ ] Re-read W130 Sat's criteria. Score each offer. Avoid moving the goal-posts.
 - [ ] Commit notes.
 
 **Thursday — Sleep on it**
+
 - [ ] One night minimum. No same-day acceptance.
 - [ ] Commit notes.
 
 **Friday — Decision**
+
 - [ ] Accept one offer. Email the team. Decline the others gracefully.
 - [ ] Commit notes (offer details remain private).
 
 **Saturday — Day-job notice**
+
 - [ ] Formal 30-day notice to current employer. Offer transition help.
 - [ ] Commit notes.
 
@@ -4939,28 +6255,36 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 132 — Resignation + relocation logistics begin
 
 **Monday — Visa paperwork**
+
 - [ ] Coordinate with destination firm's HR / immigration counsel. Begin paperwork.
 - [ ] Commit notes.
 
 **Tuesday — Housing search**
+
 - [ ] Destination geography housing. Short-term rental for arrival; permanent decision deferred 2-3 months.
 - [ ] Commit notes.
 
 **Wednesday — Logistics: visa, shipping, bank account**
+
 - [ ] Banking setup. Health insurance during gap.
 - [ ] Commit notes.
 
 **Thursday — Day-job transition**
+
 - [ ] Write transition doc. Identify successor / coverage for each project.
 - [ ] Commit notes.
 
 **Friday — Notify warm network**
+
 - [ ] Update warm contacts who helped. Thank-you message + new role announcement.
 - [ ] Commit notes.
 
 **Saturday — Reth + Tempo wind-down planning**
-- [ ] Plan ongoing-maintenance level for Reth and Tempo from new role. Aim 2-3 hrs/wk evenings and weekends. Public commitment stays; depth dials down.
-- [ ] [Tempo] Honest note: if accepted role is at a Tempo design partner, this maintenance becomes part of the day job. If not, it's evening/weekend.
+
+- [ ] Plan ongoing-maintenance level for Reth and Tempo from new role. Aim 2-3 hrs/wk evenings and weekends. Public
+  commitment stays; depth dials down.
+- [ ] [Tempo] Honest note: if accepted role is at a Tempo design partner, this maintenance becomes part of the day job.
+  If not, it's evening/weekend.
 - [ ] Commit notes.
 
 **Sunday — Rest + Weekly Ritual**
@@ -4970,25 +6294,34 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 133 — Day-job final 2 weeks + ramp-down
 
 **Monday — Day-job transition execution**
+
 - [ ] Hand-offs. Documentation.
 - [ ] Commit notes.
 
 **Tuesday — Operations rig: planning ongoing**
-- [ ] Decide rig fate. Option A: ship the rig to destination (logistics + cost). Option B: keep at home (requires reliable network for remote management). Option C: shut down, archive data, restart at destination on cloud VMs.
-- [ ] Recommendation: Option B (keep at home) — rig was built for paper-trade; if new role uses real production infra at the firm, the home rig becomes a hobby / personal sandbox. Continue runtime hours from afar (target 4000 by M36 is still reachable).
+
+- [ ] Decide rig fate. Option A: ship the rig to destination (logistics + cost). Option B: keep at home (requires
+  reliable network for remote management). Option C: shut down, archive data, restart at destination on cloud VMs.
+- [ ] Recommendation: Option B (keep at home) — rig was built for paper-trade; if new role uses real production infra at
+  the firm, the home rig becomes a hobby / personal sandbox. Continue runtime hours from afar (target 4000 by M36 is
+  still reachable).
 - [ ] Commit notes.
 
 **Wednesday — Continue ramp-down**
+
 - [ ] Commit notes.
 
 **Thursday — Continue ramp-down**
+
 - [ ] Commit notes.
 
 **Friday — Last day at current employer**
+
 - [ ] Exit interview. Gracious departure.
 - [ ] Commit notes.
 
 **Saturday — Pre-relocation prep**
+
 - [ ] Packing. Paperwork final checks.
 - [ ] Commit notes.
 
@@ -4999,26 +6332,32 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 134 — Arrival at destination
 
 **Monday — Arrival**
+
 - [ ] Land in destination geography. Settle into short-term housing.
 - [ ] Commit notes.
 
 **Tuesday — Onboarding day 1 at new firm**
+
 - [ ] Badge, laptop, intro to manager and team.
 - [ ] Commit notes.
 
 **Wednesday — Onboarding day 2**
+
 - [ ] Codebase orientation. First read-only access.
 - [ ] Commit notes.
 
 **Thursday — Onboarding day 3**
+
 - [ ] Pair with someone on first read-only task.
 - [ ] Commit notes.
 
 **Friday — Onboarding day 4**
+
 - [ ] First small PR.
 - [ ] Commit notes.
 
 **Saturday — Rest + explore destination geography**
+
 - [ ] Recover from move. No work this weekend.
 - [ ] Commit notes.
 
@@ -5031,25 +6370,31 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 135 — First month: ramp-up
 
 **Monday — Manager 1:1**
+
 - [ ] What does success look like at 30/60/90 days? Write it down.
 - [ ] Commit notes.
 
 **Tuesday — Codebase deepening**
+
 - [ ] Whatever the first project is. Be a sponge first 6 weeks.
 - [ ] Commit notes.
 
 **Wednesday — Continue**
+
 - [ ] Commit notes.
 
 **Thursday — Ask many questions**
+
 - [ ] Stupid-questions budget is highest in week 2-3. Use it.
 - [ ] Commit notes.
 
 **Friday — First merged PR at new firm**
+
 - [ ] Small but ships.
 - [ ] Commit notes.
 
 **Saturday — Personal projects: light maintenance**
+
 - [ ] One Reth PR review.
 - [ ] [Tempo] If still in maintenance mode, one Tempo skim.
 - [ ] Commit + log.
@@ -5061,21 +6406,27 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 136 — First month: deeper task
 
 **Monday — Bigger task assigned**
+
 - [ ] Commit notes.
 
 **Tuesday — Work**
+
 - [ ] Commit notes.
 
 **Wednesday — Work**
+
 - [ ] Commit notes.
 
 **Thursday — Work**
+
 - [ ] Commit notes.
 
 **Friday — Submit**
+
 - [ ] Commit notes.
 
 **Saturday — Personal projects**
+
 - [ ] Operations rig check: still running? Runtime hours updated. Target 3500 by M35 mid.
 - [ ] Commit + log.
 
@@ -5086,24 +6437,30 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 137 — First month: cultural integration
 
 **Monday — Team lunch**
+
 - [ ] Build relationships across the team.
 - [ ] Commit notes.
 
 **Tuesday — Code review etiquette**
+
 - [ ] Watch how senior folks review. Match the style.
 - [ ] Commit notes.
 
 **Wednesday — Continue ramp**
+
 - [ ] Commit notes.
 
 **Thursday — Continue**
+
 - [ ] Commit notes.
 
 **Friday — Reflection: how does new firm differ from prior employers?**
+
 - [ ] Calibrate expectations. Note what's better, what's different (not worse).
 - [ ] Commit notes.
 
 **Saturday — Personal projects maintenance**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -5113,23 +6470,29 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 138 — First month: midpoint check
 
 **Monday — Self-assessment**
+
 - [ ] Am I matching the 30/60/90 expectations? If not, surface to manager.
 - [ ] Commit notes.
 
 **Tuesday — Manager 1:1**
+
 - [ ] Open conversation about progress.
 - [ ] Commit notes.
 
 **Wednesday — Work**
+
 - [ ] Commit notes.
 
 **Thursday — Work**
+
 - [ ] Commit notes.
 
 **Friday — Work**
+
 - [ ] Commit notes.
 
 **Saturday — Tempo / Reth contributions**
+
 - [ ] Note: 6 weeks into new firm. Personal project time is now ≤ 4 hrs/wk. That's the new normal.
 - [ ] Commit + log.
 
@@ -5142,22 +6505,28 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 139 — Settling into new role
 
 **Monday — Larger project ramp**
+
 - [ ] Whatever the substantive work is. Now own scope.
 - [ ] Commit notes.
 
 **Tuesday — Work**
+
 - [ ] Commit notes.
 
 **Wednesday — Work**
+
 - [ ] Commit notes.
 
 **Thursday — Work**
+
 - [ ] Commit notes.
 
 **Friday — Work**
+
 - [ ] Commit notes.
 
 **Saturday — Personal sandbox maintenance**
+
 - [ ] Operations rig still running. Latest runtime tally.
 - [ ] Commit + log.
 
@@ -5168,22 +6537,28 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 140 — Permanent housing
 
 **Monday — Housing search**
+
 - [ ] By now should have impression of destination geography. Choose neighborhood. Begin permanent housing search.
 - [ ] Commit notes.
 
 **Tuesday — Work**
+
 - [ ] Commit notes.
 
 **Wednesday — Work**
+
 - [ ] Commit notes.
 
 **Thursday — Work**
+
 - [ ] Commit notes.
 
 **Friday — Work**
+
 - [ ] Commit notes.
 
 **Saturday — Personal projects + housing viewings**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -5193,22 +6568,29 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 141 — Public artifact update
 
 **Monday — Blog post: "From self-directed plan to destination role"**
-- [ ] Optional but valuable: write a final retrospective post. 36 months. What worked. What didn't. Stay anonymous on geography and compensation.
+
+- [ ] Optional but valuable: write a final retrospective post. 36 months. What worked. What didn't. Stay anonymous on
+  geography and compensation.
 - [ ] Commit (draft).
 
 **Tuesday — Work**
+
 - [ ] Commit notes.
 
 **Wednesday — Work**
+
 - [ ] Commit notes.
 
 **Thursday — Work**
+
 - [ ] Commit notes.
 
 **Friday — Work**
+
 - [ ] Commit notes.
 
 **Saturday — Personal projects**
+
 - [ ] Operations rig: 3800+ runtime hrs. On track for 4000 by M36 end.
 - [ ] Commit + log.
 
@@ -5219,22 +6601,28 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 142 — Settle + first quarterly review prep
 
 **Monday — Manager 1:1: how's it going from your side?**
+
 - [ ] Open dialogue. Score yourself honestly.
 - [ ] Commit notes.
 
 **Tuesday — Work**
+
 - [ ] Commit notes.
 
 **Wednesday — Work**
+
 - [ ] Commit notes.
 
 **Thursday — Work**
+
 - [ ] Commit notes.
 
 **Friday — Work**
+
 - [ ] Commit notes.
 
 **Saturday — Personal maintenance**
+
 - [ ] Commit + log.
 
 **Sunday — Rest + Weekly Ritual**
@@ -5244,21 +6632,27 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 143 — Last full week of the plan
 
 **Monday — Work**
+
 - [ ] Commit notes.
 
 **Tuesday — Work**
+
 - [ ] Commit notes.
 
 **Wednesday — Work**
+
 - [ ] Commit notes.
 
 **Thursday — Work**
+
 - [ ] Commit notes.
 
 **Friday — Work**
+
 - [ ] Commit notes.
 
 **Saturday — Last operations rig audit before plan close**
+
 - [ ] Runtime hours total: target 4000. Capture stats.
 - [ ] Commit + log.
 
@@ -5269,14 +6663,20 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 ### Week 144 — M36 retrospective + next chapter prep
 
 **Monday — Final retrospective draft**
-- [ ] What worked: the inheritance principle (above all). The workspace layout. The Sunday rituals. The decision gates at M12/M24/M30. The HFT track addition at M15.
-- [ ] What didn't: budget overruns weeks W42, W63, W84. Phase 5 was tighter than budgeted. Tempo time crowded Reth more than ideal.
-- [ ] What I'd do differently: more aggressive scope-cutting on perpetuals features. Earlier ops rig (W90 was fine but W80 would have caught issues sooner).
+
+- [ ] What worked: the inheritance principle (above all). The workspace layout. The Sunday rituals. The decision gates
+  at M12/M24/M30. The HFT track addition at M15.
+- [ ] What didn't: budget overruns weeks W42, W63, W84. Phase 5 was tighter than budgeted. Tempo time crowded Reth more
+  than ideal.
+- [ ] What I'd do differently: more aggressive scope-cutting on perpetuals features. Earlier ops rig (W90 was fine but
+  W80 would have caught issues sooner).
 - [ ] Commit notes.
 
 **Tuesday — Final metrics tally**
+
 - [ ] Reth PRs merged total: target 85+. Actual: ?
-- [ ] HFT crates shipped: 5 (matching-engine, ledger, messaging-aeron, marketdata-kernelbypass, mini-db) plus vector-db v0.5. Actual: ?
+- [ ] HFT crates shipped: 5 (matching-engine, ledger, messaging-aeron, marketdata-kernelbypass, mini-db) plus vector-db
+  v0.5. Actual: ?
 - [ ] Tempo PRs merged: target 38. Actual: ?
 - [ ] Runtime hours: target 4000. Actual: ?
 - [ ] Blog posts: target 7. Actual: ?
@@ -5287,22 +6687,29 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 - [ ] Commit notes.
 
 **Wednesday — Next-chapter plan**
-- [ ] Year 4 outline. By now in a destination-tier IC role. Continue personal-projects evenings + weekends at sustainable level (≤ 4 hrs/wk). Aim for IC promotion within 18-24 months at new firm.
+
+- [ ] Year 4 outline. By now in a destination-tier IC role. Continue personal-projects evenings + weekends at
+  sustainable level (≤ 4 hrs/wk). Aim for IC promotion within 18-24 months at new firm.
 - [ ] Reth + Tempo + HFT crates: open source remains active, maintained, but not the day's primary work anymore.
 - [ ] Commit notes.
 
 **Thursday — Work at new firm**
+
 - [ ] Commit notes.
 
 **Friday — Work**
+
 - [ ] Commit notes.
 
 **Saturday — Close**
+
 - [ ] Plan formally ends today. The inheritance discipline continues forever.
 - [ ] Commit + log.
 
 **Sunday — Rest + Plan Close Ritual**
-- [ ] Full retrospective read of `progress.md` from W1 to today. Three years of weekly logs. Read them. Note patterns. Note what surprised you.
+
+- [ ] Full retrospective read of `progress.md` from W1 to today. Three years of weekly logs. Read them. Note patterns.
+  Note what surprised you.
 - [ ] The plan is done. The work continues.
 
 ---
@@ -5311,7 +6718,8 @@ Phase 6 is written under Path E assumption (HFT destination-tier IC track). If P
 
 ## Inheritance Map (ASCII)
 
-This is the data structure that the entire plan exists to produce. Read top-down: each product is mostly the primitives below it, wired together with thin glue.
+This is the data structure that the entire plan exists to produce. Read top-down: each product is mostly the primitives
+below it, wired together with thin glue.
 
 ```
                      LAYER 7 — Tempo application layer
@@ -5418,17 +6826,17 @@ This is the data structure that the entire plan exists to produce. Read top-down
 
 **Inheritance Ratios (target ≥0.70 for Layer-5, ≥0.85 for Layer-7)**:
 
-| Crate | Layer | Inherits from | Target ratio | Audit Week |
-|-------|-------|---------------|--------------|------------|
-| storage-trie v1.0 | 5 | bufpool, wal, recovery, txn, bloom, eth-trie, eth-storage-cache | ≥0.70 | W44 Mon |
-| matching-engine v1.0 | 5 | time, backpressure, wal, recovery, consensus-raft, messaging-aeron | ≥0.70 | W74 Thu |
-| ledger-deterministic v0.5 | 5 | time, wal, recovery, txn | ≥0.70 | W83 Wed |
-| consensus-engine v1.0 | 5 | eth-consensus, eth-stage, exec-vm, storage-trie, consensus-bft | ≥0.70 | W91 Wed |
-| mini-db v1.0 | 5 | lsm-core, wal, recovery, txn, bufpool, bloom, time, backpressure | ≥0.70 | W98 Sat, W100 Wed |
-| vector-db v0.5 | 5 | bufpool, bloom, mini-db, wal, time | ≥0.70 | W104 Tue |
-| tempo-tx-envelope v0.1.0 | 7 | eth-rlp, eth-primitives, eth-consensus, time | ≥0.85 | W66 Fri |
-| tempo-evm-ext v0.1.0 | 7 | exec-vm, eth-primitives | ≥0.85 | W91 Thu |
-| tempo-payment-lane v0.1.0 | 7 | consensus-engine, matching-engine (priority idea) | ≥0.85 | W91 Thu |
+| Crate                     | Layer | Inherits from                                                      | Target ratio | Audit Week        |
+|---------------------------|-------|--------------------------------------------------------------------|--------------|-------------------|
+| storage-trie v1.0         | 5     | bufpool, wal, recovery, txn, bloom, eth-trie, eth-storage-cache    | ≥0.70        | W44 Mon           |
+| matching-engine v1.0      | 5     | time, backpressure, wal, recovery, consensus-raft, messaging-aeron | ≥0.70        | W74 Thu           |
+| ledger-deterministic v0.5 | 5     | time, wal, recovery, txn                                           | ≥0.70        | W83 Wed           |
+| consensus-engine v1.0     | 5     | eth-consensus, eth-stage, exec-vm, storage-trie, consensus-bft     | ≥0.70        | W91 Wed           |
+| mini-db v1.0              | 5     | lsm-core, wal, recovery, txn, bufpool, bloom, time, backpressure   | ≥0.70        | W98 Sat, W100 Wed |
+| vector-db v0.5            | 5     | bufpool, bloom, mini-db, wal, time                                 | ≥0.70        | W104 Tue          |
+| tempo-tx-envelope v0.1.0  | 7     | eth-rlp, eth-primitives, eth-consensus, time                       | ≥0.85        | W66 Fri           |
+| tempo-evm-ext v0.1.0      | 7     | exec-vm, eth-primitives                                            | ≥0.85        | W91 Thu           |
+| tempo-payment-lane v0.1.0 | 7     | consensus-engine, matching-engine (priority idea)                  | ≥0.85        | W91 Thu           |
 
 If any crate falls below its target ratio at audit, scope is wrong — audit before tagging.
 
@@ -5446,6 +6854,7 @@ Fill one row per work-day in `progress.md`. Single source of truth for retrospec
 ```
 
 Notes:
+
 - Date is ISO-8601 (yyyy-mm-dd).
 - Track: Reth, Tempo, HFT, Ops, Personal. Multi-track days get a comma list.
 - Crate(s) touched: comma list, abbreviated names ok.
@@ -5493,7 +6902,8 @@ Sunday evening, 60-90 minutes. Append to `progress.md`.
 
 ### M12 (W48 Wed) — Calibration only, no path change
 
-Three questions. Answer in `progress.md`. No path change at M12 — too early. Just calibrate within the Reth-primary plan.
+Three questions. Answer in `progress.md`. No path change at M12 — too early. Just calibrate within the Reth-primary
+plan.
 
 - **Reth velocity**: on track for 35 Reth PRs merged by M18?
 - **Inheritance discipline**: storage-trie v1.0 shipped with ≥0.70 ratio?
@@ -5502,14 +6912,20 @@ Three questions. Answer in `progress.md`. No path change at M12 — too early. J
 ### M24 (W96 Fri) — Five-path decision
 
 - **Path A** (extend Reth core 6-12 months): strong if ≥3 Reth maintainer Depth-3+, ≥1 feature merged, no HFT inbound.
-- **Path B** (post-Reth systems): strong if you want another 12 months of distributed-systems primitive work before any job change.
-- **Path C** (catch-up): triggered if consensus-engine v1.0 missed OR matching-engine v1.0 not raft-replicated OR Sepolia sync not green OR <100 runtime hours.
-- **Path D** (Tempo pivot, conditional): real ONLY if all three: ≥15 Tempo PRs merged AND ≥2 direct Tempo maintainer relationships AND upstream substantively engaged with `tempo-payment-lane`.
-- **Path E** (HFT destination-tier IC track) — new default if signals strong: strong if matching-engine v1.0 ✓, ledger v0.5 ✓, messaging-aeron v0.5 ✓, marketdata-kernelbypass v0.5 ✓, ≥200 runtime hours, ≥1 blog post live, ≥1 inbound from HFT recruiter.
+- **Path B** (post-Reth systems): strong if you want another 12 months of distributed-systems primitive work before any
+  job change.
+- **Path C** (catch-up): triggered if consensus-engine v1.0 missed OR matching-engine v1.0 not raft-replicated OR
+  Sepolia sync not green OR <100 runtime hours.
+- **Path D** (Tempo pivot, conditional): real ONLY if all three: ≥15 Tempo PRs merged AND ≥2 direct Tempo maintainer
+  relationships AND upstream substantively engaged with `tempo-payment-lane`.
+- **Path E** (HFT destination-tier IC track) — new default if signals strong: strong if matching-engine v1.0 ✓, ledger
+  v0.5 ✓, messaging-aeron v0.5 ✓, marketdata-kernelbypass v0.5 ✓, ≥200 runtime hours, ≥1 blog post live, ≥1 inbound from
+  HFT recruiter.
 
 ### M30 (W117 Tue) — Path E confirmation or pivot
 
 Three questions:
+
 - **Public visibility**: is there inbound? recruiters, maintainers, conference invites?
 - **Runtime hours trajectory**: on track for 2000 by M30 end?
 - **HFT crate quality**: are matching-engine, ledger, messaging-aeron, marketdata production-deployable at a real firm?
@@ -5531,7 +6947,8 @@ Every M3, M6, M9, ... reserve 60 minutes on a Sunday for AI-tool calibration:
 - Which tasks did I delegate to AI that produced bad output? Why? Stop delegating those.
 - Which workspace crates are good prompts? Use the crate as a template for "build me a similar primitive in pattern X."
 
-Treat AI like any other tool: regularly audit fit-for-purpose. AI cannot do the reading hours for you; AI can accelerate the writing hours.
+Treat AI like any other tool: regularly audit fit-for-purpose. AI cannot do the reading hours for you; AI can accelerate
+the writing hours.
 
 ---
 
@@ -5601,7 +7018,10 @@ storage-trie    matching-engine   ledger-determ.   consensus-engine    mini-db  
                                 └──────────────────────────────────┘
 ```
 
-Read bottom-up: Layer 0 is built in Phase 1-2. Each layer above is fully built before the layer above it consumes it. The single exception is the bootstrap-to-Layer-2 wiring (e.g. wal depends on eth-storage-cache::Page, not the other way around) — but Layer 0's Page primitive is finalized at W14 (`bufpool` wraps it), so wal at W26 inherits a stable Page contract.
+Read bottom-up: Layer 0 is built in Phase 1-2. Each layer above is fully built before the layer above it consumes it.
+The single exception is the bootstrap-to-Layer-2 wiring (e.g. wal depends on eth-storage-cache::Page, not the other way
+around) — but Layer 0's Page primitive is finalized at W14 (`bufpool` wraps it), so wal at W26 inherits a stable Page
+contract.
 
 ---
 
@@ -5609,15 +7029,25 @@ Read bottom-up: Layer 0 is built in Phase 1-2. Each layer above is fully built b
 
 This plan is one path through a much larger space of possible 36-month journeys. The specifics are:
 
-1. **The track architecture**: Reth core (primary M1-M18, maintenance M19-M36) + HFT (primary M19-M34) + Tempo (additive throughout) is a deliberate choice to layer skills rather than parallelize them.
-2. **The inheritance principle**: 8 Layer-1/2/3 primitives + 5 Layer-4 distribution primitives + 6 Layer-5 products + 3 Layer-7 Tempo crates = 25 crates total. About 60-70% of LOC in the products is wired-up inheritance, not net-new code. This is the entire point.
-3. **The decision gates**: M12 (calibrate), M24 (5-path), M30 (Path E confirm), M36 (close). Each gate has explicit criteria to avoid drift.
-4. **The Tempo optionality**: Tempo is leverage on the Reth bet, not a parallel bet. Path D (Tempo pivot) at M24 unlocks only if three conditions are met. Otherwise Tempo is a CV bullet and a network-warming exercise.
-5. **The HFT track addition**: HFT begins at W58 (matching-engine scaffold) and becomes primary M19-M34. This is the optionality if Reth ecosystem hiring is soft at M24.
-6. **Operations runtime hours**: 2000+ by M30, 4000+ by M36. A self-built ops rig with monitoring + deployment + chaos is the bridge to destination-tier IC compensation that PRs alone may not be.
-7. **Destination landing in Phase 7**: applications W125, final rounds W128-W129, offer decision W131, resignation W132, arrival W134, first month W135-W144. Geography neutral.
+1. **The track architecture**: Reth core (primary M1-M18, maintenance M19-M36) + HFT (primary M19-M34) + Tempo (additive
+   throughout) is a deliberate choice to layer skills rather than parallelize them.
+2. **The inheritance principle**: 8 Layer-1/2/3 primitives + 5 Layer-4 distribution primitives + 6 Layer-5 products + 3
+   Layer-7 Tempo crates = 25 crates total. About 60-70% of LOC in the products is wired-up inheritance, not net-new
+   code. This is the entire point.
+3. **The decision gates**: M12 (calibrate), M24 (5-path), M30 (Path E confirm), M36 (close). Each gate has explicit
+   criteria to avoid drift.
+4. **The Tempo optionality**: Tempo is leverage on the Reth bet, not a parallel bet. Path D (Tempo pivot) at M24 unlocks
+   only if three conditions are met. Otherwise Tempo is a CV bullet and a network-warming exercise.
+5. **The HFT track addition**: HFT begins at W58 (matching-engine scaffold) and becomes primary M19-M34. This is the
+   optionality if Reth ecosystem hiring is soft at M24.
+6. **Operations runtime hours**: 2000+ by M30, 4000+ by M36. A self-built ops rig with monitoring + deployment + chaos
+   is the bridge to destination-tier IC compensation that PRs alone may not be.
+7. **Destination landing in Phase 7**: applications W125, final rounds W128-W129, offer decision W131, resignation W132,
+   arrival W134, first month W135-W144. Geography neutral.
 
-This is the inheritance plan. Read it before writing any code each Monday. Audit ratios at every tag. Reject any task that fails the "is this consumed by a downstream crate within 6 months?" test. The 25 crates are the deliverable. Everything else is means.
+This is the inheritance plan. Read it before writing any code each Monday. Audit ratios at every tag. Reject any task
+that fails the "is this consumed by a downstream crate within 6 months?" test. The 25 crates are the deliverable.
+Everything else is means.
 
 ---
 
@@ -5627,23 +7057,28 @@ This is the inheritance plan. Read it before writing any code each Monday. Audit
 
 ## APPENDIX A: HFT Track Maintenance Schedule (M25-M36 weekly cadence)
 
-The HFT crates produced in Phase 4-5 need sustained operational time to demonstrate production-readiness. This appendix details the weekly maintenance cadence on top of the day-by-day plan in Phases 6 + 7.
+The HFT crates produced in Phase 4-5 need sustained operational time to demonstrate production-readiness. This appendix
+details the weekly maintenance cadence on top of the day-by-day plan in Phases 6 + 7.
 
 ### Weekly HFT maintenance template (W97-W144)
 
 Each week from W97 onward, alongside the daily plan above, the following HFT touchpoints recur:
 
-- **[HFT] Monday**: 15 min — review weekend runtime alerts. Any P99 spikes? Any replica divergence events? Any disk-fill warnings?
+- **[HFT] Monday**: 15 min — review weekend runtime alerts. Any P99 spikes? Any replica divergence events? Any disk-fill
+  warnings?
 - **[HFT] Wednesday**: 30 min — check operations dashboards. Capture runtime hours total. Update `progress.md` HFT row.
-- **[HFT] Saturday**: 60 min — perform a small chaos drill (rotated weekly: process kill, network partition, clock skew, disk fill, slow subscriber). Capture results in `chaos_log.md`.
+- **[HFT] Saturday**: 60 min — perform a small chaos drill (rotated weekly: process kill, network partition, clock skew,
+  disk fill, slow subscriber). Capture results in `chaos_log.md`.
 
 ### Monthly HFT polish checkpoints (M25-M36)
 
 - **[HFT] M25 end (W100)**: matching-engine v1.0 confirmed stable on rig. mini-db CAPSTONE shipped.
 - **[HFT] M26 end (W104)**: vector-db v0.5 final. Operations rig provisioned.
-- **[HFT] M27 end (W109)**: ops-monitoring + ops-deploy + ops-chaos all shipped. First chaos drill cycle complete. Blog #4 live.
+- **[HFT] M27 end (W109)**: ops-monitoring + ops-deploy + ops-chaos all shipped. First chaos drill cycle complete. Blog
+  #4 live.
 - **[HFT] M28 end (W113)**: 800+ runtime hours. matching-engine v1.1 (perf-tuned). Interview prep curriculum begun.
-- **[HFT] M29 end (W117)**: 1300+ runtime hours. ledger-deterministic v0.7 (real-load polish). messaging-aeron v0.7 (real-load polish).
+- **[HFT] M29 end (W117)**: 1300+ runtime hours. ledger-deterministic v0.7 (real-load polish). messaging-aeron v0.7 (
+  real-load polish).
 - **[HFT] M30 end (W117)**: 2000+ runtime hours. Blog #7 (Phase 6 retro) live. M30 decision gate complete.
 - **[HFT] M31 end (W121)**: 2500+ runtime hours. Flagship blog post live.
 - **[HFT] M32 end (W124)**: 2900+ runtime hours. Recon trip complete.
@@ -5654,7 +7089,8 @@ Each week from W97 onward, alongside the daily plan above, the following HFT tou
 
 ### HFT crate quality bumps along the way
 
-Beyond v1.0 of matching-engine (W74), v0.5 of ledger/messaging-aeron/marketdata (W83/W79/W90), and v0.5 of vector-db (W104), the following minor-version bumps are scheduled:
+Beyond v1.0 of matching-engine (W74), v0.5 of ledger/messaging-aeron/marketdata (W83/W79/W90), and v0.5 of vector-db (
+W104), the following minor-version bumps are scheduled:
 
 - **[HFT] matching-engine v1.1** (W111 Fri) — perf-tuned after profiling at 1M+ orders/sec sustained.
 - **[HFT] matching-engine v1.2** (W124 — post-recon, before applications) — final polish + bench result update.
@@ -5670,7 +7106,8 @@ The whole point of the workspace is the inheritance ratio. Audits MUST happen at
 
 - **[HFT] W74 Thu**: matching-engine v1.0 — first product audit. ≥0.70.
 - **[HFT] W83 Wed**: ledger-deterministic v0.5 — ≥0.70.
-- **[HFT] W90 Sat**: cross-crate audit on the 5-crate HFT stack (matching-engine + ledger + messaging-aeron + marketdata-kernelbypass + vector-db prep). The combined system LOC vs inherited-primitive LOC.
+- **[HFT] W90 Sat**: cross-crate audit on the 5-crate HFT stack (matching-engine + ledger + messaging-aeron +
+  marketdata-kernelbypass + vector-db prep). The combined system LOC vs inherited-primitive LOC.
 - **[HFT] W98 Sat + W100 Wed**: mini-db CAPSTONE — most-important audit. ≥0.70 is the bar; ≥0.75 is the win.
 - **[HFT] W117 Tue**: M30 audit across all HFT crates. Update the inheritance ratio table.
 - **[HFT] W144 Tue**: M36 final audit. Capture in retrospective.
@@ -5681,10 +7118,15 @@ The whole point of the workspace is the inheritance ratio. Audits MUST happen at
 
 This plan calls for 4 conferences total across 36 months. Specifics:
 
-- **EthCC Paris** — W57 (M15) — Reth-track + Tempo-track focus. Aim: 3 Reth maintainer 1-on-1s. Tempo maintainer 1-on-1 if available.
-- **Devcon** — W88 (M22) — Reth-track + Tempo-track focus. Aim: deepen 3 existing maintainer relationships. Tempo design-partner 1-on-1 if possible.
-- **[HFT] Distributed-Systems Conference** (e.g. QCon, P99 CONF, Distributed Systems Conf) — somewhere W113-W124 (M28-M32) — HFT-track focus. Aim: present talk if accepted (W114 submission); otherwise attend + 3 IRL connections with HFT engineers.
-- **[HFT] Domain-specific HFT conference** — somewhere W120-W130 (M30-M33) — final visibility push pre-applications. Aim: be visible to firms in shortlist.
+- **EthCC Paris** — W57 (M15) — Reth-track + Tempo-track focus. Aim: 3 Reth maintainer 1-on-1s. Tempo maintainer 1-on-1
+  if available.
+- **Devcon** — W88 (M22) — Reth-track + Tempo-track focus. Aim: deepen 3 existing maintainer relationships. Tempo
+  design-partner 1-on-1 if possible.
+- **[HFT] Distributed-Systems Conference** (e.g. QCon, P99 CONF, Distributed Systems Conf) — somewhere W113-W124 (
+  M28-M32) — HFT-track focus. Aim: present talk if accepted (W114 submission); otherwise attend + 3 IRL connections with
+  HFT engineers.
+- **[HFT] Domain-specific HFT conference** — somewhere W120-W130 (M30-M33) — final visibility push pre-applications.
+  Aim: be visible to firms in shortlist.
 
 Per the M24 / M30 / M36 metrics tables: target 2 conferences by M24, 3 by M30, 4 by M36.
 
@@ -5692,8 +7134,10 @@ Per the M24 / M30 / M36 metrics tables: target 2 conferences by M24, 3 by M30, 4
 
 - **Phase 1-3 (M1-M12)**: zero public posts. Build in private.
 - **Phase 4 (M13-M18)**: Twitter warm-up only. Star repos, technical replies. No original posts.
-- **Phase 5 (M19-M24)**: optional blog post if storage-trie or consensus-engine retrospective comes naturally. No pressure.
-- **Phase 6 (M25-M30)**: 4 blog posts (#4 chaos engineering W109; #5 mini-db inheritance W112; #6 vector-db W115; #7 Phase 6 retro W117).
+- **Phase 5 (M19-M24)**: optional blog post if storage-trie or consensus-engine retrospective comes naturally. No
+  pressure.
+- **Phase 6 (M25-M30)**: 4 blog posts (#4 chaos engineering W109; #5 mini-db inheritance W112; #6 vector-db W115; #7
+  Phase 6 retro W117).
 - **Phase 7 (M31-M36)**: 1-2 blog posts (flagship W121; optional close W141). Maximum visibility before applications.
 
 ### Twitter / Mastodon cadence
@@ -5707,24 +7151,27 @@ Per the M24 / M30 / M36 metrics tables: target 2 conferences by M24, 3 by M30, 4
 
 ## APPENDIX C: Day-job + Plan Integration Notes
 
-The plan assumes a coast-mode day-job providing infrastructure (salary, health insurance, sponsored hours). Specifics that this plan relies on:
+The plan assumes a coast-mode day-job providing infrastructure (salary, health insurance, sponsored hours). Specifics
+that this plan relies on:
 
 - **Hours**: 5h/day × 6 days/week = 30h/week for the plan. Day-job is the remaining bandwidth.
-- **Coast mode**: not "phoning it in" — meeting expectations cleanly so the day-job stays infrastructure rather than crisis.
-- **No on-call**: if your day-job has heavy on-call rotation, that's structural conflict. Negotiate or change before Phase 3 (heavy storage work is read-intensive and on-call interrupts ruin reading hours).
+- **Coast mode**: not "phoning it in" — meeting expectations cleanly so the day-job stays infrastructure rather than
+  crisis.
+- **No on-call**: if your day-job has heavy on-call rotation, that's structural conflict. Negotiate or change before
+  Phase 3 (heavy storage work is read-intensive and on-call interrupts ruin reading hours).
 - **Resignation timing**: W132 (M34). 30-day notice. Mental health budget: don't burn bridges; help with transition.
 
 ### Energy budget per phase (target hours/week)
 
-| Phase | Months | Reth | HFT | Tempo | Ops | Day-job | Sleep+health |
-|-------|--------|------|-----|-------|-----|---------|--------------|
-| 1     | M1-M3  | 30   | 0   | 0     | 0   | ~40     | 14 (2h/d)    |
-| 2     | M4-M6  | 28   | 0   | 2     | 0   | ~40     | 14           |
-| 3     | M7-M12 | 27   | 0   | 3     | 0   | ~40     | 14           |
-| 4     | M13-M18| 22   | 3   | 5     | 0   | ~40     | 14           |
-| 5     | M19-M24| 12   | 13  | 5     | 0   | ~40     | 14           |
-| 6     | M25-M30| 4    | 18  | 3     | 5   | ~40     | 14           |
-| 7     | M31-M36| 3    | 17  | 3     | 5   | ~40 (then 0 + new role) | 14 |
+| Phase | Months  | Reth | HFT | Tempo | Ops | Day-job                 | Sleep+health |
+|-------|---------|------|-----|-------|-----|-------------------------|--------------|
+| 1     | M1-M3   | 30   | 0   | 0     | 0   | ~40                     | 14 (2h/d)    |
+| 2     | M4-M6   | 28   | 0   | 2     | 0   | ~40                     | 14           |
+| 3     | M7-M12  | 27   | 0   | 3     | 0   | ~40                     | 14           |
+| 4     | M13-M18 | 22   | 3   | 5     | 0   | ~40                     | 14           |
+| 5     | M19-M24 | 12   | 13  | 5     | 0   | ~40                     | 14           |
+| 6     | M25-M30 | 4    | 18  | 3     | 5   | ~40                     | 14           |
+| 7     | M31-M36 | 3    | 17  | 3     | 5   | ~40 (then 0 + new role) | 14           |
 
 Numbers approximate; week-to-week varies. The constraint is total work hours, which stays at 30/week throughout.
 
@@ -5734,131 +7181,131 @@ Numbers approximate; week-to-week varies. The constraint is total work hours, wh
 
 For each risk in the Risk Register, the **first response** to be tried:
 
-| Risk | First response |
-|------|---------------|
-| Rust foundations extend Phase 1 | Add 2-4 weeks; cut Phase 2 Foundry PR target by 1 |
-| Reth PR cycles slow | Open 5 small PRs in parallel rather than waiting on one |
-| Reth major arch change | Adapt within 2 weeks; document the migration in `progress.md` |
-| Day-job demand spike | Drop to 4h floor for 2 weeks; reschedule slipped weeks |
-| Burnout M8-14 | Schedule a 1-week rest; cut Phase 3 sub-deliverables (not the v1.0 tag) |
-| Conference budget delay | Skip one conference; use Year 1 savings; rebudget Year 2 |
-| Family emergency | Accept full slip; resume from where it stopped |
-| Motivation dip M12-14 | Pre-commit to Phase 4 Monday W49 task; read EthCC trip details |
-| Crypto winter | HFT/distributed-systems portion of CV stays liquid; emphasis shift |
-| Crate scope creep | Cut features at v0.5 to ship; v0.7 or v1.0 picks them back up |
-| Tempo closes-sources | Tempo time → upstream revm/reth contributions |
-| Tempo design-partner walks | Same as above |
-| Tempo crowds Reth | Hour-cap honestly; if persistently exceeded, cut Tempo budget 50% |
-| You like Tempo and abandon Reth | The Reth track is contractually primary through M18; review only at M22 |
-| Tempo TIPs evolve faster than you can track | Drop to "storage- and execution-touching TIPs only"; ignore rest |
-| Tempo compliance/KYC features pulling business work | Stay in execution/consensus/storage; decline KYC PRs |
-| HFT track scope balloons | Drop options/exotics first; keep spot + perps |
-| matching-engine doesn't reach v1.0 by W74 | Drop perps polish; ship spot + raft replication as v0.7; v1.0 catches up by W84 |
-| mini-db inheritance ratio below 70% | Audit at W98; cut scope (delay distributed mode) rather than reimplement primitives |
-| Operations rig hardware failure | Two-machine setup tolerates one; replacement orderable in 1 week |
-| Destination-tier interview cycle saturates Phase 7 | Apply early (W125); stagger interviews; drop weakest opportunities |
-| Relocation paperwork slips | W120 visa research is the early-warning; allow 12 weeks |
-| Day-job exit lacks 30-day notice grace | Negotiate W125 once offers are likely; offer transition help |
+| Risk                                                | First response                                                                      |
+|-----------------------------------------------------|-------------------------------------------------------------------------------------|
+| Rust foundations extend Phase 1                     | Add 2-4 weeks; cut Phase 2 Foundry PR target by 1                                   |
+| Reth PR cycles slow                                 | Open 5 small PRs in parallel rather than waiting on one                             |
+| Reth major arch change                              | Adapt within 2 weeks; document the migration in `progress.md`                       |
+| Day-job demand spike                                | Drop to 4h floor for 2 weeks; reschedule slipped weeks                              |
+| Burnout M8-14                                       | Schedule a 1-week rest; cut Phase 3 sub-deliverables (not the v1.0 tag)             |
+| Conference budget delay                             | Skip one conference; use Year 1 savings; rebudget Year 2                            |
+| Family emergency                                    | Accept full slip; resume from where it stopped                                      |
+| Motivation dip M12-14                               | Pre-commit to Phase 4 Monday W49 task; read EthCC trip details                      |
+| Crypto winter                                       | HFT/distributed-systems portion of CV stays liquid; emphasis shift                  |
+| Crate scope creep                                   | Cut features at v0.5 to ship; v0.7 or v1.0 picks them back up                       |
+| Tempo closes-sources                                | Tempo time → upstream revm/reth contributions                                       |
+| Tempo design-partner walks                          | Same as above                                                                       |
+| Tempo crowds Reth                                   | Hour-cap honestly; if persistently exceeded, cut Tempo budget 50%                   |
+| You like Tempo and abandon Reth                     | The Reth track is contractually primary through M18; review only at M22             |
+| Tempo TIPs evolve faster than you can track         | Drop to "storage- and execution-touching TIPs only"; ignore rest                    |
+| Tempo compliance/KYC features pulling business work | Stay in execution/consensus/storage; decline KYC PRs                                |
+| HFT track scope balloons                            | Drop options/exotics first; keep spot + perps                                       |
+| matching-engine doesn't reach v1.0 by W74           | Drop perps polish; ship spot + raft replication as v0.7; v1.0 catches up by W84     |
+| mini-db inheritance ratio below 70%                 | Audit at W98; cut scope (delay distributed mode) rather than reimplement primitives |
+| Operations rig hardware failure                     | Two-machine setup tolerates one; replacement orderable in 1 week                    |
+| Destination-tier interview cycle saturates Phase 7  | Apply early (W125); stagger interviews; drop weakest opportunities                  |
+| Relocation paperwork slips                          | W120 visa research is the early-warning; allow 12 weeks                             |
+| Day-job exit lacks 30-day notice grace              | Negotiate W125 once offers are likely; offer transition help                        |
 
 ---
 
 ## APPENDIX E: Cross-Reference — Which Week Builds Which Crate
 
-| Week | Primary crate work |
-|------|-------------------|
-| W1-W4 | eth-primitives v0.1 → v0.2 |
-| W2 | eth-storage-cache v0.1 |
-| W3 | eth-network-codec v0.1 |
-| W4 | eth-primitives-derive v0.1 |
-| W5 | eth-rlp v0.1 |
-| W6 | eth-consensus v0.1 + **[NEW] time v0.1** |
-| W7-W8 | eth-consensus v0.2 → v0.3 |
-| W9 | exec-vm v0.0.1 |
-| W10 | eth-trie v0.1 |
-| W11 | eth-trie v0.1 + **[NEW] backpressure v0.1** + eth-network-codec v0.2 |
-| W12 | **[NEW] bufpool scaffold** + Phase 1 close |
-| W13 | eth-consensus v0.4 |
-| W14 | eth-eips v0.1 + **[NEW] bufpool v1.0** + eth-storage-cache v0.2 (bufpool-backed) |
-| W15 | eth-eips v0.2 + exec-vm EOF |
-| W16 | eth-rpc-types v0.1 |
-| W17 | exec-vm v0.1 |
-| W18-W21 | exec-vm hardening + eth-rlp v0.2 + eth-trie v0.2 |
-| W22 | eth-stage v0.0.1 |
-| W23-W24 | storage-trie scaffold + consensus-engine scaffold |
-| W25-W26 | **[NEW] wal v0.1** + reth storage PRs |
-| W27-W28 | storage-trie MDBX + B-tree |
-| W29-W30 | **[NEW] recovery v0.5** + storage-trie MVCC |
-| W31-W32 | storage-trie persistent MPT |
-| W33 | mini-lsm reading + storage-trie path compression |
-| W34 | **[NEW] bloom v0.1** + storage-trie pruning |
-| W35-W36 | storage-trie state commitment + snapshots |
-| W37-W38 | **[NEW] lsm-core v0.3** |
-| W39-W40 | **[NEW] lsm-core v0.5** |
-| W41-W42 | **[NEW] txn v0.5** + storage-trie integration |
-| W43-W44 | **storage-trie v1.0** |
-| W45-W48 | Reth maintenance + M12 decision |
-| W49-W51 | exec-vm hardening |
-| W52 | **[NEW] p2p v0.1 scaffold** |
-| W53 | exec-vm complete opcodes |
-| W54 | exec-vm precompiles + **[NEW] p2p Noise** + **[Tempo] tempo-evm-ext scaffold** |
-| W55 | exec-vm journaling + **[NEW] p2p v0.5** |
-| W56 | **[NEW] consensus-raft v0.1** |
-| W57 | EthCC Paris |
-| W58 | exec-vm dispatch + **[NEW HFT] matching-engine scaffold** |
-| W59 | evmone read + **[NEW] consensus-raft v0.3 (log replication)** |
-| W60 | exec-vm hot path + **[Tempo] First Tempo PR** + **[HFT] matching-engine: order book draft** |
-| W61 | exec-vm EOF + **[HFT] matching-engine: cross logic** |
-| W62 | exec-vm + storage-trie integration + **[NEW] consensus-raft membership** |
-| W63 | **[HFT] matching-engine v0.5** |
-| W64 | revm perf + **[NEW] consensus-bft v0.1 scaffold** |
-| W65 | **[HFT] matching-engine: multi-symbol shards** |
-| W66 | **[Tempo] tempo-tx-envelope v0.1.0** + **[HFT] matching-engine perpetuals scaffold** |
-| W67 | **[NEW] consensus-raft v1.0** + **[HFT] matching-engine v0.7** |
-| W68 | **exec-vm v1.0** + **[NEW] consensus-bft v0.5** |
-| W69-W71 | **[HFT] matching-engine perps polish (ADL, funding, liquidation)** |
-| W72 | **[NEW] txn v1.0 (2PC)** |
-| W73 | **[NEW] consensus-bft v1.0** |
-| W74 | **[HFT] matching-engine v1.0 (raft-replicated)** |
-| W75 | consensus-engine core methods |
-| W76 | **[NEW] messaging-aeron v0.1 scaffold** |
-| W77-W78 | messaging-aeron term buffer + flow control + UDP |
-| W79 | **[NEW] messaging-aeron v0.5** |
-| W80 | **[NEW] ledger-deterministic v0.1 scaffold** |
-| W81-W82 | ledger v0.5 polish + **[Tempo] payment-lane design** |
-| W83 | **[NEW] ledger-deterministic v0.5** + **[Tempo] tempo-payment-lane scaffold** |
-| W84 | **[HFT] full-stack integration (matching + ledger + messaging)** |
-| W85 | Sepolia sync + **[NEW] marketdata-kernelbypass scaffold** |
-| W86-W87 | marketdata-kernelbypass impl |
-| W88 | Devcon attendance |
-| W89-W90 | **[NEW] marketdata-kernelbypass v0.5** |
-| W91 | **consensus-engine v1.0** + **[Tempo] tempo-evm-ext v0.1.0** + **[Tempo] tempo-payment-lane v0.1.0** |
-| W92 | **[HFT] paper-trade rig setup (24hr soak)** |
-| W93 | **[HFT] 72hr chaos soak** |
-| W94 | Final PR push |
-| W95-W96 | M24 calibration + 5-path decision |
-| W97-W100 | **[NEW] mini-db v1.0 CAPSTONE** |
-| W101-W104 | **[NEW] vector-db v0.5** |
-| W105 | **[NEW] ops-monitoring + ops-deploy** |
-| W106 | **[HFT] Live deployment begins (paper-trade rig)** |
-| W107 | ops-deploy polish + first uptime week |
-| W108 | **[NEW] ops-chaos** + first chaos drill |
-| W109 | ops-runbooks + **Blog post #4: chaos engineering** |
+| Week      | Primary crate work                                                                                         |
+|-----------|------------------------------------------------------------------------------------------------------------|
+| W1-W4     | eth-primitives v0.1 → v0.2                                                                                 |
+| W2        | eth-storage-cache v0.1                                                                                     |
+| W3        | eth-network-codec v0.1                                                                                     |
+| W4        | eth-primitives-derive v0.1                                                                                 |
+| W5        | eth-rlp v0.1                                                                                               |
+| W6        | eth-consensus v0.1 + **[NEW] time v0.1**                                                                   |
+| W7-W8     | eth-consensus v0.2 → v0.3                                                                                  |
+| W9        | exec-vm v0.0.1                                                                                             |
+| W10       | eth-trie v0.1                                                                                              |
+| W11       | eth-trie v0.1 + **[NEW] backpressure v0.1** + eth-network-codec v0.2                                       |
+| W12       | **[NEW] bufpool scaffold** + Phase 1 close                                                                 |
+| W13       | eth-consensus v0.4                                                                                         |
+| W14       | eth-eips v0.1 + **[NEW] bufpool v1.0** + eth-storage-cache v0.2 (bufpool-backed)                           |
+| W15       | eth-eips v0.2 + exec-vm EOF                                                                                |
+| W16       | eth-rpc-types v0.1                                                                                         |
+| W17       | exec-vm v0.1                                                                                               |
+| W18-W21   | exec-vm hardening + eth-rlp v0.2 + eth-trie v0.2                                                           |
+| W22       | eth-stage v0.0.1                                                                                           |
+| W23-W24   | storage-trie scaffold + consensus-engine scaffold                                                          |
+| W25-W26   | **[NEW] wal v0.1** + reth storage PRs                                                                      |
+| W27-W28   | storage-trie MDBX + B-tree                                                                                 |
+| W29-W30   | **[NEW] recovery v0.5** + storage-trie MVCC                                                                |
+| W31-W32   | storage-trie persistent MPT                                                                                |
+| W33       | mini-lsm reading + storage-trie path compression                                                           |
+| W34       | **[NEW] bloom v0.1** + storage-trie pruning                                                                |
+| W35-W36   | storage-trie state commitment + snapshots                                                                  |
+| W37-W38   | **[NEW] lsm-core v0.3**                                                                                    |
+| W39-W40   | **[NEW] lsm-core v0.5**                                                                                    |
+| W41-W42   | **[NEW] txn v0.5** + storage-trie integration                                                              |
+| W43-W44   | **storage-trie v1.0**                                                                                      |
+| W45-W48   | Reth maintenance + M12 decision                                                                            |
+| W49-W51   | exec-vm hardening                                                                                          |
+| W52       | **[NEW] p2p v0.1 scaffold**                                                                                |
+| W53       | exec-vm complete opcodes                                                                                   |
+| W54       | exec-vm precompiles + **[NEW] p2p Noise** + **[Tempo] tempo-evm-ext scaffold**                             |
+| W55       | exec-vm journaling + **[NEW] p2p v0.5**                                                                    |
+| W56       | **[NEW] consensus-raft v0.1**                                                                              |
+| W57       | EthCC Paris                                                                                                |
+| W58       | exec-vm dispatch + **[NEW HFT] matching-engine scaffold**                                                  |
+| W59       | evmone read + **[NEW] consensus-raft v0.3 (log replication)**                                              |
+| W60       | exec-vm hot path + **[Tempo] First Tempo PR** + **[HFT] matching-engine: order book draft**                |
+| W61       | exec-vm EOF + **[HFT] matching-engine: cross logic**                                                       |
+| W62       | exec-vm + storage-trie integration + **[NEW] consensus-raft membership**                                   |
+| W63       | **[HFT] matching-engine v0.5**                                                                             |
+| W64       | revm perf + **[NEW] consensus-bft v0.1 scaffold**                                                          |
+| W65       | **[HFT] matching-engine: multi-symbol shards**                                                             |
+| W66       | **[Tempo] tempo-tx-envelope v0.1.0** + **[HFT] matching-engine perpetuals scaffold**                       |
+| W67       | **[NEW] consensus-raft v1.0** + **[HFT] matching-engine v0.7**                                             |
+| W68       | **exec-vm v1.0** + **[NEW] consensus-bft v0.5**                                                            |
+| W69-W71   | **[HFT] matching-engine perps polish (ADL, funding, liquidation)**                                         |
+| W72       | **[NEW] txn v1.0 (2PC)**                                                                                   |
+| W73       | **[NEW] consensus-bft v1.0**                                                                               |
+| W74       | **[HFT] matching-engine v1.0 (raft-replicated)**                                                           |
+| W75       | consensus-engine core methods                                                                              |
+| W76       | **[NEW] messaging-aeron v0.1 scaffold**                                                                    |
+| W77-W78   | messaging-aeron term buffer + flow control + UDP                                                           |
+| W79       | **[NEW] messaging-aeron v0.5**                                                                             |
+| W80       | **[NEW] ledger-deterministic v0.1 scaffold**                                                               |
+| W81-W82   | ledger v0.5 polish + **[Tempo] payment-lane design**                                                       |
+| W83       | **[NEW] ledger-deterministic v0.5** + **[Tempo] tempo-payment-lane scaffold**                              |
+| W84       | **[HFT] full-stack integration (matching + ledger + messaging)**                                           |
+| W85       | Sepolia sync + **[NEW] marketdata-kernelbypass scaffold**                                                  |
+| W86-W87   | marketdata-kernelbypass impl                                                                               |
+| W88       | Devcon attendance                                                                                          |
+| W89-W90   | **[NEW] marketdata-kernelbypass v0.5**                                                                     |
+| W91       | **consensus-engine v1.0** + **[Tempo] tempo-evm-ext v0.1.0** + **[Tempo] tempo-payment-lane v0.1.0**       |
+| W92       | **[HFT] paper-trade rig setup (24hr soak)**                                                                |
+| W93       | **[HFT] 72hr chaos soak**                                                                                  |
+| W94       | Final PR push                                                                                              |
+| W95-W96   | M24 calibration + 5-path decision                                                                          |
+| W97-W100  | **[NEW] mini-db v1.0 CAPSTONE**                                                                            |
+| W101-W104 | **[NEW] vector-db v0.5**                                                                                   |
+| W105      | **[NEW] ops-monitoring + ops-deploy**                                                                      |
+| W106      | **[HFT] Live deployment begins (paper-trade rig)**                                                         |
+| W107      | ops-deploy polish + first uptime week                                                                      |
+| W108      | **[NEW] ops-chaos** + first chaos drill                                                                    |
+| W109      | ops-runbooks + **Blog post #4: chaos engineering**                                                         |
 | W110-W112 | Sustained operations + **[HFT] matching-engine v1.1 (perf-tuned)** + **Blog post #5: mini-db inheritance** |
-| W113 | **[HFT] ledger v0.7 + messaging-aeron v0.7 + marketdata v0.7** + interview prep ramp |
-| W114-W117 | Public visibility + **Blog #6: vector-db** + **Blog #7: Phase 6 retro** + M30 decision |
-| W118-W120 | Interview prep curriculum + warm-network activation |
-| W121 | **Flagship blog post (the public artifact for inbound)** |
-| W122 | Inbound triage |
-| W123-W124 | **Destination geography recon trip** |
-| W125 | **Active applications begin** |
-| W126-W129 | **Interview rounds (phone screens + technical + final)** |
-| W130-W131 | **Offer wait + offer decision** |
-| W132 | **Resignation + relocation logistics** |
-| W133 | Day-job final 2 weeks + ramp-down |
-| W134 | **Arrival at destination + onboarding** |
-| W135-W138 | **First month at new firm** |
-| W139-W143 | Settling + permanent housing |
-| W144 | **M36 retrospective + plan close** |
+| W113      | **[HFT] ledger v0.7 + messaging-aeron v0.7 + marketdata v0.7** + interview prep ramp                       |
+| W114-W117 | Public visibility + **Blog #6: vector-db** + **Blog #7: Phase 6 retro** + M30 decision                     |
+| W118-W120 | Interview prep curriculum + warm-network activation                                                        |
+| W121      | **Flagship blog post (the public artifact for inbound)**                                                   |
+| W122      | Inbound triage                                                                                             |
+| W123-W124 | **Destination geography recon trip**                                                                       |
+| W125      | **Active applications begin**                                                                              |
+| W126-W129 | **Interview rounds (phone screens + technical + final)**                                                   |
+| W130-W131 | **Offer wait + offer decision**                                                                            |
+| W132      | **Resignation + relocation logistics**                                                                     |
+| W133      | Day-job final 2 weeks + ramp-down                                                                          |
+| W134      | **Arrival at destination + onboarding**                                                                    |
+| W135-W138 | **First month at new firm**                                                                                |
+| W139-W143 | Settling + permanent housing                                                                               |
+| W144      | **M36 retrospective + plan close**                                                                         |
 
 ---
 
@@ -5867,34 +7314,43 @@ For each risk in the Risk Register, the **first response** to be tried:
 These conventions are noted explicitly because they're load-bearing across 36 months.
 
 ### Naming
+
 - Crates: `kebab-case`. No `_`.
 - Modules within a crate: `snake_case`.
-- Type aliases for mirror crates: same name as the source upstream type (e.g. `Address` matches `alloy_primitives::Address`).
-- Inherited primitive imports: always `use crate_name::TypeName` at file top; never re-export across crates unless explicitly re-exporting for a public API.
+- Type aliases for mirror crates: same name as the source upstream type (e.g. `Address` matches
+  `alloy_primitives::Address`).
+- Inherited primitive imports: always `use crate_name::TypeName` at file top; never re-export across crates unless
+  explicitly re-exporting for a public API.
 
 ### Versioning
+
 - v0.0.x: scaffold / seed phase. APIs unstable.
 - v0.x.x: development; minor versions break API freely.
 - v1.0.0: API frozen. SemVer applies.
-- Inheritance audits happen ONLY at v0.5+, v0.7+, and v1.0 tags. v0.0.x and v0.1.x scaffolds are exempt — the discipline applies once a crate is "real."
+- Inheritance audits happen ONLY at v0.5+, v0.7+, and v1.0 tags. v0.0.x and v0.1.x scaffolds are exempt — the discipline
+  applies once a crate is "real."
 
 ### Branches + PRs
+
 - `main` always green (CI passes, clippy clean, miri clean on annotated crates).
 - Local feature branches; rebase before merging.
 - One commit per logical change; never amend a published commit.
 
 ### Testing
+
 - Every crate: unit tests + at least one integration test by v0.5.
 - Layer-2/3/4 crates: proptest by v1.0.
 - Layer-5 products: cargo-fuzz + loom for race-prone modules by v0.5.
 - Inheritance audit at v1.0 (and v0.5 for Layer-5 capstones).
 
 ### Docs
+
 - Every public item has a doc comment by v0.5.
 - Every crate has a DESIGN.md by v1.0 with the inheritance tree as ASCII.
 - README at workspace root updated whenever a new crate ships v0.5+.
 
 ### Notes folder structure
+
 - `notes/01_kotlin_to_rust_delta.md` (W1)
 - `notes/02_borrow_checker_errors.md` (W1)
 - `notes/03_lifetimes.md` (W1)
@@ -5945,7 +7401,9 @@ Energy red weeks in last 4: 1
 Maintainer Depth ≥2 count: 2 (target was 3)
 ```
 
-Decision: **stay the course**. Reth PR target met. Inheritance discipline holding. Energy mildly soft on day-job front — note for management 1:1 but not a path change. Maintainer Depth slightly below target — the W57 EthCC trip is the lever, not a panic this week. Continue to Phase 4 as planned.
+Decision: **stay the course**. Reth PR target met. Inheritance discipline holding. Energy mildly soft on day-job front —
+note for management 1:1 but not a path change. Maintainer Depth slightly below target — the W57 EthCC trip is the lever,
+not a panic this week. Continue to Phase 4 as planned.
 
 ### M24 worked example (W96 Fri) — Path E (HFT IC track) decision
 
@@ -5965,7 +7423,10 @@ Public visibility: warming but not strong yet
 Energy: green
 ```
 
-Decision: **Path E** (HFT IC track). Tempo three-condition test FAILED (PRs below 15, maintainer relationships below 2, upstream not engaged). Path D drops to "stablecoin payments infra" generic track inside Tier A/B. Reth ecosystem hiring is plausible but warm-tier; HFT direction has better signal (matching-engine v1.0 is a stronger artifact for HFT firms than for Reth-adjacent crypto firms which mostly want Reth maintainer credentials).
+Decision: **Path E** (HFT IC track). Tempo three-condition test FAILED (PRs below 15, maintainer relationships below 2,
+upstream not engaged). Path D drops to "stablecoin payments infra" generic track inside Tier A/B. Reth ecosystem hiring
+is plausible but warm-tier; HFT direction has better signal (matching-engine v1.0 is a stronger artifact for HFT firms
+than for Reth-adjacent crypto firms which mostly want Reth maintainer credentials).
 
 Path E plan: Phase 6 ramps to 2000 runtime hours by M30; Phase 7 lands destination geography role.
 
@@ -5985,7 +7446,9 @@ Reth ecosystem maintenance: 3 PRs/month avg, relationships warm
 Energy: green
 ```
 
-Decision: **continue Path E**. Strong signal across all 3 M30 gate questions. Phase 7 proceeds as planned: interview prep concentrates W118-W120, flagship blog W121, recon trip W123-W124, applications W125, interviews W126-W129, offer decision W131.
+Decision: **continue Path E**. Strong signal across all 3 M30 gate questions. Phase 7 proceeds as planned: interview
+prep concentrates W118-W120, flagship blog W121, recon trip W123-W124, applications W125, interviews W126-W129, offer
+decision W131.
 
 ### M36 worked example (W144) — Plan close retrospective
 
@@ -6004,7 +7467,8 @@ HFT direct IRL connections: 12
 Compensation: destination-tier at Tier A firm (specific firm not named here)
 ```
 
-Retrospective tone: positive overall. Tempo target underperformed because Path E was chosen — that's by design; Tempo was always optionality. Reth maintenance level should sustain (~2 hrs/wk). Plan closes; the work continues at new firm.
+Retrospective tone: positive overall. Tempo target underperformed because Path E was chosen — that's by design; Tempo
+was always optionality. Reth maintenance level should sustain (~2 hrs/wk). Plan closes; the work continues at new firm.
 
 ---
 
