@@ -2,6 +2,7 @@ use crate::Account;
 use eth_primitives::{Address, Bytes, B256, U256};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum StateCacheError {
     #[error("backend error: {0}")]
     Backend(String),
@@ -27,5 +28,3 @@ pub trait StateCache {
     fn storage(&mut self, address: Address, key: U256) -> Result<U256, Self::Error>;
     fn block_hash(&mut self, number: u64) -> Result<B256, Self::Error>;
 }
-
-

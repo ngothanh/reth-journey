@@ -3,6 +3,7 @@ use crate::{Account, StateCache, StateCacheError};
 use eth_primitives::{Address, Bytes, B256, U256};
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use tracing::instrument;
 
 pub struct ShardedCache<const N: usize, E: EvictionPolicy<Address>> {
     shards: [RwLock<ShardedCacheInner<E>>; N],
@@ -20,6 +21,7 @@ struct ShardedCacheInner<E: EvictionPolicy<Address>> {
 impl<const N: usize, E: EvictionPolicy<Address>> StateCache for ShardedCache<N, E> {
     type Error = StateCacheError;
 
+    #[instrument(level = "trace", skip(self), fields(shard = (address.0[0] as usize) % N))]
     fn basic(&mut self, address: Address) -> Result<Option<Account>, Self::Error> {
         // Write lock: reads update LRU recency via `on_access`.
         // Trade-off: kills read concurrency on the shard, but keeps LRU correct.
@@ -31,6 +33,7 @@ impl<const N: usize, E: EvictionPolicy<Address>> StateCache for ShardedCache<N, 
         Ok(got)
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn code_by_hash(&mut self, code_hash: B256) -> Result<Bytes, Self::Error> {
         self.codes
             .read()
@@ -39,6 +42,7 @@ impl<const N: usize, E: EvictionPolicy<Address>> StateCache for ShardedCache<N, 
             .ok_or(StateCacheError::CodeNotFound(code_hash))
     }
 
+    #[instrument(level = "trace", skip(self), fields(shard = (address.0[0] as usize) % N))]
     fn storage(&mut self, address: Address, key: U256) -> Result<U256, Self::Error> {
         // Same write-lock-for-recency trade-off as `basic`.
         let mut inner = self.shard_for(&address).write();
@@ -49,6 +53,7 @@ impl<const N: usize, E: EvictionPolicy<Address>> StateCache for ShardedCache<N, 
         got.ok_or(StateCacheError::StorageNotFound(address, key))
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn block_hash(&mut self, number: u64) -> Result<B256, Self::Error> {
         self.block_hashes
             .read()

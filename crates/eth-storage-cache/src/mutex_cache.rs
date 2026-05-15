@@ -20,6 +20,7 @@ use crate::Account;
 use eth_primitives::{Address, Bytes, B256, U256};
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use tracing::instrument;
 
 pub struct MutexCache {
     inner: Mutex<MutexCacheInner>,
@@ -76,10 +77,12 @@ impl Default for MutexCache {
 impl StateCache for MutexCache {
     type Error = StateCacheError;
 
+    #[instrument(level = "trace", skip(self))]
     fn basic(&mut self, address: Address) -> Result<Option<Account>, Self::Error> {
         Ok(self.inner.lock().accounts.get(&address).cloned())
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn code_by_hash(&mut self, code_hash: B256) -> Result<Bytes, Self::Error> {
         self.inner
             .lock()
@@ -89,6 +92,7 @@ impl StateCache for MutexCache {
             .ok_or(StateCacheError::CodeNotFound(code_hash))
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn storage(&mut self, address: Address, key: U256) -> Result<U256, Self::Error> {
         self.inner
             .lock()
@@ -98,6 +102,7 @@ impl StateCache for MutexCache {
             .ok_or(StateCacheError::StorageNotFound(address, key))
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn block_hash(&mut self, number: u64) -> Result<B256, Self::Error> {
         self.inner
             .lock()
