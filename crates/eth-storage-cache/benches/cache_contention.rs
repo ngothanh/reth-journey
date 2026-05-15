@@ -6,7 +6,7 @@ use eth_storage_cache::{
 use std::sync::Arc;
 use std::thread;
 
-const OPS_PER_THREAD: usize = 100;
+const OPS_PER_THREAD: usize = 10_000;
 
 /// Spawn `threads` workers; each runs `op(cache, i)` `OPS_PER_THREAD` times.
 fn run_concurrent<C, F>(cache: Arc<C>, threads: usize, op: F)
