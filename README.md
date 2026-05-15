@@ -90,16 +90,27 @@ LAYER 0 — bootstrap primitives (W1-W11)
   exec-vm/               W9-W68   -> revm; opcodes, gas, journal, precompiles
   eth-trie/              W10-W20  -> alloy-trie; Nibbles, HashBuilder, ProofRetainer
 
-LAYER 1 — universal low-level primitives (W6-W14)
+LAYER 1 — universal low-level primitives (W4-W37)
+  concurrent/            W4-W37   -> crossbeam-utils + crossbeam-queue + crossbeam-channel + crossbeam-skiplist mirror;
+                                      CachePadded, Backoff, AtomicCell, Parker (W4), bounded MPMC Vyukov ring (W11),
+                                      unbounded MPMC SegQueue (W26), select!-style multi-channel (W63),
+                                      lock-free concurrent skiplist (W37, consumes epoch-gc).
+                                      INHERITED BY: backpressure (W11), wal (W26), lsm-core (W38),
+                                      matching-engine (W58+), messaging-aeron (W77), consensus-raft commands
   time/                  W6       -> monotonic + Lamport + HLC stub + hardware-ts trait
                                       INHERITED BY: wal (W26), recovery (W29), txn (W42),
                                       matching-engine (W58), ledger (W80), messaging-aeron (W76),
                                       tempo-tx-envelope (valid_before/valid_after timestamps)
   backpressure/          W11      -> extracted from eth-network-codec's BackpressureStrategy enum
+                                      INHERITS: concurrent (bounded MPMC)
                                       INHERITED BY: matching-engine, messaging-aeron, marketdata
   bufpool/               W12-W14  -> LRU-K page cache + pin/unpin + dirty page tracking
                                       EXTRACTED FROM eth-storage-cache Page work (W2)
                                       INHERITED BY: storage-trie, wal, mini-db, vector-db
+  epoch-gc/              W33-W37  -> crossbeam-epoch mirror; epoch-based memory reclamation foundation
+                                      for any lock-free data structure that hands out pointers.
+                                      INHERITED BY: concurrent::skiplist (W37), matching-engine lock-free
+                                      price level (W74)
 
 LAYER 2 — durability primitives (W26-W30)
   wal/                   W26      -> segment + group commit + checksums + replay
@@ -181,8 +192,8 @@ LAYER 7 — Tempo application layer (additive throughout)
 ```
 
 If you ever feel a crate is "just to learn syntax," stop — find a mirror target in alloy / reth / revm / TigerBeetle /
-mini-lsm / Qdrant / Aeron / Chronicle. The 13 + 9 + 3 = 25 crates of this workspace are the deliverable. Everything else
-is means.
+mini-lsm / Qdrant / Aeron / Chronicle. The 15 + 9 + 3 = 27 crates of this workspace are the deliverable. Everything else
+is means. (Layer-1 added `concurrent/` and `epoch-gc/` — crossbeam family mirrors required for lock-free DS depth.)
 
 ---
 
@@ -594,11 +605,58 @@ W11.
 - [ ] Inspect Bytes layout — Arc<[u8]> 2-word size; `notes/07_variance.md`.
 - [ ] Commit + log
 
-**Tuesday — Atomics via `SealedHeader` + `ChainHead` SeqLock**
+**Tuesday — Atomics via `SealedHeader` + `ChainHead` SeqLock + [NEW] `concurrent/` Layer-1 scaffold**
 
 - [ ] Watch Crust of Rust: Atomics and Memory Ordering (full).
 - [ ] **Build**: `crates/eth-primitives/src/atomic_hash.rs` — OnceLock<B256> lazy hash cache. `Sealable` trait.
 - [ ] **Build**: `crates/eth-primitives/src/chain_head.rs` — `ChainHead { hash, number }` protected by SeqLock.
+- [ ] **Build**: `crates/concurrent/Cargo.toml` workspace member (Layer-1 primitive, no deps). Mirror of
+  `crossbeam-utils` + `crossbeam-queue` + `crossbeam-channel` + `crossbeam-skiplist`. Builds incrementally through W37.
+- [ ] **Build**: `crates/concurrent/src/cache_padded.rs` — `CachePadded<T>` mirror of `crossbeam-utils`.
+  `#[repr(align(128))]` wrapper.
+  - **Expect to hit #1**: you'll pick `align(64)` (the textbook x86 cache line). On Apple Silicon (your dev machine)
+    the L2 prefetcher pulls **128-byte pairs**, so producer/consumer counters still false-share. Bench shows ~30%
+    regression vs unpadded baseline that "shouldn't" happen.
+    **Fix**: align(128) on aarch64-apple-darwin; align(64) on x86_64-linux. cfg-gate.
+  - **Expect to hit #2**: you put `CachePadded<AtomicU64>` inside a struct without `repr(C)`. Rust reorders fields
+    and your padding ends up wedged between unrelated members. False-sharing returns.
+    **Fix**: force `repr(C)` on any struct where padding is load-bearing.
+  - **Muscle**: cache-line padding is **target-dependent and layout-dependent**. **Reapplies at**: matching-engine
+    `PriceLevel` (W58), messaging-aeron term rotation counters (W77), Disruptor claim/cursor pair (W65).
+- [ ] **Build**: `crates/concurrent/src/backoff.rs` — adaptive `Backoff { step: Cell<u32> }` mirror of
+  `crossbeam-utils`. `spin()` escalates `core::hint::spin_loop()` → `thread::yield_now()` → park over ~10 steps.
+  - **Expect to hit #1**: tight `while !ready.load(Relaxed) {}` without `hint::spin_loop()` (PAUSE on x86). 100% CPU
+    on the waiter *and* slower wake-ups, because SMT siblings are starved.
+    **Fix**: every busy wait calls `hint::spin_loop()` per iteration.
+  - **Expect to hit #2**: pure exponential spin works on a CAS retry (transient contention) but **fails** on
+    structural contention (a writer holding a lock for 1ms). The spinner starves the holder.
+    **Fix**: escalate to `yield_now` then park — never spin indefinitely.
+  - **Muscle**: spin loops are a 3-stage ladder — `hint::spin_loop` → `yield_now` → block. **Reapplies at**: bounded
+    MPMC retry (W11), SegQueue retry (W26), skiplist CAS retry (W37), term-buffer claim spin (W77).
+- [ ] **Build**: `crates/concurrent/src/atomic_cell.rs` — `AtomicCell<T: Copy>` with fast path for
+  `size_of::<T>() == 8 && align_of::<T>() == 8` (transmute to AtomicU64); spinlock fallback otherwise.
+  - **Expect to hit #1**: `struct S { a: u8, b: u64 }` is `Copy` and 16 bytes — but transmuting it to bytes exposes
+    padding that is uninitialized. `cargo +nightly miri test` fires "encountered uninitialized memory."
+    **Fix**: zero-initialize via `MaybeUninit::zeroed()` then write field-by-field; or require
+    `Pod`-trait callers.
+  - **Expect to hit #2**: you write the fast path for ≤8 bytes but never test the slow path (spinlock fallback).
+    `T = [u8; 16]` silently takes the wrong branch and you don't notice.
+    **Fix**: const-assert the branch (`const _: () = assert!(size_of::<T>() == 8)` in a gated module) AND ship a
+    test for both `T = u64` and `T = [u8; 16]`.
+  - **Muscle**: every `unsafe` invariant needs both a static assertion AND a test that exercises the gated branch.
+    **Reapplies at**: SegQueue per-slot writes (W26), epoch-gc `Atomic<T>` (W33).
+- [ ] **Build**: `crates/concurrent/src/parker.rs` — `Parker` + `Unparker` pair. State machine:
+  `EMPTY` ⟷ `PARKED` ⟷ `NOTIFIED`.
+  - **Expect to hit #1**: the classic **lost wakeup**. Wrong sequence: check flag → flag false → call `park`.
+    Between check and park, `unpark` fires and sets `NOTIFIED`; your `park` doesn't first check for `NOTIFIED`,
+    so you sleep forever. Loom finds this in <100 iterations.
+    **Fix**: `park` first CAS `EMPTY → PARKED`; if CAS fails because state is `NOTIFIED`, return immediately.
+  - **Expect to hit #2**: spurious wakeups (Linux futex, macOS dispatch). If your `park` isn't in a loop, you wake
+    on noise and proceed as if `unpark` was called.
+    **Fix**: caller wraps `parker.park()` in `while !condition { parker.park() }`.
+  - **Muscle**: every blocking primitive needs `state + wait`. Never just `wait`. The state must be CAS'd before
+    sleeping; the wait loop must re-check on every wake. **Reapplies at**: bounded MPMC `recv` block-on (W11), WAL
+    group-commit oneshot ack (W26), every channel you'll ever write.
 - [ ] Re-read Ryuo disruptor code with fresh atomics eyes. Note: the SeqLock pattern here is identical to the one
   matching-engine (W58) will use for L1 best-bid/ask publishing.
 - [ ] Commit + log
@@ -989,9 +1047,9 @@ free-standing crate, then re-exported.
 - [ ] **Build**: TrieUpdates struct.
 - [ ] Commit + log
 
-**Thursday — [NEW] `backpressure` crate v0.1 extraction**
+**Thursday — [NEW] `backpressure` crate v0.1 extraction + `concurrent::bounded` MPMC build**
 
-- [ ] **Build**: `crates/backpressure/Cargo.toml` workspace member. Depends on `time` only.
+- [ ] **Build**: `crates/backpressure/Cargo.toml` workspace member. Depends on `time` + `concurrent`.
 - [ ] **Build**: `crates/backpressure/src/strategy.rs` — move `BackpressureStrategy` enum from eth-network-codec.
   Variants: `DropOldest`, `DropNewest`, `Block`, `BlockWithTimeout(Monotonic)`, `Spill { dst: Box<dyn SpillSink> }`.
 - [ ] **Build**: `crates/backpressure/src/sink.rs` — `SpillSink` trait: where to dump on overflow (used by
@@ -999,6 +1057,29 @@ free-standing crate, then re-exported.
 - [ ] **Build**: `crates/backpressure/src/credit.rs` —
   `CreditFlowControl { credits: AtomicU64, low_water: u64, high_water: u64 }` — used by messaging-aeron flow control AND
   matching-engine inbound queue.
+- [ ] **Build**: `crates/concurrent/src/channel/bounded.rs` — Vyukov-style MPMC bounded channel. Power-of-2 capacity;
+  per-slot `seq: AtomicUsize`; `head` and `tail` cursors each in `CachePadded` (W4 Tue). Producers CAS-then-write the
+  slot; consumers CAS-then-read.
+  - **Expect to hit #1**: you'll accept any capacity. Modulo via `%` produces aliasing when capacity isn't
+    power-of-2. Loom fails with "slot N holds two values" within seconds.
+    **Fix**: assert power-of-2 in `new()`; use `idx & (cap - 1)` mask, never `%`.
+  - **Expect to hit #2**: producer writes the slot data **before** bumping the seq counter, but uses `Relaxed` on
+    the counter store. On Apple Silicon (weakly ordered), the consumer observes the counter bump *before* the data
+    write and reads uninit. x86 hides this in 100k runs — that's the trap.
+    **Fix**: store seq with `Release`; consumer loads seq with `Acquire`. Test under loom (`Acquire`-`Release`
+    model, not `SeqCst`).
+  - **Expect to hit #3**: two producers observe the same `tail`, both CAS. Loser increments seq and writes to the
+    next slot — but it reused the *stale* tail index. Data ends up in the wrong slot.
+    **Fix**: every CAS failure restarts from a fresh load. Never reuse the stale observation.
+  - **Expect to hit #4**: `recv()` on empty without `Parker`. You'll either burn CPU spinning forever, or add a
+    `Mutex<Condvar>` and rediscover the lost-wakeup bug at scale.
+    **Fix**: the `Parker` you built in W4 Tue plugs in here. Producer signals via `Unparker` after successful send;
+    consumer parks after observing empty.
+  - **Muscle**: per-slot sequence-counter dance is the universal lock-free queue. **Reapplies at**: WAL group-commit
+    (W26, but unbounded → SegQueue), matching-engine command bus (W63), messaging-aeron term rotation (W77, where
+    per-term seq plays the same role).
+- [ ] `backpressure::Block` and `backpressure::BlockWithTimeout` strategies wire to `concurrent::bounded::Receiver`.
+  The MPMC is the substrate; the strategy is the policy.
 - [ ] Tag `backpressure v0.1.0`.
 - [ ] Re-export from eth-network-codec, deprecate the local copy with a TODO to remove next minor.
 - [ ] Third revm PR (medium difficulty) — pick substantive issue, implement.
@@ -1743,13 +1824,38 @@ W31), ledger (W80), matching-engine (W74), consensus-raft (W64+ for snapshot log
 - [ ] Test: append 10k records, fsync, re-open, scan from offset 0 — all 10k recovered in order.
 - [ ] Commit + log
 
-**Tuesday — `wal` group commit**
+**Tuesday — `wal` group commit + [NEW] `concurrent::SegQueue` build**
 
+- [ ] **Build**: `crates/concurrent/src/queue/seg_queue.rs` — `SegQueue<T>` unbounded MPMC, linked segments of N=32
+  slots. Head and tail are `CachePadded<AtomicPtr<Segment>>`. Each segment carries a per-slot seq (same Vyukov idea as
+  the bounded channel, per-segment). Memory reclamation: simple atomic refcount per segment for now; once `epoch-gc`
+  lands W33, swap to `Guard::defer_destroy`.
+  - **Expect to hit #1**: current segment fills. Multiple producers race to allocate the next segment. Naive: each
+    allocates its own, all CAS the `next` pointer, only one wins — losers leak their `Box`.
+    **Fix**: try `next.load(Acquire)` first; allocate only on null; on CAS failure, `Box::from_raw` your loser and
+    drop it explicitly.
+  - **Expect to hit #2**: consumer pops the last item of segment S. S is now empty. Who frees it? If you `Box::drop`
+    while a producer still holds a stale `head` reference, UAF.
+    **Fix**: refcount: producers and consumers bump on linkage, decrement on departure. Only refcount-zero segments
+    are freed. (W33+: migrate to `Guard::defer_destroy`; refcount becomes redundant.)
+  - **Expect to hit #3**: segment `next` pointer stored `Relaxed`. Consumer follows non-null `next` and reads slot 0
+    of the new segment, expecting initialized memory — but on weak hardware, the producer's seg-header init may not
+    be visible yet. UAF or torn read.
+    **Fix**: `next.store(new, Release)`; readers `next.load(Acquire)`.
+  - **Muscle**: "who owns the node, when does it die" is the central question of every lock-free DS. Refcount
+    answers it eagerly; EBR answers it lazily by epoch. Today you build the refcount answer so you have a baseline
+    to bench against EBR in W33. **Reapplies at**: skiplist node reclamation (W37, via EBR), matching-engine order
+    pool (W74).
 - [ ] **Build**: `crates/wal/src/group_commit.rs` —
-  `GroupCommit { pending: Mutex<Vec<WalRecord>>, fsync_signal: Notify }`. Background fsync thread drains pending every
-  10 µs or when buffer hits N records (configurable, default 1024). Returns oneshot to each caller on durable
-  completion.
-- [ ] criterion bench: throughput at group-size 1, 8, 64, 1024. Plot.
+  `GroupCommit { pending: SegQueue<(WalRecord, oneshot::Sender<Lsn>)>, fsync_signal: Notify }`. Background fsync
+  thread drains every 10 µs or 1024 records. Producers fan in lock-free; the fsync thread is the single consumer.
+  - **Expect to hit**: under heavy load, producer drops its oneshot sender mid-flight (caller cancelled). The fsync
+    thread reads `Some((record, dead_sender))`; sending on a dead oneshot is silently lost. Caller can't tell if its
+    record was durable.
+    **Fix**: producer's drop path enqueues a "best-effort durable" record; durability is observed via a monotonic
+    LSN watermark, not the oneshot. The oneshot becomes a *fast-path optimization*, not the source of truth.
+- [ ] criterion bench: throughput at group-size 1, 8, 64, 1024 — compare SegQueue fan-in against `Mutex<Vec<T>>`
+  baseline. Expect SegQueue to win at ≥4 producers.
 - [ ] Commit + log
 
 **Wednesday — `wal` checksums + replay**
@@ -2061,9 +2167,21 @@ reimplement.
 
 ## Month 9: LSM Trees + [NEW] `bloom` Crate + Advanced Trie + Staged Sync
 
-### Week 33 — Advanced trie: path compression + LSM extension reading
+### Week 33 — Advanced trie: path compression + [NEW] `epoch-gc` v0.1 scaffold + LSM extension reading
 
-**Monday — Path compression theory + skyzh/mini-lsm Week 1 Day 1-2 reading**
+**[NEW] crate scaffolded**: `crates/epoch-gc/`. Mirror of `crossbeam-epoch`. **Epoch-based memory reclamation is the
+foundation for every lock-free data structure that hands out pointers** — the skiplist memtable (W37 → W38), the
+lock-free price level (W74), and any future "give me a pointer, I'll defer-free it when nobody's looking" primitive.
+EBR is the hardest piece of crossbeam. Plan budget: W33 Wed-Fri scaffold + W37 Mon ship.
+
+**Why EBR exists** (read before Wednesday): in any lock-free DS, removing a node creates a problem — other threads
+may still hold pointers to it. Free too early → UAF. Never free → leak. EBR solves this by tagging each "in-progress
+operation" with a global epoch counter; a freed pointer is only reclaimed once every thread has either left its
+current epoch or advanced to a new one. The cost: per-thread bookkeeping plus a 3-epoch lag on actual frees. The
+alternative — hazard pointers — uses per-thread "I'm reading this pointer" slots; simpler model, but every read pays
+a fence-and-publish overhead. Crossbeam picks EBR for read-heavy data structures; you should understand both.
+
+**Monday — Path compression theory + skyzh Week 1 Day 1-2 reading**
 
 - [ ] Research path compression. Ethereum's approach.
 - [ ] **Read** mini-lsm tutorial https://skyzh.github.io/mini-lsm/ Week 1 Day 1 (Memtable) and Day 2 (Merge Iterator).
@@ -2075,23 +2193,103 @@ reimplement.
 - [ ] Add to crate MPT. Verify correctness.
 - [ ] Commit + log
 
-**Wednesday — Benchmark path compression + skyzh Week 1 Day 3-4 reading**
+**Wednesday — `epoch-gc` scaffold: `Atomic<T>`, `Owned<T>`, `Shared<'g, T>`**
 
-- [ ] Benchmark with/without. Document.
-- [ ] **Read** mini-lsm Week 1 Day 3 (Block format) and Day 4 (SSTable). Note the encoding choices.
+- [ ] **Read** crossbeam-epoch's README + Keir Fraser's "Practical lock-freedom" PhD chapter on epoch reclamation
+  (~2 hrs). Map the type hierarchy you'll mirror:
+  - `Owned<T>` — heap-allocated, single-owner. Same shape as `Box<T>` but interoperates with `Atomic<T>::store`.
+  - `Shared<'g, T>` — borrowed pointer valid only for the lifetime of guard `'g`. The lifetime tag IS the EBR
+    correctness story expressed in the type system.
+  - `Atomic<T>` — `AtomicPtr<T>` newtype with `load(&'g Guard) -> Shared<'g, T>` and CAS-with-Owned/Shared.
+  - `Guard` — RAII pin handle. Holding one prevents the local epoch from advancing.
+- [ ] **Read** crossbeam-epoch source: `src/atomic.rs`, `src/collector.rs`, `src/guard.rs`, `src/internal.rs`.
+  Don't mirror line-by-line; sketch the state machine on paper first.
+- [ ] **Build**: `crates/epoch-gc/Cargo.toml` workspace member. No deps (uses `core` + `alloc` only).
+- [ ] **Build**: `crates/epoch-gc/src/atomic.rs` — `Atomic<T>`, `Owned<T>`, `Shared<'g, T>`. CAS via
+  `compare_exchange_weak`. `Shared` carries `PhantomData<&'g T>` to bind to the guard's lifetime.
+  - **Expect to hit #1**: you'll let `Shared::deref` work without a guard in scope (just `&self`). The lifetime
+    `'g` is on `Shared` but you forgot to plumb it through `deref`, so `Shared::deref` returns a `&T` with the
+    wrong lifetime. The compiler accepts it; the program UAFs.
+    **Fix**: `Shared<'g, T>::deref(&self) -> &'g T` — the `'g` must propagate. If
+    `let s = atomic.load(&guard); drop(guard); s.deref()` compiles, your lifetimes are wrong.
+  - **Expect to hit #2**: tagged pointers. Crossbeam steals the low bits of pointers for "marked for deletion."
+    Naive `Shared::deref` derefs the tagged pointer → misaligned load → miri error.
+    **Fix**: every deref masks the tag. Provide `Shared::tag()` and `Shared::with_tag(usize)` explicitly; mask
+    inside `deref` and inside CAS.
+  - **Expect to hit #3**: `Owned<T>` and `Shared<'g, T>` share a representation but `Owned` must move-into-CAS
+    (transferring ownership) while `Shared` is just a borrow. Mistakenly using `Shared` where CAS wants `Owned`
+    means the node is dropped twice on success.
+    **Fix**: `compare_and_set` consumes `Owned` by value (returns it on failure); `Shared` is only for reads.
+  - **Muscle**: lifetimes are the proof system for "this pointer is reclaim-safe right now." If your `unsafe`
+    block can't be expressed as "I have a `&'g`-tagged thing, so the guard must still be alive," your reclamation
+    is unsound. **Reapplies at**: skiplist node access (W37), price-level order traversal (W74), any future
+    lock-free DS.
 - [ ] Commit + log
 
-**Thursday — Reth staged sync survey**
+**Thursday — `epoch-gc::Guard` + `defer_destroy` + reth-stages reading (compressed)**
 
-- [ ] Browse reth/crates/stages deeply.
-- [ ] Commit notes
+- [ ] **Build**: `crates/epoch-gc/src/guard.rs` — `pin() -> Guard` registers the current thread in the active epoch.
+  `Guard::defer(closure)` and `Guard::defer_destroy(Shared)` enqueue cleanup into the thread's local garbage bag,
+  drained when the thread observes that all threads have advanced past that epoch.
+  - **Expect to hit #1**: **the missing fence.** Pinning has to be SeqCst — both the store ("I'm pinned in epoch E")
+    and the load ("what's the global epoch?") must be SeqCst, OR you need an explicit `fence(SeqCst)` after the
+    store and before reading any `Atomic<T>`. Otherwise the CPU reorders: thread A reads a pointer it thinks is
+    protected, *then* publishes its pin, *then* thread B sees no pin, advances epoch, frees the pointer A is now
+    dereferencing. UAF. Loom catches this *only* if your model uses SeqCst orderings; weaker orderings hide it.
+    **Fix**: `pin()` does `epoch.store(active_epoch, SeqCst); fence(SeqCst);`. No shortcut — both pieces are
+    load-bearing.
+  - **Expect to hit #2**: **defer into the current epoch, not the next.** If thread A defers a destroy into epoch
+    E, and the collector advances to E+1 immediately, A's defer can fire before thread B (still pinned in E) has
+    unpinned. UAF.
+    **Fix**: defers always go into the *current* epoch's bag; that bag is only drained two epochs later (E+2). The
+    "3 garbage bags rotating" pattern exists for exactly this reason — slack so observers can drain.
+  - **Expect to hit #3**: **reentrant pins.** Tests will eventually nest `pin()` calls (one in an outer fn, one in
+    a helper called under that fn). If pin is a boolean flag, the inner drop unpins prematurely; the outer continues
+    reading a now-unprotected pointer.
+    **Fix**: pin is a counter, not a flag. Outer holds the +1, inner +1; drops decrement; only the last drop
+    publishes "unpinned."
+  - **Expect to hit #4**: **`defer_destroy` of a tagged pointer.** You defer a `Shared` with its tag bits still
+    set; the destroy callback tries to free the tagged address; `dealloc` on a misaligned pointer is UB. Miri
+    catches it.
+    **Fix**: mask the tag before scheduling free. Belt-and-suspenders: assert alignment at defer-time.
+  - **Muscle**: SeqCst is expensive but here it's *correctness*, not perf. Weakening EBR's pin/advance fences is
+    the single most common EBR bug in the wild. **Reapplies at**: every future EBR-protected DS, the lock-free
+    price level (W74).
+- [ ] Browse reth/crates/stages deeply (compressed from Thursday's original slot).
+- [ ] Commit + log
 
-**Friday — Stage dependencies diagram + skyzh Week 1 Day 5-7 reading**
+**Friday — `epoch-gc::Collector` + advance-epoch + loom + path-comp bench + stage diagram**
 
-- [ ] Detailed flow diagram. Unwind paths.
-- [ ] **Read** mini-lsm Week 1 Day 5-7 (read path, write path, bloom filters). The bloom-filter section is the spec for
-  W34's `bloom` crate.
-- [ ] Commit notes
+- [ ] **Build**: `crates/epoch-gc/src/internal.rs` —
+  `Collector { global_epoch: AtomicUsize, locals: ThreadLocal<Local> }`. Each `Local` has a 3-slot ring of garbage
+  bags (one per epoch). `advance()` checks every Local's pin-epoch; if all are either unpinned or pinned in the
+  current epoch, it can bump `global_epoch` and reclaim the bag two epochs back.
+  - **Expect to hit #1**: **the unpinned-but-about-to-pin thread.** A thread is unpinned momentarily; you advance;
+    the thread re-pins — but the pointer it now reads was freed during the advance window.
+    **Fix**: pinning reads `global_epoch` *under SeqCst*; if the thread observes the new epoch, it's protected
+    against frees from prior epochs. The pin-store / global-load order is load-bearing.
+  - **Expect to hit #2**: **a thread that pins, allocates 10MB into its garbage bag, never unpins.** Memory grows
+    unbounded; `advance()` can never reclaim.
+    **Fix**: ship a `Guard::flush()` API that pushes the bag to the collector mid-pin; document the failure mode
+    for callers who hold guards across `await` points (don't).
+  - **Expect to hit #3**: **`ThreadLocal` cost on the hot path.** Each pin is a TLS lookup. Bench shows this
+    dominates the EBR overhead.
+    **Fix**: cache the `Local*` raw pointer in a stack frame for the duration of the guard. Pinning becomes a
+    single atomic store on the cached pointer.
+  - **Expect to hit #4**: **double-advance.** Two threads call `advance()` concurrently; both observe "all locals
+    are quiescent," both bump `global_epoch` by 1. You skipped a generation. Some local still pinned in the skipped
+    epoch UAFs on its bag.
+    **Fix**: advance via `compare_exchange` on `global_epoch`. Only one bumps; the other retries the quiescence
+    check post-CAS.
+  - **Muscle**: every "global coordinator + per-thread state" design has a quiescence-detection problem. EBR's
+    advance is the canonical case. **Reapplies at**: matching-engine snapshot publishing (W74), consensus-raft
+    log compaction barrier (W67).
+- [ ] **Loom test**: 4 threads, each looping `{ pin; allocate Owned; atomic.store; load other thread's pointer;
+  defer_destroy; unpin }` 3 times. Loom must explore all interleavings with **zero** UAF and **zero** double-free.
+  Use the SeqCst model — Acquire/Release will hide the missing-fence bug.
+- [ ] criterion: path compression on/off (the bench that moved here from Wednesday).
+- [ ] Stage-dependencies diagram (compressed from Friday's original slot).
+- [ ] Commit + log
 
 **Saturday — Reth PR day + skyzh Week 2 (compaction) reading**
 
@@ -2239,37 +2437,124 @@ general engine used by storage-trie's pruning index, mini-db SSTable filters, an
 
 ## Month 10: [NEW] `lsm-core` Build + Cross-Subsystem Storage PRs
 
-### Week 37 — Medium-sized reth PRs + skyzh Week 3 (MVCC) reading
+### Week 37 — [NEW] `epoch-gc` v0.1 ship + `concurrent::skiplist` scaffold + medium reth PR
 
-**Monday — Identify meaningful PR target + read mini-lsm Week 3**
+This is the keystone concurrency week. Two artifacts ship: (1) `epoch-gc v0.1.0` — fully loom-tested EBR; (2) the
+lock-free concurrent skiplist that becomes `lsm-core`'s memtable next week. The skiplist is the place where every
+muscle from W4 (CachePadded, Backoff), W11 (CAS retry idiom), W26 (segment reclamation), and W33 (EBR pin/defer)
+comes together. Medium reth PR runs in parallel as background load.
 
-- [ ] Enhancement issues. 1 medium PR candidate. Design.
-- [ ] **Read** mini-lsm Week 3 (MVCC) in full. Note how it interacts with the LSM layer — informs `txn` v0.5 W42.
-- [ ] Commit notes
+**Monday — `epoch-gc` advance-epoch + loom hardening + tag v0.1.0**
 
-**Tuesday — Medium PR: implement**
-
-- [ ] Start implementation.
+- [ ] Adversarial loom test: 4 threads, each pinning, allocating, defer_destroying, unpinning in random order.
+  Loom must explore the SeqCst model and exit clean.
+- [ ] **Expect to hit**: loom flags a UAF on iteration ~3000 because `advance()` doesn't re-check the quiescence
+  after winning the CAS — a thread can pin between your check and your bump.
+  **Fix**: advance is a CAS loop, not a single CAS. On CAS success, re-check; if a Local now pins the new epoch,
+  that's fine; if a Local pins the old epoch (it didn't observe your advance yet), revert the reclamation.
+- [ ] **Expect to hit**: loom flags a double-free on iteration ~7000 because `Guard::defer_destroy` is called twice
+  on the same `Shared` (a CAS-loop wrote the same pointer twice into the queue).
+  **Fix**: dedup defers per-Local before the bag flush; OR establish the invariant "the thread that does the
+  successful unlink is the unique caller of defer_destroy for that pointer" and audit your callers.
+- [ ] Tag `epoch-gc v0.1.0` once loom is green.
+- [ ] **Read** mini-lsm Week 3 (MVCC) Day 1 — half of the original W37 reading; finish Saturday.
 - [ ] Commit + log
 
-**Wednesday — Medium PR: tests**
+**Tuesday — Concurrent skiplist theory + node scaffold**
 
-- [ ] Comprehensive testing.
+- [ ] **Read** crossbeam-skiplist source. Map the node layout: each `Node<K, V>` has
+  `tower: [Atomic<Node>; height]`, height generated by geometric distribution (p=0.5, max 12). The variable-length
+  tail is allocated inline via `Layout::extend`.
+- [ ] **Read** Herlihy/Shavit chapter 14 (concurrent skiplists), or the original Pugh paper if you prefer.
+- [ ] **Build**: `crates/concurrent/src/skiplist/node.rs` — `Node` with variable-length tail (`tower` length =
+  height). Tower entries are `epoch_gc::Atomic<Node>`. Custom `Drop` is empty (frees go through `defer_destroy`).
+  - **Expect to hit #1**: you'll write the node as `struct Node<K, V> { key: K, val: V, tower: Box<[Atomic<Node>]> }`.
+    That's *two* allocations per node (the node + the tower box), plus a pointer chase on every tower access.
+    crossbeam-skiplist allocates inline.
+    **Fix**: use `Layout::for_value` with `extend` to compute the combined layout; allocate once; expose
+    `tower(&self) -> &[Atomic<Node>]` that returns a slice over the tail.
+  - **Expect to hit #2**: tower height generation `rand::random::<u32>().leading_zeros()` looks correct but
+    collides with retry logic. If insert retries, calling `rng.gen()` again gives a *different* height for the
+    same key, changing the node footprint mid-flight.
+    **Fix**: generate height *once*, before allocation; height is fixed for the node's lifetime.
+  - **Muscle**: lock-free node memory layout is a one-shot decision. Re-deriving any per-node invariant during
+    retry breaks the algorithm. **Reapplies at**: matching-engine order pool (W74), price-level bucket allocation.
 - [ ] Commit + log
 
-**Thursday — Medium PR: benchmark**
+**Wednesday — Concurrent skiplist `find` + `insert` + medium reth PR (in parallel)**
 
-- [ ] Perf measurements if relevant.
+- [ ] **Build**: `crates/concurrent/src/skiplist/find.rs` —
+  `find(key, &Guard) -> Position { preds: [Shared<Node>; H], succs: [Shared<Node>; H] }`. At each level, walk right
+  until you find a node `>=` key, recording the (pred, succ) pair.
+  - **Expect to hit #1**: tagged-pointer marker bit on `tower[i]` indicates the node is logically deleted.
+    `find` must (a) skip marked successors, AND (b) help-unlink them when observed (cooperative cleanup).
+    Without help-unlink, dead nodes accumulate in the chain and `find` cost grows unboundedly.
+    **Fix**: when you observe `succ` marked, CAS `pred.tower[i]` to skip `succ`; on success, defer_destroy succ
+    (if you're the unlinker at level 0); on failure, restart from the top level.
+  - **Expect to hit #2**: stale-pred race. You observe `pred → succ` at level i, descend to level i-1, but
+    `pred → succ` was already unlinked at level i-1 by another thread. Your level-i-1 traversal starts from a
+    stale pred.
+    **Fix**: every level traversal validates that the pred from the upper level is still linked at this level
+    (i.e., `pred.tower[i-1].load(Acquire)` still points where you expect). On mismatch, restart from the head.
+- [ ] **Build**: `crates/concurrent/src/skiplist/insert.rs` — bottom-up linking, CAS at each level.
+  - **Expect to hit #3**: insert at level 0 succeeds (the linearization point), but link at level 1 races with a
+    delete. If you bail out, the node is partially linked — find() observes it at level 0 only. Correctness is
+    preserved (level 0 is the truth), but performance degrades because higher levels are sparse.
+    **Fix**: this is expected behavior. Document. Higher-level help-link is performed lazily by future inserts.
+  - **Expect to hit #4**: classic CAS retry — you observe pred/succ via find(), do work, CAS pred. CAS fails
+    because pred's tower changed. If you retry without re-running find(), you'll CAS into a stale pred and corrupt
+    the chain.
+    **Fix**: every CAS failure restarts find(). The cost is non-trivial; that's why the data structure has
+    `height` levels — most inserts settle quickly.
+- [ ] Reth PR (medium difficulty) — background load.
 - [ ] Commit + log
 
-**Friday — Medium PR: submit**
+**Thursday — Concurrent skiplist `delete` + loom + skyzh MVCC Day 2-3 reading**
 
-- [ ] Submit.
+- [ ] **Build**: `crates/concurrent/src/skiplist/delete.rs` — two-phase: (a) **logical** mark — set the marker bit
+  on `tower[0]` via CAS; (b) **physical** unlink — CAS each pred.tower[i] to bypass the marked node, top-down.
+  After all levels unlinked, `Guard::defer_destroy(node)`.
+  - **Expect to hit #1**: you mark level 0 successfully, but another delete on the *same key* races. Both observe
+    the unmarked state; one CAS wins, the other returns "not found" — but the loser is the user's `remove()` call,
+    which should have returned the value. Your API loses data.
+    **Fix**: the loser still won a useful race — it observed the value at find() time. Return the value the loser
+    saw. The mark is the linearization point of the *one* successful delete.
+  - **Expect to hit #2**: you `defer_destroy(node)` after marking but before all levels are physically unlinked.
+    Some other thread's find() is still traversing levels >0 through this node. The defer fires; that thread now
+    deref a freed `Atomic`.
+    **Fix**: defer_destroy fires only after the *unlinker* (the thread that successfully CAS'd level 0's pred to
+    bypass the marked node) completes. The marker (logical delete) does not free; only the unlinker does.
+  - **Expect to hit #3**: ABA on the tower entry. `pred.tower[i]` was `A`; A gets unlinked, freed, the allocator
+    reuses the address for `B`; `pred.tower[i]` is now `B`. Your CAS expecting A succeeds because the bit pattern
+    matches.
+    **Fix**: EBR is the answer — A cannot be reclaimed while any thread holds a guard pinned in A's epoch, and
+    your `find()` runs under a guard. CAS won't observe a recycled address while the guard is live. This is the
+    whole reason EBR exists; you'll feel it here for the first time.
+  - **Muscle**: lock-free DS invariants must hold at *every* atomic observation point. The two-phase delete is the
+    canonical example. **Reapplies at**: matching-engine order cancel (W74 — partial fills + cancel race), all
+    future lock-free maps.
+- [ ] Loom test: 4 threads racing insert + delete on the same 4 keys, 100 iterations each. Zero UAF, zero
+  double-insert (per key), zero lost insert. SeqCst model.
+- [ ] **Read** mini-lsm Week 3 Day 2-3 (compressed from original Friday).
 - [ ] Commit + log
 
-**Saturday — Crate work**
+**Friday — Skiplist range iter + benches + reth PR submit**
 
-- [ ] Continue storage-trie enhancements.
+- [ ] **Build**: `crates/concurrent/src/skiplist/iter.rs` — forward iterator. At each step, follow `tower[0]`;
+  skip nodes whose `tower[0]` is marked. Iterator holds a `Guard` for its lifetime (snapshot semantics).
+  - **Expect to hit**: iterator-held guard prevents EBR advance for its entire lifetime. If a caller iterates a
+    1M-entry range slowly, memory pressure builds.
+    **Fix**: API contract: iterator is `!Send` and short-lived. For long scans, expose a `chunk_iter` that
+    re-pins every N items, accepting that nodes inserted mid-scan may or may not be observed.
+- [ ] criterion: `concurrent::SkipMap` vs `Arc<RwLock<BTreeMap>>` baseline at 1/4/16 threads, 50/50 read/write mix.
+  Expect SkipMap to win at ≥4 threads; lose at 1 (no contention to amortize over).
+- [ ] Reth PR submit.
+- [ ] Commit + log
+
+**Saturday — Reth PR feedback + skyzh MVCC Day 4-7 reading**
+
+- [ ] Address review comments on the Wed-Fri PR.
+- [ ] **Read** mini-lsm Week 3 Day 4-7 (the rest of MVCC).
 - [ ] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
@@ -2287,8 +2572,16 @@ CAPSTONE (W95) consumes.
 
 - [ ] **Build**: `crates/lsm-core/Cargo.toml` workspace member. Deps: `time`, `bufpool`, `wal`, `bloom`.
 - [ ] **Build**: `crates/lsm-core/src/memtable.rs` —
-  `MemTable { skip_list: ConcurrentSkipList<Key, ValueWithTombstone>, size: AtomicUsize }`. Skip list per skyzh tutorial
-  Day 1.
+  `MemTable { skip_list: concurrent::SkipMap<Key, ValueWithTombstone>, size: AtomicUsize }`. Consumes the lock-free
+  concurrent skiplist built in W37 (mirror of `crossbeam-skiplist`, EBR-backed). Skyzh's `Arc<RwLock<BTreeMap>>`
+  design from tutorial Day 1 is the baseline you must beat under ≥4 concurrent writers; if your skiplist doesn't
+  win at 4 threads, EBR overhead is mistuned (revisit W37 Fri bench).
+  - **Expect to hit**: under the LSM write path, the memtable's `size: AtomicUsize` is bumped on every insert.
+    On 16-thread bench, the atomic counter becomes the bottleneck — CachePadded on `size` doesn't help because
+    the contention is *on the counter itself*, not false-sharing.
+    **Fix**: per-thread size shards; sum lazily when the flusher needs the total. **Muscle**: counter sharding
+    is the canonical fix for "atomic on a hot path is now the hot path." **Reapplies at**: matching-engine
+    fill-counter (W74), messaging-aeron position publishing (W77).
 - [ ] Test: insert 10k, scan in order, size accounting correct.
 - [ ] Commit + log
 
