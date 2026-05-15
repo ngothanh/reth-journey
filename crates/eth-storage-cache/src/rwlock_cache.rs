@@ -128,8 +128,10 @@ mod tests {
         let mut cache = RwLockCache::new();
         assert_eq!(cache.basic(addr(1)).unwrap(), None);
 
-        let mut acct = Account::default();
-        acct.balance = U256::from(42u64);
+        let acct = Account {
+            balance: U256::from(42u64),
+            ..Account::default()
+        };
         cache.insert_account(addr(1), acct.clone());
 
         assert_eq!(cache.basic(addr(1)).unwrap(), Some(acct));

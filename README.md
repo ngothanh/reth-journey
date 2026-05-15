@@ -489,11 +489,11 @@ the OUTPUT of shipped code, reviews, and design engagement — not a directly ad
 **Thursday — Send/Sync via `ShardedCache`**
 
 - [X] Book ch16.4 (Send and Sync)
-- [ ] Read `std::marker` docs carefully
-- [ ] **Build**: `ShardedCache<const N: usize>` — `[parking_lot::RwLock<HashMap<Address, Account>>; N]` hash-routed by
+- [X] Read `std::marker` docs carefully
+- [X] **Build**: `ShardedCache<const N: usize>` — `[parking_lot::RwLock<HashMap<Address, Account>>; N]` hash-routed by
   `Address::word()[0] % N`. Implement StateCache.
-- [ ] Send/!Sync + !Send/Sync exercises grounded in the cache.
-- [ ] Commit + log
+- [X] Send/!Sync + !Send/Sync exercises grounded in the cache.
+- [X] Commit + log
 
 **Friday — `EvictionPolicy` + criterion benches**
 
