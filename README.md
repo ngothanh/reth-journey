@@ -508,9 +508,9 @@ the OUTPUT of shipped code, reviews, and design engagement — not a directly ad
 
 **Friday — `EvictionPolicy` + criterion benches**
 
-- [ ] **Build**: `crates/eth-storage-cache/src/eviction.rs` — `EvictionPolicy` trait. LruEviction + BlockTagEviction.
+- [X] **Build**: `crates/eth-storage-cache/src/eviction.rs` — `EvictionPolicy` trait. LruEviction + BlockTagEviction.
   The LRU-K variant gets extracted into `bufpool` at W12.
-- [ ] Wire eviction into ShardedCache.
+- [X] Wire eviction into ShardedCache.
 - [ ] criterion bench: Mutex vs RwLock vs Sharded(N=16, N=64). Plot and commit.
 - [ ] Read parking_lot, dashmap, arc-swap docs — 1-paragraph summary each.
 - [ ] Commit + log

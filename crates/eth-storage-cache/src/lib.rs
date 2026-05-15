@@ -1,6 +1,7 @@
 mod account;
 mod allocator;
 mod database;
+mod eviction;
 mod local_cache;
 mod mutex_cache;
 mod page;
@@ -12,6 +13,7 @@ mod shared_cache;
 pub use account::{Account, EMPTY_CODE_HASH};
 pub use allocator::PageAllocator;
 pub use database::{StateCache, StateCacheError};
+pub use eviction::{LruEviction, NoOpEviction};
 pub use local_cache::LocalAccountCache;
 pub use mutex_cache::MutexCache;
 pub use page::Page;
