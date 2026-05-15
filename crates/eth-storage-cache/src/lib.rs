@@ -6,8 +6,8 @@ mod mutex_cache;
 mod page;
 mod page_box;
 mod rwlock_cache;
-mod shared_cache;
 mod sharded_cache;
+mod shared_cache;
 
 pub use account::{Account, EMPTY_CODE_HASH};
 pub use allocator::PageAllocator;
@@ -17,4 +17,5 @@ pub use mutex_cache::MutexCache;
 pub use page::Page;
 pub use page_box::PageBox;
 pub use rwlock_cache::RwLockCache;
+pub use sharded_cache::ShardedCache;
 pub use shared_cache::SharedAccountCache;

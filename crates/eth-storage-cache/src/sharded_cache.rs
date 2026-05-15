@@ -66,23 +66,16 @@ impl<const N: usize> ShardedCache<N> {
         }
     }
 
-    /// Insert or replace an account.
     pub fn insert(&self, addr: Address, account: Account) {
         self.shard_for(&addr).write().accounts.insert(addr, account);
     }
 
-    /// Number of accounts in shard `idx`. Test/diagnostic helper.
     pub fn shard_len(&self, idx: usize) -> usize {
         self.shards[idx].read().accounts.len()
     }
 
-    /// Total accounts across all shards.
     pub fn len(&self) -> usize {
         self.shards.iter().map(|s| s.read().accounts.len()).sum()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     fn shard_for(&self, addr: &Address) -> &RwLock<ShardedCacheInner> {
