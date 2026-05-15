@@ -517,10 +517,10 @@ the OUTPUT of shipped code, reviews, and design engagement — not a directly ad
 
 **Saturday — Polish + R4R + tag v0.1.0**
 
-- [ ] thiserror StateCacheError, tracing spans, loom tests on tiny subset.
-- [ ] Read Rust for Rustaceans ch1-2.
-- [ ] README + tag `eth-storage-cache v0.1.0`.
-- [ ] Commit + log
+- [X] thiserror StateCacheError, tracing spans, loom tests on tiny subset.
+- [X] Read Rust for Rustaceans ch1-2.
+- [X] README + tag `eth-storage-cache v0.1.0`.
+- [X] Commit + log
 
 **Sunday — Rest + Weekly Ritual**
 
