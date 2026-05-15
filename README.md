@@ -524,7 +524,7 @@ the OUTPUT of shipped code, reviews, and design engagement — not a directly ad
 
 **Sunday — Rest + Weekly Ritual**
 
-- [ ] Inheritance check: StateCache mirrors revm's Database. Page primitive is now the seed for `bufpool` W12.
+- [X] Inheritance check: StateCache mirrors revm's Database. Page primitive is now the seed for `bufpool` W12.
 
 ---
 
