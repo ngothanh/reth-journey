@@ -28,8 +28,8 @@ pub struct RwLockCache {
 
 struct RwLockCacheInner {
     accounts: HashMap<Address, Account>,
-    code: HashMap<B256, Bytes>,
     storage: HashMap<(Address, U256), U256>,
+    code: HashMap<B256, Bytes>,
     block_hashes: HashMap<u64, B256>,
 }
 
