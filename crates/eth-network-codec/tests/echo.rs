@@ -1,3 +1,5 @@
+mod request;
+
 use bytes::Bytes;
 use eth_network_codec::{connect, frame, MAX_FRAME_LEN};
 use futures_util::{SinkExt, StreamExt};

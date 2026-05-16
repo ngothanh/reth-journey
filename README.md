@@ -547,7 +547,7 @@ W11.
 
 - [ ] Async Book ch1-7 in one go. (~90 min)
 - [ ] Watch Crust of Rust: Async/Await (full) — implement trivial executor. (~75 min)
-- [ ] **Build**: `crates/eth-network-codec/src/request.rs` — `MessageRequest<R>` future. (~60 min)
+- [X] **Build**: `crates/eth-network-codec/src/request.rs` — `MessageRequest<R>` future. (~60 min)
 - [ ] Counter Future applied: `RetryFuture<F: Future>`. (~30 min)
 - [ ] Commit + log (~10 min)
 
