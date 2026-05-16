@@ -538,10 +538,10 @@ W11.
 **Monday — Tokio fast track + transport scaffold**
 
 - [X] Read Tokio tutorial cover-to-cover. (~90 min)
-- [ ] **Build**: `crates/eth-network-codec/src/transport.rs` — TcpStream wrapper + `LengthDelimitedCodec` with 1 MiB max
+- [X] **Build**: `crates/eth-network-codec/src/transport.rs` — TcpStream wrapper + `LengthDelimitedCodec` with 1 MiB max
   frame. (~60 min)
-- [ ] Manual TCP echo via framed transport. (~30 min)
-- [ ] Commit + log (~10 min)
+- [X] Manual TCP echo via framed transport. (~30 min)
+- [X] Commit + log (~10 min)
 
 **Tuesday — Manual Future + `MessageRequest`**
 

@@ -1,0 +1,21 @@
+[package]
+name = "eth-network-codec"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+tokio = { version = "1.52.3", features = ["net", "io-util", "macros", "rt-multi-thread"] }
+tokio-util = { version = "0.7.18", features = ["codec"] }
+bytes = "1.11.1"
+futures-util = { version = "0.3.32", default-features = false, features = ["sink"] }
+thiserror = "2.0.18"
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["test-util"] }
+
+[lints]
+workspace = true
