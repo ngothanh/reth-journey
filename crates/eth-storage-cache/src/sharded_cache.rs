@@ -281,7 +281,10 @@ mod tests {
         let _ = cache.basic(a1).unwrap(); // promotes a1 to MRU
         cache.insert(a3, account_with_balance(3));
 
-        assert!(cache.basic(a1).unwrap().is_some(), "a1 was just accessed, should survive");
+        assert!(
+            cache.basic(a1).unwrap().is_some(),
+            "a1 was just accessed, should survive"
+        );
         assert!(cache.basic(a2).unwrap().is_none(), "a2 should be evicted");
         assert!(cache.basic(a3).unwrap().is_some());
     }

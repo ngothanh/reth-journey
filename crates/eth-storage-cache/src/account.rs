@@ -62,7 +62,7 @@ mod tests {
             ..Default::default()
         };
         assert!(!acct.is_empty());
-        assert!(!acct.has_code());  // still no code
+        assert!(!acct.has_code()); // still no code
     }
 
     #[test]

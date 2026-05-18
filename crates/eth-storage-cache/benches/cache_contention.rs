@@ -1,8 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use eth_primitives::{Address, FixedBytes};
-use eth_storage_cache::{
-    Account, MutexCache, NoOpEviction, RwLockCache, ShardedCache,
-};
+use eth_storage_cache::{Account, MutexCache, NoOpEviction, RwLockCache, ShardedCache};
 use std::sync::Arc;
 use std::thread;
 
@@ -62,8 +60,7 @@ fn bench_concurrent_inserts(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("Sharded16", threads), &threads, |b, &t| {
             b.iter(|| {
-                let cache: Arc<ShardedCache<16, NoOpEviction>> =
-                    Arc::new(ShardedCache::default());
+                let cache: Arc<ShardedCache<16, NoOpEviction>> = Arc::new(ShardedCache::default());
                 run_concurrent(cache, t, |c, i| {
                     c.insert(addr_for(i), Account::default());
                 });
@@ -72,8 +69,7 @@ fn bench_concurrent_inserts(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("Sharded64", threads), &threads, |b, &t| {
             b.iter(|| {
-                let cache: Arc<ShardedCache<64, NoOpEviction>> =
-                    Arc::new(ShardedCache::default());
+                let cache: Arc<ShardedCache<64, NoOpEviction>> = Arc::new(ShardedCache::default());
                 run_concurrent(cache, t, |c, i| {
                     c.insert(addr_for(i), Account::default());
                 });

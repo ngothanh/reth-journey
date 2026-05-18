@@ -7,8 +7,8 @@ mod bytes;
 mod encodable;
 mod error;
 mod fixed_bytes;
-mod keccak;
 mod hex;
+mod keccak;
 mod uint;
 
 pub use address::{parse_address, Address};
