@@ -9,9 +9,11 @@ repository.workspace = true
 
 [dependencies]
 tokio = { version = "1.52.3", features = ["net", "io-util", "macros", "rt-multi-thread"] }
-tokio-util = { version = "0.7.18", features = ["codec"] }
+tokio-util = { version = "0.7.18", features = ["codec", "io"] }
 bytes = "1.11.1"
 futures-util = { version = "0.3.32", default-features = false, features = ["sink"] }
+futures-core = "0.3"
+pin-project-lite = "0.2.17"
 thiserror = "2.0.18"
 
 [dev-dependencies]

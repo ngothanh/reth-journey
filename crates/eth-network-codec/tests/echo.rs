@@ -48,7 +48,10 @@ async fn rejects_oversized_frame() {
     raw.flush().await.unwrap();
     drop(raw);
 
-    let item = server.await.unwrap().expect("server should have produced an item");
+    let item = server
+        .await
+        .unwrap()
+        .expect("server should have produced an item");
     let err = item.expect_err("oversized prefix must be rejected by the codec");
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }

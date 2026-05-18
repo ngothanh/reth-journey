@@ -35,7 +35,7 @@ async fn gives_up_after_exhausting_attempts() {
         Err::<u32, _>("never work")
     })
     .await;
-    assert_eq!(result.is_err(), true);
+    assert!(result.is_err());
     assert_eq!(attempts.load(Ordering::Relaxed), 5);
 }
 
@@ -53,6 +53,6 @@ async fn handles_pending_inner_future() {
     })
     .await;
 
-    assert_eq!(result.is_ok(), true);
+    assert!(result.is_ok());
     assert_eq!(attempts.load(Ordering::Relaxed), 3);
 }

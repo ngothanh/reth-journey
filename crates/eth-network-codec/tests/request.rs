@@ -12,5 +12,5 @@ async fn deliver_response() {
 async fn cancelled_when_sender_drop() {
     let (request, handler) = channel::<u32>(42);
     drop(handler);
-    matches!(request.await, Err(_));
+    assert!(request.await.is_err());
 }

@@ -551,7 +551,9 @@ name = "eth-network-codec"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "futures-core",
  "futures-util",
+ "pin-project-lite",
  "thiserror",
  "tokio",
  "tokio-util",
