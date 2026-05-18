@@ -12,6 +12,10 @@ pub struct MessageStreamManual<IO, Codec> {
     codec: Codec,
     buf: BytesMut,
     eof: bool,
+    // Opt out of auto-Unpin. Without this, `Unpin` would be derived whenever
+    // every field is Unpin — which is true for most IO types. We want to force
+    // the conditional `impl Unpin where IO: Unpin` shape and prevent surprise
+    // auto-impls if a future refactor adds a non-Unpin field.
     _pinned: PhantomPinned,
 }
 
