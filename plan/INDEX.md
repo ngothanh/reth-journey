@@ -20,8 +20,8 @@ v2 crate slotting schedule, decision gates, inheritance map, and dependency grap
 ## Phase 1 — Rust Mastery (M1–M3, W1–W12, 30h/wk)
 
 - Month 1: Rust Core
-  - [Week 1](W001.md) — Ownership/borrowing/lifetimes via `eth-primitives` foundation
-  - [Week 2](W002.md) — Smart pointers + sync concurrency via `eth-storage-cache`
+  - [Week 1](done/W001.md) — Ownership/borrowing/lifetimes via `eth-primitives` foundation ✓
+  - [Week 2](done/W002.md) — Smart pointers + sync concurrency via `eth-storage-cache` ✓
   - [Week 3](W003.md) — Async/Pin/Future via `eth-network-codec`
   - [Week 4](W004.md) — Atomics, unsafe, variance, macros via `eth-primitives` v0.2
 - Month 2: Production Rust + Early Alloy
