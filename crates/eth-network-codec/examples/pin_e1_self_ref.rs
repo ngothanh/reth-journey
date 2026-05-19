@@ -10,6 +10,8 @@
 //!
 //! Run: cargo run -p eth-network-codec --example pin_e1_self_ref
 
+use std::ptr::null;
+
 struct SelfRef {
     data: [u8; 4],
     ptr: *const u8,
@@ -19,7 +21,7 @@ impl SelfRef {
     fn new(d: [u8; 4]) -> Self {
         Self {
             data: d,
-            ptr: &d[0],
+            ptr: null(),
         }
     }
 
@@ -33,7 +35,8 @@ impl SelfRef {
 fn main() {
     let mut a = SelfRef::new([10, 20, 30, 40]);
     let mut b = SelfRef::new([50, 60, 70, 80]);
-
+    a.ptr = &a.data[0];
+    b.ptr = &b.data[0];
     println!(
         "before swap: a.deref()={}, b.deref()={}",
         a.deref_ptr(),

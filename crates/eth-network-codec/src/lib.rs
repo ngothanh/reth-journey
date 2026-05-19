@@ -3,6 +3,8 @@ mod retry;
 mod stream;
 mod stream_manual;
 mod transport;
+mod codec;
+mod message;
 
 pub use request::{channel, MessageRequest, RequestError, RequestHandler, RequestId};
 pub use retry::RetryFuture;
