@@ -1,11 +1,12 @@
+mod codec;
+mod message;
 mod request;
 mod retry;
 mod stream;
 mod stream_manual;
 mod transport;
-mod codec;
-mod message;
 
+pub use codec::EthMessageCodec;
 pub use request::{channel, MessageRequest, RequestError, RequestHandler, RequestId};
 pub use retry::RetryFuture;
 pub use stream::MessageStream;

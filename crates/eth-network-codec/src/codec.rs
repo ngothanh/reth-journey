@@ -37,6 +37,12 @@ pub enum CodecError {
     UnknownTag(u8),
 }
 
+impl EthMessageCodec {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
 impl Decoder for EthMessageCodec {
     type Item = EthMessage;
     type Error = CodecError;
