@@ -1,6 +1,7 @@
 use crate::RequestId;
 use bytes::Bytes;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EthMessage {
     Status {
         protocol_version: u8,

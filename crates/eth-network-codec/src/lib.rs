@@ -6,7 +6,8 @@ mod stream;
 mod stream_manual;
 mod transport;
 
-pub use codec::EthMessageCodec;
+pub use codec::{CodecError, EthMessageCodec};
+pub use message::EthMessage;
 pub use request::{channel, MessageRequest, RequestError, RequestHandler, RequestId};
 pub use retry::RetryFuture;
 pub use stream::MessageStream;
