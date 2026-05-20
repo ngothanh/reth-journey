@@ -5,6 +5,7 @@ mod retry;
 mod stream;
 mod stream_manual;
 mod transport;
+mod rate_limit;
 
 pub use codec::{CodecError, EthMessageCodec};
 pub use message::EthMessage;

@@ -8,7 +8,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-tokio = { version = "1.52.3", features = ["net", "io-util", "macros", "rt-multi-thread"] }
+tokio = { version = "1.52.3", features = ["net", "io-util", "macros", "rt-multi-thread", "time"] }
 tokio-util = { version = "0.7.18", features = ["codec", "io"] }
 bytes = "1.11.1"
 futures-util = { version = "0.3.32", default-features = false, features = ["sink"] }
