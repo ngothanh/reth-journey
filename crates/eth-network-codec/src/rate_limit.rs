@@ -1,3 +1,5 @@
+use futures_core::Stream;
+use pin_project_lite::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -56,4 +58,48 @@ impl TokenBucket {
 
 fn elapsed_since(now: &Instant, last_refill: &Instant) -> f64 {
     now.duration_since(*last_refill).as_secs_f64()
+}
+
+pin_project! {
+    struct RateLimitedStream<S: Stream> {
+        #[pin]
+        stream: S,
+        bucket: TokenBucket,
+        buffer: Option<S::Item>,
+    }
+}
+
+impl<S: Stream> RateLimitedStream<S> {
+    pub fn new(stream: S, token_bucket: TokenBucket) -> Self {
+        Self {
+            stream,
+            bucket: token_bucket,
+            buffer: None,
+        }
+    }
+}
+
+impl<S: Stream> Stream for RateLimitedStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+
+        let item = match this.buffer.take() {
+            Some(item) => item,
+            None => match this.stream.poll_next(cx) {
+                Poll::Ready(Some(item)) => item,
+                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Pending => return Poll::Pending,
+            },
+        };
+
+        match this.bucket.poll_acquire(cx) {
+            Poll::Ready(()) => Poll::Ready(Some(item)),
+            Poll::Pending => {
+                *this.buffer = Some(item);
+                Poll::Pending
+            }
+        }
+    }
 }
