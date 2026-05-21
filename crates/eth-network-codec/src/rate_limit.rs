@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::time::{sleep, Instant, Sleep};
 
-struct TokenBucket {
+pub struct TokenBucket {
     capacity: usize,
     current_token_count: f64,
     refill_per_sec: f64,
@@ -61,7 +61,7 @@ fn elapsed_since(now: &Instant, last_refill: &Instant) -> f64 {
 }
 
 pin_project! {
-    struct RateLimitedStream<S: Stream> {
+    pub struct RateLimitedStream<S: Stream> {
         #[pin]
         stream: S,
         bucket: TokenBucket,
