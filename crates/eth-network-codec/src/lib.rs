@@ -1,3 +1,4 @@
+mod backpressure;
 mod codec;
 mod message;
 mod rate_limit;
@@ -7,6 +8,7 @@ mod stream;
 mod stream_manual;
 mod transport;
 
+pub use backpressure::{BackpressureStrategy, BoundedBuffer, PushOutcome};
 pub use codec::{CodecError, EthMessageCodec};
 pub use message::EthMessage;
 pub use rate_limit::{RateLimitedStream, TokenBucket};
