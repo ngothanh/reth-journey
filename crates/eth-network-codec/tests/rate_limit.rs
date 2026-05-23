@@ -20,7 +20,7 @@ async fn rate_limited_under_load() {
     let mut handles = Vec::with_capacity(PEERS);
     for _ in 0..PEERS {
         handles.push(tokio::task::spawn(async move {
-            let bucket = TokenBucket::new(CAPACITY, REFILL_PER_SEC);
+            let bucket = TokenBucket::new(CAPACITY as u64, REFILL_PER_SEC);
             let mut stream = RateLimitedStream::new(TestStream::new(), bucket);
             let start = Instant::now();
             for _ in 0..N {

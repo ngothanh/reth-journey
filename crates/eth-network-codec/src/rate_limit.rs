@@ -4,22 +4,22 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::time::{sleep, Instant, Sleep};
+use tokio::time::{sleep_until, Instant, Sleep};
 
 pub struct TokenBucket {
-    capacity: usize,
-    current_token_count: f64,
-    refill_per_sec: f64,
+    capacity: u64,
+    current_token_count: u64,
+    refill_period_ns: u64,
     last_refill: Instant,
     delay: Option<Pin<Box<Sleep>>>,
 }
 
 impl TokenBucket {
-    pub fn new(capacity: usize, refill_per_sec: f64) -> Self {
+    pub fn new(capacity: u64, refill_per_sec: f64) -> Self {
         Self {
             capacity,
-            current_token_count: capacity as f64,
-            refill_per_sec,
+            current_token_count: capacity,
+            refill_period_ns: (1_000_000_000f64 / refill_per_sec) as u64,
             last_refill: Instant::now(),
             delay: None,
         }
@@ -28,36 +28,35 @@ impl TokenBucket {
     pub fn poll_acquire(&mut self, cx: &mut Context) -> Poll<()> {
         loop {
             let now = Instant::now();
-            let earned = elapsed_since(&now, &self.last_refill) * self.refill_per_sec;
-            self.current_token_count += earned;
-            self.last_refill = now;
-            self.current_token_count = self.current_token_count.min(self.capacity as f64);
-            if self.current_token_count >= 1.0 {
-                self.current_token_count -= 1.0;
-                self.delay = None;
+            let elapsed_ns = elapsed_since(&now, &self.last_refill);
+            let tokens_to_add = elapsed_ns / self.refill_period_ns;
+            self.last_refill += Duration::from_nanos(tokens_to_add * self.refill_period_ns);
+            self.current_token_count =
+                (self.current_token_count + tokens_to_add).min(self.capacity);
+
+            if self.current_token_count >= 1 {
+                self.current_token_count -= 1;
                 return Poll::Ready(());
             }
 
-            if self.delay.is_none() {
-                let remaining = 1.0 - self.current_token_count;
-                let secs = remaining / self.refill_per_sec as f64;
-                let wait = Duration::from_secs_f64(secs);
-                self.delay = Some(Box::pin(sleep(wait)));
+            let deadline = self.last_refill + Duration::from_nanos(self.refill_period_ns);
+            if let Some(sleep) = self.delay.as_mut() {
+                sleep.as_mut().reset(deadline);
+            } else {
+                self.delay = Some(Box::pin(sleep_until(deadline)));
             }
 
-            let delay = self.delay.as_mut().unwrap();
-            match delay.as_mut().poll(cx) {
-                Poll::Ready(_) => {
-                    self.delay = None;
-                }
+            let sleep = self.delay.as_mut().unwrap();
+            match sleep.as_mut().poll(cx) {
                 Poll::Pending => return Poll::Pending,
+                Poll::Ready(_) => {}
             }
         }
     }
 }
 
-fn elapsed_since(now: &Instant, last_refill: &Instant) -> f64 {
-    now.duration_since(*last_refill).as_secs_f64()
+fn elapsed_since(now: &Instant, last_refill: &Instant) -> u64 {
+    now.duration_since(*last_refill).as_nanos() as u64
 }
 
 pin_project! {
