@@ -3,6 +3,7 @@ extern crate core;
 
 mod address;
 mod aliases;
+mod atomic_hash;
 mod bytes;
 mod encodable;
 mod error;
@@ -13,6 +14,7 @@ mod uint;
 
 pub use address::{parse_address, Address};
 pub use aliases::{B256, B64};
+pub use atomic_hash::{Sealable, SealedHeader};
 pub use bytes::{Bytes, BytesView};
 pub use encodable::Encodable;
 pub use error::PrimitivesError;
