@@ -32,8 +32,8 @@
 //! }
 //! ```
 
-use std::fmt;
-use std::ops::{Deref, DerefMut};
+use core::fmt;
+use core::ops::{Deref, DerefMut};
 
 #[cfg_attr(
     any(target_arch = "aarch64", target_arch = "powerpc64"),
