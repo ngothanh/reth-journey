@@ -4,6 +4,7 @@ use std::fmt::Formatter;
 use crate::PrimitivesError;
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct FixedBytes<const N: usize>(pub [u8; N]);
 
 impl<const N: usize> Default for FixedBytes<N> {

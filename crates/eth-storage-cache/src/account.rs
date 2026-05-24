@@ -1,6 +1,7 @@
 use eth_primitives::{Bytes, FixedBytes, B256, U256};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[repr(C)]
 pub struct Account {
     pub nonce: u64,
     pub balance: U256,
