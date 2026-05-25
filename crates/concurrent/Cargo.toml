@@ -9,5 +9,12 @@ repository.workspace = true
 
 [dependencies]
 
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "backoff"
+harness = false
+
 [lints]
 workspace = true

@@ -1,0 +1,43 @@
+.section __TEXT,__text,regular,pure_instructions
+	.globl	concurrent::backoff::Backoff::spin
+	.p2align	2
+concurrent::backoff::Backoff::spin:
+Lfunc_begin0:
+	.cfi_startproc
+		// ~/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/cell.rs:555
+		unsafe { *self.value.get() }
+	ldr w8, [x0]
+	mov w9, #6
+		// ~/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/cmp.rs:1076
+		if other < self { other } else { self }
+	cmp w8, #6
+	csel w8, w8, w9, lo
+	mov w9, #1
+LBB0_1:
+		// ~/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/../../stdarch/crates/core_arch/src/arm_shared/barrier/common.rs:14
+		super::isb(super::arg::SY)
+	isb
+		// ~/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/cmp.rs:1916
+		fn lt(&self, other: &Self) -> bool { *self <  *other }
+	lsr w10, w9, w8
+		// ~/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/iter/range.rs:772
+		if self.start < self.end {
+	add w9, w9, #1
+	cbz w10, LBB0_1
+		// ~/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/cell.rs:555
+		unsafe { *self.value.get() }
+	ldr w8, [x0]
+		// crates/concurrent/src/backoff.rs:55
+		if self.step.get() <= SPIN_LIMIT {
+	cmp w8, #7
+	b.hs LBB0_4
+		// crates/concurrent/src/backoff.rs:56
+		self.step.set(self.step.get() + 1);
+	add w8, w8, #1
+		// ~/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/mem/mod.rs:902
+		crate::intrinsics::write_via_move(dest, src);
+	str w8, [x0]
+LBB0_4:
+		// crates/concurrent/src/backoff.rs:58
+		}
+	ret
