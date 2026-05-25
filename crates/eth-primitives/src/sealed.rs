@@ -1,6 +1,7 @@
 use crate::B256;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::OnceLock;
 
@@ -39,6 +40,10 @@ impl<T: Sealable> Sealed<T> {
     pub fn into_inner(self) -> T {
         self.inner
     }
+
+    pub fn as_ref(&'_ self) -> SealedRef<'_, T> {
+        SealedRef::new(self.hash.get_or_init(|| self.inner.hash_slow()))
+    }
 }
 
 impl<T: Sealable> Deref for Sealed<T> {
@@ -71,6 +76,28 @@ impl<T: Sealable + fmt::Debug> fmt::Debug for Sealed<T> {
             .finish()
     }
 }
+
+pub struct SealedRef<'a, T: Sealable> {
+    hash: &'a B256,
+    _marker: PhantomData<&'a T>,
+}
+
+impl<'a, T: Sealable> SealedRef<'a, T> {
+    fn new(hash: &'a B256) -> Self {
+        Self {
+            hash,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: Sealable> Clone for SealedRef<'_, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: Sealable> Copy for SealedRef<'_, T> {}
 
 #[cfg(test)]
 mod tests {
