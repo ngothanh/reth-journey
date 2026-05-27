@@ -13,6 +13,11 @@ impl Bytes {
         Self(Arc::from([]))
     }
 
+    pub unsafe fn from_raw_parts(ptr: *const u8, len: usize, cap: usize) -> Self {
+        let vec = unsafe { Vec::from_raw_parts(ptr as *mut u8, len, cap) };
+        Self::from_vec(vec)
+    }
+
     pub fn from_vec(bytes: Vec<u8>) -> Self {
         Self(bytes.into())
     }
