@@ -86,8 +86,8 @@ impl Inner {
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
     use crate::Parker;
+    use std::thread;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -103,13 +103,28 @@ mod tests {
 
     #[test]
     fn parker_smoke_park_then_unpark_unblocks() {
-        let instant = Instant::now();
         let parker = Parker::new();
         let unparker = parker.unparker();
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            unparker.unpark();
+        });
 
-        parker.park();
-        unparker.unpark();
-        assert!(instant.elapsed().as_millis() < 10);
+        let start = Instant::now();
+        parker.park(); // A block ở đây
+        let elapsed = start.elapsed();
+
+        handle.join().unwrap();
+        assert!(
+            elapsed >= Duration::from_millis(8),
+            "park returned too quickly ({:?}), didn't actually sleep",
+            elapsed
+        );
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "park took too long ({:?}), possible deadlock",
+            elapsed
+        );
     }
 
     #[test]
@@ -125,26 +140,63 @@ mod tests {
         thread::sleep(Duration::from_millis(50));
         unparker.unpark();
         let park_elapsed = handle.join().unwrap();
-        assert!(park_elapsed >= Duration::from_millis(40),
-                "park returned in {}ms — it didn't actually block", park_elapsed.as_millis());
+        assert!(
+            park_elapsed >= Duration::from_millis(40),
+            "park returned in {}ms — it didn't actually block",
+            park_elapsed.as_millis()
+        );
         assert!(park_elapsed < Duration::from_millis(200), "park hung");
     }
-}
-
-#[cfg(loom)]
-mod loom_tests {
-    use crate::Parker;
-    use std::thread;
 
     #[test]
-    fn parker_loom_lost_wakeup_safe() {
+    fn parker_park_unpark_cycles_repeatable() {
         let parker = Parker::new();
         let unparker = parker.unparker();
-        let t1 = thread::spawn(move || unparker.unpark());
-        let t2 = thread::spawn(move || {
-            parker.park();
+        let handle = thread::spawn(move || {
+            let mut elapsed_per_cycle = Vec::new();
+            for _ in 0..10 {
+                let start = Instant::now();
+                parker.park();
+                elapsed_per_cycle.push(start.elapsed());
+            }
+            elapsed_per_cycle
         });
-        t1.join().unwrap();
-        t2.join().unwrap();
+        for _ in 0..10 {
+            thread::sleep(Duration::from_millis(20));
+            unparker.unpark();
+        }
+        let elapsed = handle.join().unwrap();
+        for (i, e) in elapsed.iter().enumerate() {
+            assert!(
+                *e >= Duration::from_millis(10),
+                "cycle {} returned in {}ms — state machine didn't reset",
+                i,
+                e.as_millis()
+            );
+        }
+    }
+
+    #[test]
+    fn parker_unpark_before_park_is_consumed_then_blocks_next_cycle() {
+        let parker = Parker::new();
+        let unparker = parker.unparker();
+
+        unparker.unpark();
+        parker.park();
+
+        let (parker, unparker) = (parker, unparker);
+        let handle = thread::spawn(move || {
+            let start = Instant::now();
+            parker.park();
+            start.elapsed()
+        });
+        thread::sleep(Duration::from_millis(50));
+        unparker.unpark();
+        let elapsed = handle.join().unwrap();
+        assert!(
+            elapsed >= Duration::from_millis(40),
+            "second park returned in {}ms — first park left state corrupted",
+            elapsed.as_millis()
+        );
     }
 }
