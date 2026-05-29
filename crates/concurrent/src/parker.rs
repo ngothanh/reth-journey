@@ -40,12 +40,26 @@ impl Parker {
     }
 
     pub fn park(&self) {
-        match self.inner.state.swap(PARKED, Ordering::Acquire) {
-            PARKED => return,
-            EMPTY => {
-                atomic_wait::wait(&self.inner.state, EMPTY);
+        match self
+            .inner
+            .state
+            .compare_exchange(EMPTY, PARKED, Ordering::Acquire, Ordering::Relaxed)
+        {
+            Err(NOTIFIED) => {
+                self.inner.state.store(EMPTY, Ordering::Release); // See NOTIFIED then no park, continue to work
             }
-            NOTIFIED => return,
+            Ok(_) => loop {
+                atomic_wait::wait(&self.inner.state, PARKED);
+                match self.inner.state.compare_exchange(
+                    NOTIFIED,
+                    EMPTY,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => return,
+                    Err(_) => continue,
+                }
+            },
             _ => unreachable!(),
         }
     }
@@ -72,8 +86,9 @@ impl Inner {
 
 #[cfg(test)]
 mod tests {
+    use std::thread;
     use crate::Parker;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn parker_smoke_unpark_then_park_returns_immediately() {
@@ -95,6 +110,24 @@ mod tests {
         parker.park();
         unparker.unpark();
         assert!(instant.elapsed().as_millis() < 10);
+    }
+
+    #[test]
+    fn parker_park_actually_blocks_until_unpark() {
+        let parker = Parker::new();
+        let unparker = parker.unparker();
+
+        let handle = thread::spawn(move || {
+            let start = Instant::now();
+            parker.park();
+            start.elapsed()
+        });
+        thread::sleep(Duration::from_millis(50));
+        unparker.unpark();
+        let park_elapsed = handle.join().unwrap();
+        assert!(park_elapsed >= Duration::from_millis(40),
+                "park returned in {}ms — it didn't actually block", park_elapsed.as_millis());
+        assert!(park_elapsed < Duration::from_millis(200), "park hung");
     }
 }
 
