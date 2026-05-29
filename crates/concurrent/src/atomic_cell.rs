@@ -14,7 +14,7 @@ use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::{hint, mem};
 
-struct AtomicCell<T: Copy> {
+pub struct AtomicCell<T: Copy> {
     value: UnsafeCell<T>,
     lock: AtomicBool,
 }
