@@ -1,0 +1,5 @@
+error[E0599]: no method named `clone` found for struct `Parker` in the current scope
+ --> tests/compile_fail/parker_not_clone.rs:4:17
+  |
+4 |     let p2 = p1.clone();
+  |                 ^^^^^ method not found in `Parker`
