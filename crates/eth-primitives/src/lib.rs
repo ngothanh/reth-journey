@@ -12,6 +12,7 @@ mod hex;
 mod keccak;
 mod sealed;
 mod uint;
+mod macros;
 
 pub use address::{parse_address, Address};
 pub use aliases::{B256, B64};

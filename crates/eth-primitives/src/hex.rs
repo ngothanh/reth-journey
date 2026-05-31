@@ -44,3 +44,34 @@ pub(crate) fn decode_to_vec(s: &str) -> Result<Vec<u8>, PrimitivesError> {
     }
     Ok(out)
 }
+
+const fn decode_hex(s: &str) -> [u8; 32] {
+    let bytes = s.as_bytes();
+    let offset = if bytes.len() >= 2 && bytes[0] == b'0' && bytes[1] == b'x' {
+        2
+    } else {
+        0
+    };
+    let real_length = s.len() - offset;
+    if real_length != 64 {
+        panic!("expected 64 hex chars for B256");
+    }
+    let mut out = [0u8; 32];
+    let mut i = 0;
+    while i < 32 {
+        let left = nibble_const(bytes[offset + 2 * i]);
+        let right = nibble_const(bytes[offset + 2 * i + 1]);
+        out[i] = (left << 4) | right;
+        i += 1;
+    }
+    out
+}
+
+const fn nibble_const(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        b'A'..=b'F' => byte - b'A' + 10,
+        _ => panic!("invalid hex char"),
+    }
+}
