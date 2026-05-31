@@ -1,12 +1,14 @@
+#[macro_export]
 macro_rules! b256 {
     ($s: literal) => {
-        $crate::FixedBytes($crate::hex::decode_hex($s))
+        $crate::FixedBytes($crate::hex::decode_hex::<32>($s))
     };
 }
 
+#[macro_export]
 macro_rules! address {
     ($s: literal) => {
-        todo!()
+        $crate::FixedBytes($crate::hex::decode_hex::<20>($s))
     };
 }
 
@@ -33,8 +35,7 @@ mod tests {
     /// bytes equal a hand-written array.
     #[test]
     fn b256_round_trip_with_prefix() {
-        const X: B256 =
-            b256!("0x00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+        const X: B256 = b256!("0x00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
         assert_eq!(X.0, EXPECTED_B256);
     }
 
@@ -42,8 +43,7 @@ mod tests {
     /// same bytes as the prefixed one above.
     #[test]
     fn b256_round_trip_without_prefix() {
-        const X: B256 =
-            b256!("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+        const X: B256 = b256!("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
         assert_eq!(X.0, EXPECTED_B256);
     }
 

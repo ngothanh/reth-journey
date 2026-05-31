@@ -45,20 +45,20 @@ pub(crate) fn decode_to_vec(s: &str) -> Result<Vec<u8>, PrimitivesError> {
     Ok(out)
 }
 
-pub(crate) const fn decode_hex(s: &str) -> [u8; 32] {
+pub(crate) const fn decode_hex<const N: usize>(s: &str) -> [u8; N] {
     let bytes = s.as_bytes();
-    let offset = if bytes.len() >= 2 && bytes[0] == b'0' && bytes[1] == b'x' {
+    let offset = if bytes.len() >= 2 && bytes[0] == b'0' && (bytes[1] == b'x' || bytes[1] == b'X') {
         2
     } else {
         0
     };
     let real_length = s.len() - offset;
-    if real_length != 64 {
-        panic!("expected 64 hex chars for B256");
+    if real_length != N * 2 {
+        panic!("fixed_bytes literal has wrong length");
     }
-    let mut out = [0u8; 32];
+    let mut out = [0u8; N];
     let mut i = 0;
-    while i < 32 {
+    while i < N {
         let left = nibble_const(bytes[offset + 2 * i]);
         let right = nibble_const(bytes[offset + 2 * i + 1]);
         out[i] = (left << 4) | right;
