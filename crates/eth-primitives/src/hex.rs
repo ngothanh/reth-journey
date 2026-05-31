@@ -45,7 +45,7 @@ pub(crate) fn decode_to_vec(s: &str) -> Result<Vec<u8>, PrimitivesError> {
     Ok(out)
 }
 
-const fn decode_hex(s: &str) -> [u8; 32] {
+pub(crate) const fn decode_hex(s: &str) -> [u8; 32] {
     let bytes = s.as_bytes();
     let offset = if bytes.len() >= 2 && bytes[0] == b'0' && bytes[1] == b'x' {
         2

@@ -12,6 +12,7 @@ mod hex;
 mod keccak;
 mod sealed;
 mod uint;
+#[macro_use]
 mod macros;
 
 pub use address::{parse_address, Address};
