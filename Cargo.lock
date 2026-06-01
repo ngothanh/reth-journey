@@ -634,6 +634,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "eth-primitives-derive"
+version = "0.1.0"
+
+[[package]]
 name = "eth-storage-cache"
 version = "0.1.0"
 dependencies = [

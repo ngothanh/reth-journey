@@ -1,0 +1,19 @@
+[package]
+name = "eth-primitives-derive"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+sync = "0.1.0"
+quote = "1.0.45"
+proc-macro2 = "1.0.106"
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true
