@@ -1,0 +1,37 @@
+error[E0603]: module `hex` is private
+  --> tests/compile_fail/b256_non_hex_char_fails_to_compile.rs:10:20
+   |
+10 | const _BAD: B256 = b256!("0x00112233445566778899aabbccddeeff00112233445566778899aabbccddeegg");
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |                    |
+   |                    private module
+   |                    function `decode_hex` is not publicly re-exported
+   |
+note: the module `hex` is defined here
+  --> src/lib.rs
+   |
+   | mod hex;
+   | ^^^^^^^
+   = note: this error originates in the macro `b256` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: invalid hex char
+  --> tests/compile_fail/b256_non_hex_char_fails_to_compile.rs:10:20
+   |
+10 | const _BAD: B256 = b256!("0x00112233445566778899aabbccddeeff00112233445566778899aabbccddeegg");
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `_BAD` failed inside this call
+   |
+note: inside `eth_primitives::hex::decode_hex::<32>`
+  --> src/hex.rs
+   |
+   |         let left = nibble_const(bytes[offset + 2 * i]);
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: inside `eth_primitives::hex::nibble_const`
+  --> $RUST/core/src/panic.rs
+   |
+   |         $crate::panicking::panic_fmt($crate::const_format_args!($($t)+));
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the failure occurred here
+   |
+  ::: src/hex.rs
+   |
+   |         _ => panic!("invalid hex char"),
+   |              -------------------------- in this macro invocation

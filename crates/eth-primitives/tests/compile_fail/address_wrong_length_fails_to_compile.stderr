@@ -1,0 +1,32 @@
+error[E0603]: module `hex` is private
+  --> tests/compile_fail/address_wrong_length_fails_to_compile.rs:10:25
+   |
+10 | const _SHORT: Address = address!("0x0001");
+   |                         ^^^^^^^^^^^^^^^^^^
+   |                         |
+   |                         private module
+   |                         function `decode_hex` is not publicly re-exported
+   |
+note: the module `hex` is defined here
+  --> src/lib.rs
+   |
+   | mod hex;
+   | ^^^^^^^
+   = note: this error originates in the macro `address` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: fixed_bytes literal has wrong length
+  --> tests/compile_fail/address_wrong_length_fails_to_compile.rs:10:25
+   |
+10 | const _SHORT: Address = address!("0x0001");
+   |                         ^^^^^^^^^^^^^^^^^^ evaluation of `_SHORT` failed inside this call
+   |
+note: inside `eth_primitives::hex::decode_hex::<20>`
+  --> $RUST/core/src/panic.rs
+   |
+   |         $crate::panicking::panic_fmt($crate::const_format_args!($($t)+));
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the failure occurred here
+   |
+  ::: src/hex.rs
+   |
+   |         panic!("fixed_bytes literal has wrong length");
+   |         ---------------------------------------------- in this macro invocation

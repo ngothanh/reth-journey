@@ -18,3 +18,4 @@ thiserror = "2.0.18"
 ruint = "1.12"
 
 [dev-dependencies]
+trybuild.workspace = true
