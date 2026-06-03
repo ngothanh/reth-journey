@@ -8,9 +8,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-sync = "0.1.0"
-quote = "1.0.45"
-proc-macro2 = "1.0.106"
+syn = { workspace = true }
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
 
 [lib]
 proc-macro = true

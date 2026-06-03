@@ -14,6 +14,7 @@ mod sealed;
 mod uint;
 #[macro_use]
 mod macros;
+mod simple_encode;
 
 pub use address::{parse_address, Address};
 pub use aliases::{B256, B64};

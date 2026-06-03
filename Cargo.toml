@@ -21,6 +21,9 @@ all = { level = "warn", priority = -1 }
 [workspace.dependencies]
 eth-primitives = { path = "crates/eth-primitives" }
 concurrent = { path = "crates/concurrent" }
-eth-chain-state = { path = "crates/eth-chain-state" }
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+eth-chain-state1 = { path = "crates/eth-chain-state" }
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 trybuild = "1.0"
+syn = { version = "2.0", features = ["derive"] }
+quote = "1.0.45"
+proc-macro2 = "1.0.106"
