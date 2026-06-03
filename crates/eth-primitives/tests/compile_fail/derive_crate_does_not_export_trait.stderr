@@ -1,0 +1,5 @@
+error[E0404]: expected trait, found derive macro `eth_primitives_derive::SimpleEncode`
+ --> tests/compile_fail/derive_crate_does_not_export_trait.rs:4:19
+  |
+4 | fn needs_trait<T: eth_primitives_derive::SimpleEncode>(_t: &T) {}
+  |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not a trait

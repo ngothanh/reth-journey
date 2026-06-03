@@ -60,9 +60,9 @@ pub fn derive_simple_encode(input: TokenStream) -> TokenStream {
     };
     let field_names = fields.iter().map(|f| &f.ident);
     let expanded = quote!(
-        impl SimpleEncode for #struct_name {
+        impl ::eth_primitives::SimpleEncode for #struct_name {
             fn encode(&self, out: &mut Vec<u8>) {
-                #( self.#field_names.encode(out); )*
+                #( ::eth_primitives::SimpleEncode::encode(&self.#field_names, out); )*
             }
         }
     );

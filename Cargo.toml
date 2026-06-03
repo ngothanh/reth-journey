@@ -20,8 +20,9 @@ all = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
 eth-primitives = { path = "crates/eth-primitives" }
+eth-primitives-derive = {path = "crates/eth-primitives-derive"}
 concurrent = { path = "crates/concurrent" }
-eth-chain-state1 = { path = "crates/eth-chain-state" }
+eth-chain-state = { path = "crates/eth-chain-state" }
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 trybuild = "1.0"
 syn = { version = "2.0", features = ["derive"] }

@@ -1,0 +1,8 @@
+error: SimpleEncode is not supported for Unions
+ --> tests/compile_fail/derive_on_union.rs:5:1
+  |
+5 | / union U {
+6 | |     a: u32,
+7 | |     b: f32,
+8 | | }
+  | |_^

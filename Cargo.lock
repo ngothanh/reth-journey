@@ -592,6 +592,7 @@ dependencies = [
 name = "eth-primitives"
 version = "0.0.1"
 dependencies = [
+ "eth-primitives-derive",
  "hex",
  "ruint",
  "thiserror",
