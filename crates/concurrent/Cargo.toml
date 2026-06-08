@@ -25,5 +25,5 @@ harness = false
 [lints]
 workspace = true
 
-[target.'cfg(loom)'.dev-dependencies]
+[target.'cfg(loom)'.dependencies]
 loom = "0.7.2"

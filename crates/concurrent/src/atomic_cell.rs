@@ -9,10 +9,42 @@
 //! b: u16 }` passes the gate but has 2 bytes of padding — reading those
 //! bytes through `AtomicU64` is UB. A future revision should require
 //! `T: bytemuck::Pod` to make padding-containing T a compile error.
-use core::cell::UnsafeCell;
-use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use core::{hint, mem};
+mod sync {
+    #[cfg(not(loom))]
+    pub(super) use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+    #[cfg(not(loom))]
+    pub(super) use core::cell::UnsafeCell;
+
+    // Loom build: AtomicU64 is unused (the fast path is compiled out), so it is
+    // not re-exported here.
+    #[cfg(loom)]
+    pub(super) use loom::sync::atomic::{AtomicBool, Ordering};
+
+    #[cfg(loom)]
+    pub(super) use loom::cell::UnsafeCell;
+
+    // Spin hint. Under loom a bare `spin_loop` makes the model "exceed maximum
+    // branches": loom has no progress guarantee for a spinning thread, so it
+    // re-runs the spinner forever and never schedules the lock holder's release.
+    // `yield_now` hands control back to loom's scheduler so it runs the holder.
+    #[cfg(not(loom))]
+    pub(super) fn spin_hint() {
+        core::hint::spin_loop();
+    }
+    #[cfg(loom)]
+    pub(super) fn spin_hint() {
+        loom::thread::yield_now();
+    }
+}
+
+#[cfg(not(loom))]
+use core::{mem, ptr};
+
+use sync::{spin_hint, AtomicBool, Ordering, UnsafeCell};
+
+#[cfg(not(loom))]
+use sync::AtomicU64;
 
 pub struct AtomicCell<T: Copy> {
     value: UnsafeCell<T>,
@@ -28,6 +60,10 @@ impl<T: Copy> AtomicCell<T> {
     }
 
     pub fn store(&self, val: T) {
+        // Fast path is compiled out under loom: loom's `UnsafeCell` has no raw
+        // `.get()` pointer, and loom can't model the `AtomicU64` transmute trick
+        // anyway, so everything routes through the spinlock slow path there.
+        #[cfg(not(loom))]
         if const { size_of::<T>() == 8 && align_of::<T>() == 8 } {
             //SAFETY: Already checked for size and alignment of 8 bytes
             let atomic: &AtomicU64 = unsafe { &*(self.value.get() as *const AtomicU64) };
@@ -35,27 +71,34 @@ impl<T: Copy> AtomicCell<T> {
             //SAFETY: Already checked for size and alignment of 8 bytes
             let bits = unsafe { mem::transmute_copy::<T, u64>(&val) };
             atomic.store(bits, Ordering::Release);
-        } else {
-            loop {
-                if self
-                    .lock
-                    .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    break;
-                }
-                hint::spin_loop();
-            }
-
-            //SAFETY: Only one thread can acquire the lock to write the value
-            unsafe {
-                *self.value.get() = val;
-            }
-            self.lock.store(false, Ordering::Release);
+            return;
         }
+
+        loop {
+            if self
+                .lock
+                .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+            spin_hint();
+        }
+
+        //SAFETY: Only one thread holds the lock, so this write is exclusive.
+        #[cfg(not(loom))]
+        unsafe {
+            *self.value.get() = val;
+        }
+        #[cfg(loom)]
+        self.value.with_mut(|p| unsafe { *p = val });
+
+        self.lock.store(false, Ordering::Release);
     }
 
     pub fn load(&self) -> T {
+        // See `store`: the fast path is compiled out under loom.
+        #[cfg(not(loom))]
         if const { size_of::<T>() == 8 && align_of::<T>() == 8 } {
             // SAFETY: gated on size_of::<T>() == 8 && align_of::<T>() == 8, so the
             // UnsafeCell<T> storage is layout-compatible with AtomicU64.
@@ -64,24 +107,28 @@ impl<T: Copy> AtomicCell<T> {
 
             // SAFETY: gated on size_of::<T>() == 8, so copying 8 bytes from &val
             // stays in-bounds and produces a fully-initialized u64.
-            unsafe { ptr::read(&bits as *const _ as *const T) }
-        } else {
-            loop {
-                if self
-                    .lock
-                    .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    break;
-                }
-                hint::spin_loop();
-            }
-
-            //SAFETY: Only one thread can acquire the lock to read the value
-            let val = unsafe { *self.value.get() };
-            self.lock.store(false, Ordering::Release);
-            val
+            return unsafe { ptr::read(&bits as *const _ as *const T) };
         }
+
+        loop {
+            if self
+                .lock
+                .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+            spin_hint();
+        }
+
+        //SAFETY: Only one thread holds the lock, so this read is exclusive.
+        #[cfg(not(loom))]
+        let val = unsafe { *self.value.get() };
+        #[cfg(loom)]
+        let val = self.value.with(|p| unsafe { *p });
+
+        self.lock.store(false, Ordering::Release);
+        val
     }
 }
 
@@ -171,10 +218,7 @@ mod test {
         for _ in 0..READER_ITERATIONS {
             let v = cell.load();
             let first = v[0];
-            assert!(
-                v.iter().all(|&b| b == first),
-                "torn read observed: {v:?}"
-            );
+            assert!(v.iter().all(|&b| b == first), "torn read observed: {v:?}");
         }
 
         writer.join().unwrap();
