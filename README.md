@@ -19,6 +19,14 @@
 > document is preserved in git history; everything operational (daily structure, inheritance discipline, templates,
 > conventions) carries forward unchanged.
 
+### §-anchor map (citations in week files)
+
+Week files cite "README.md §N" using the former `RECONCILED_PLAN_v3` section numbering — map them as follows:
+§1 = "End state — four readiness bars" · §2 = "Strategic Frame" · §3 = "Coverage matrix" · §4/§4A = "Capstone scope
+ladder" · §5 = "North Star Metrics" + "Decision Gates" · §6 = "Ecosystem-selection risk checklist" · §7 =
+"Shots-on-goal structure" + Geography · §9 = "Risk Register" · §10 = "Open Questions" · §A = "v3 Crate Slotting
+Schedule".
+
 ---
 
 ## What changed from v2 in one paragraph
@@ -41,7 +49,7 @@ The plan terminates at a **bet-readiness state**, defined crisply so milestones 
 
 | Bar | Definition | Measured by |
 |---|---|---|
-| **(a) Core-skill mastery** | Production-fluent across the 8 reference systems; `jeff-dean` + `hft-review` competencies all green; bar (c) on the HFT critical path | 8-system coverage ≥ 85; coverage matrix has no red cells; ≥ 4000 runtime hours |
+| **(a) Core-skill mastery** | Production-fluent across the 8 reference systems; `jeff-dean` + `hft-review` competencies all green; bar (c) on the HFT critical path | 8-system coverage ≥ 80; coverage matrix has no red cells; ≥ 4000 runtime hours |
 | **(b) Portfolio clears founding-eng bar** | A multi-node, replicated, cluster-VOPR'd **perp-DEX-core** whose centerpiece is the real-time cross-margin + liquidation engine; plus a latency report, VOPR bug-find writeups, and a flagship blog post | `perp-dex-core` v1.0 shipped (bar c); ≥ 3 supporting artifacts public |
 | **(c) Activated network** | Binance-alumni map pointed at on-chain-derivatives founders/early-joins **and** crypto-MM desks | ≥ 5 warm intros logged; ≥ 2 conversations advanced to "would bring you in" |
 | **(d) Financial runway** | Income floor secured; ≥ 6–12 months runway at each bet entry | **Crypto-MM cash seat** (Wintermute/Jump-style, remote) as the primary bridge — underwritten by the latency-craft half; runway tracked |
@@ -107,7 +115,7 @@ These were the open questions; the answers below are baked into the plan.
    No "domain wins, spine trims." Reth core is primary M1–M18, maintenance M19–M36; the venue is primary M19–M34.
 2. **Inheritance discipline** — every Layer-5 product crate explicitly lists which Layer-0–Layer-4 primitives it
    inherits and which 3–5 components are net-new. No primitive built twice.
-3. **`perp-dex-core` is the CAPSTONE** (W105–W113), replacing `mini-db`. It is a **replicated, fault-tolerant,
+3. **`perp-dex-core` is the CAPSTONE** (W103–W113), replacing `mini-db`. It is a **replicated, fault-tolerant,
    multi-node** hybrid CLOB assembling matching + oracle + risk + liquidation + ledger + VSR + log-distributed +
    thread-per-core store. Cluster-level VOPR. Scope ladder is locked below.
 4. **`mini-db` demoted + restructured (not deleted)** — the DB substrate (LSM/B-tree, MVCC, WAL, txn, compaction) is
@@ -147,7 +155,7 @@ These were the open questions; the answers below are baked into the plan.
     decided at Bet #1 time. Now: cheap prep only (visa + token-tax for both; event trips). Relocate only on the flip
     trigger.
 15. **BFT-on-the-hot-path is a COMMITTED TERMINAL APEX (non-optional), bounded by numbers** — promote `consensus-bft`
-    to a pipelined-HotStuff hot-path protocol (N=4, p99≤X, fixed Byzantine-VOPR scenario set), swapped into
+    to a pipelined-HotStuff hot-path protocol (N=4, p99≤2ms, fixed Byzantine-VOPR scenario set), swapped into
     `perp-dex-core` behind the `ConsensusBackbone` interface. **Guardrail 1**: does NOT gate Bet #1 (CFT/VSR core at
     M30 is the readiness bar); sequenced after readiness (W118-W143), may overlap / be built inside the bet.
     **Guardrail 2**: "non-optional" attaches to the bounded artifact, not to open-ended research. See "Terminal Apex."
@@ -350,7 +358,7 @@ LAYER 5 — products (capstones; each is ≥70% inherited)
                                       INHERITED BY: liquidation-engine, perp-dex-core
                                       ** CONVERGENCE CELL: jeff-dean-hard (per-tick fan-out) ∧ hft-review-hard
                                          (zero-alloc sub-tick budget) ∧ domain-hard (no spot analog). **
-  liquidation-engine/    W101 v1.0 -> Margin-ratio triggers; partial liquidation against book + minimal insurance
+  liquidation-engine/    W100-W102 v1.0 -> Margin-ratio triggers; partial liquidation against book + minimal insurance
                                       fund (fixed-bps fee accrual, default 10% taker, declared param) absorbing the
                                       below-bankruptcy-price shortfall via WATERFALL (position-margin -> fund);
                                       cascade detection + circuit breakers. Tripwire never hit (deterministic
@@ -359,7 +367,7 @@ LAYER 5 — products (capstones; each is ≥70% inherited)
                                       MIRROR: Hyperliquid/dYdX/GMX liquidation   [bar c]
                                       INHERITS: risk-engine, matching-engine, ledger-deterministic
                                       INHERITED BY: perp-dex-core
-  perp-dex-core/         W105-W113 -> ** L5 CAPSTONE (replaces mini-db). ** Replicated, fault-tolerant, multi-node
+  perp-dex-core/         W103-W113 -> ** L5 CAPSTONE (replaces mini-db). ** Replicated, fault-tolerant, multi-node
                                       hybrid CLOB. Assembles matching + oracle + risk + liquidation + ledger +
                                       consensus-vsr (Aeron-Cluster mirror only) + log-distributed + thread-per-core
                                       store. v1.0 settle-stub implements the REAL hybrid-boundary interface
@@ -518,7 +526,9 @@ edges.*
   and stresses the convergence cell (`risk-engine`) the most.
 - **Back-of-envelope:** a *naïve full* portfolio recompute = 100k accounts × 10 ticks/s = 1M recomputes/s. At ~1µs/
   account that's ~1 CPU-second/second single-threaded — only fits with shard-per-core (16 shards → ~62.5k/s/shard ≈
-  62ms/s/shard). At any higher mark cadence, full recompute blows the budget. **Therefore the incremental-margin hot
+  62ms/s/shard). Full recompute costs ~6.25 ms *burst per tick per shard* (6,250 accounts × ~1 µs) — two orders of
+  magnitude over the sub-tick p99.99 budget even though average utilization is only ~6%; incremental margin is mandated
+  by the tail, not the mean. **Therefore the incremental-margin hot
   path is mandatory, not a fallback:** margin updates as a delta on each position/price change; full portfolio
   recompute is reserved for circuit-breaker / parameter-change events. Local applied state (leader-co-located) handles
   read *latency*; incremental margin handles compute *cost*. Both required.
@@ -575,7 +585,8 @@ The CFT (VSR) core is the founding-engineer bar. The **terminal apex** is promot
 **"Apex" means positioning-pinnacle, NOT systems-quality-pinnacle (state this honestly — it's founder ammunition).**
 On the pure-systems axis, BFT is a **deliberate tax**: Google ran planetary scale on **CFT** (Spanner, Bigtable, Borg,
 Chubby — never Byzantine), because within a single trust domain CFT is sufficient and strictly faster (the apex's own
-numbers prove it: BFT p99 ≤ 2 ms vs VSR < 500 µs). BFT is justified by **one thing only — a decentralized, mutually
+numbers prove it: BFT p99 ≤ 2 ms on 4-node LAN vs VSR p99 < 500 µs — loopback bench at W91; the 3-node-LAN figure is
+measured at the W111 perf pass). BFT is justified by **one thing only — a decentralized, mutually
 distrusting validator set**, which is exactly the on-chain-derivatives bet's trust model and the one place Google's
 CFT-everywhere rule doesn't apply. And the tax is **quarantined off the matching hot path**: matching stays
 optimistic/single-writer/local; only *settlement finality* (which tolerates ms) is BFT-committed. So in a founder
@@ -598,14 +609,14 @@ attaches to **this bounded artifact**, not to "make BFT fast":
 
 | Dimension | Bound |
 |---|---|
-| Protocol family | HotStuff-derived, **pipelined** (linear view-change / pacemaker, leader rotation, QC chaining) |
+| Protocol family | HotStuff-derived, pipelined — **locked W118: Jolteon 2-chain commit + Timeout-Certificate view-change** (TC pacemaker, leader rotation, QC chaining) |
 | Node count | **fixed N = 4** (tolerates f = 1 Byzantine); reconfiguration deferred to a follow-on |
-| Hot-path latency target | BFT path commits a matched batch at **p99 ≤ X** — X is the numeric target set in `latency-lab`, inside the venue tick budget (same discipline as the CFT p99.99 budget) |
-| Byzantine VOPR scenario set | equivocation (double-propose), vote-withholding, leader-equivocation, conflicting-QC, partition+Byzantine combined — cluster-VOPR StateChecker green under all |
+| Hot-path latency target | BFT path commits a matched batch at **p99 ≤ 2 ms** (locked W118; derivation: 2 rounds × [RTT + batched-verify] ≈ ~700 µs median + pacemaker tail), inside the venue tick budget (same discipline as the CFT p99.99 budget) |
+| Byzantine VOPR scenario set | equivocation (double-propose), vote-withholding, leader-equivocation, conflicting-QC, partition+Byzantine combined, **+ the 3 added at W118**: orphaned-proposal-before-slot (O5 proof), OpNumber-contiguity-under-view-churn (O4), safety-attack/planted-fork — cluster-VOPR StateChecker green under all eight |
 | Integration | swapped into `perp-dex-core` **behind the `ConsensusBackbone` interface** — VSR → BFT is a swap, **no engine rewrite** (acceptance #9 above is the enabler) |
 
-**BFT-apex acceptance (the lock):** protocol family ✓ pipelined-HotStuff; N = 4 cluster survives f = 1 Byzantine node
-with no safety violation; the five Byzantine VOPR scenarios run green; the hot-path p99 meets X; and the swap into
+**BFT-apex acceptance (the lock):** protocol family ✓ Jolteon 2-chain + TC; N = 4 cluster survives f = 1 Byzantine node
+with no safety violation; the eight Byzantine VOPR scenarios run green; the hot-path p99 meets the 2 ms bound; and the swap into
 `perp-dex-core` touches **zero** lines of matching/risk/liquidation/ledger code (only the adapter crate). Sequenced at
 **W118–W143** (after readiness, overlapping bet work); see Appendix D for the exact weeks.
 
@@ -654,7 +665,7 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 | Metric                                          | M6   | M18  | M24   | M30  | M36  |
 |-------------------------------------------------|------|------|-------|------|------|
 | Venue-side production crates shipped            | 1*   | 1    | 6     | 11   | 12   |
-| **latency-lab version** (v3, lands M6)          | v0.1 | v0.3 | v0.5  | v1.0 | v1.0 |
+| **latency-lab version** (v3, lands M6)          | v0.1 | v0.3 | v1.0  | v1.0 | v1.0 |
 | matching-engine version                         | —    | scaf | v1.5  | v1.5 | v1.5 |
 | matching-engine advanced features at v1.5       | —    | —    | STP+iceberg+stop-limit+auction+MBO+FIX+CB+mark-triggers | same | same |
 | **oracle-mark version** (v3)                    | —    | —    | v0.5  | v1.0 | v1.5 |
@@ -673,15 +684,22 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 | **BFT apex (pipelined-HotStuff, N=4, Byzantine-VOPR)** | — | — | —    | —    | **v1.0 (W143, terminal apex)** |
 | exec-vm block-stm variant                       | —    | —    | —     | v1.5 | v1.5 |
 | **perp-dex-core version** (v3 CAPSTONE)         | —    | —    | —     | v1.0 | v1.5→v2(BFT) |
-| vector-db version (option)                      | —    | —    | —     | v0.5 | v0.5 |
-| Runtime hours on chaos-tested rig               | 0    | 0    | 200   | 2000 | 4000 |
+| vector-db version (option)                      | —    | —    | —     | —    | v0.5 |
+| Runtime hours on chaos-tested rig†              | 0    | 0    | 200   | 2000 | 4000 |
 | P99 matching latency (single-symbol, 1M orders) | —    | —    | <5μs  | <2μs | <1μs |
-| **P99 per-mark-tick margin recompute @100k acct** | —  | —    | —     | <budget | <budget |
+| **P99 per-mark-tick margin recompute @100k acct** | —  | —    | —     | <100 µs p99.99 per shard per tick (provisional; pinned by latency-lab at W98) | same |
 | P99 marketdata fan-out latency (IPC)            | —    | —    | <10μs | <5μs | <2μs |
-| P99 ledger commit latency (single-shard)        | —    | —    | <10μs | <3μs | <1μs |
-| Public blog posts shipped                       | 0    | 0    | 1     | 4    | 7    |
+| P99 ledger **apply** latency (single-shard; durability via group commit, amortized — group-commit flush p99 < 500µs) | — | — | <10μs | <3μs | <1μs |
+| P99 VSR replicated commit (3-node LAN)          | —    | —    | —     | <500µs | <500µs |
+| Public blog posts shipped‡                      | 0    | 0    | 1     | 4    | 6    |
 
 *\*M6 venue crate = `latency-lab` v0.1 (the latency leg lands first).*
+*†Runtime hours = cumulative **node-hours** across cluster nodes (3-node VSR ⇒ up to ~504 node-h/week at 24/7),
+chaos-drill downtime included; accrual starts when the W92 paper-trade rig powers on.*
+*‡Blog count: #1 optional Phase-5 retro; #4–#7 = W109/W112/W115/W117; flagship W121; optional close W141 —
+6 committed, 7 if the optional Phase-5 post ships.*
+*VOPR-count derivation (nightly sweep): scenarios/s × runner-hours; ledger ~5-6 seeds/s from W88, cluster ~2/s from
+W108 — feasible 24/7 alongside node-hour accrual.*
 
 ### 8-system coverage score — read at each decision gate
 
@@ -691,11 +709,14 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 | Chronicle Queue   | 5    | 25   | 40   | 70   | 80   |
 | ScyllaDB/Seastar  | 0    | 10   | 35   | 65   | 75   |
 | Aeron             | 0    | 30   | 55   | 80   | 88   |
-| Qdrant            | 0    | 0    | 40   | 80   | 85   |
+| Qdrant            | 0    | 0    | 0    | 0    | 60   |
 | TigerBeetle       | 0    | 20   | 50   | 80   | 88   |
 | **Kafka (v3)**    | 0    | 0    | 45   | 70   | 75   |
 | Tempo             | 10   | 60   | 85   | 95   | 95   |
-| **Weighted total**| **—** | **30** | **55** | **78** | **85** |
+| **Total (uniform mean)**| **—** | **26** | **49** | **68** | **81** |
+
+*Score = uniform mean of the 8 system rows (no hidden weights). Qdrant reflects the vector-db slip to the M31+
+buffer; option legs are not excluded — the totals are honest, the gates are set accordingly.*
 
 Audit at each decision gate. If under target at M24, trigger catch-up or trim option-leg time. The derivatives domain
 (oracle/funding, cross-margin, liquidation) is scored *inside* the relevant reference systems (TigerBeetle for
@@ -744,24 +765,24 @@ No path change at M12 — too early. Calibrate within the spine + substrate plan
 
 ### M24 (W96 Fri) — Derivatives-infra readiness checkpoint
 
-`matching-engine` v1.5 + `oracle-mark` v0.5 + `risk-engine` v0.5 (cross-margin) at bar (c); 8-system coverage ≥ 55.
+`matching-engine` v1.5 + `oracle-mark` v0.5 + `risk-engine` v0.5 (cross-margin) at bar (c); 8-system coverage ≥ 45.
 
 **Inbound criterion fixed (controllable outbound, not uncontrollable inbound):** ≥ 20 targeted conversations with
 on-chain-derivatives teams, response rate ≥ 25%, ≥ 3 Binance-alumni warm intros logged. (Relabel any inbound as
 "crypto-infra/derivatives OR crypto-MM OR HFT.")
 
 Catch-up trigger if: matching-engine v1.5 not shipped OR risk-engine v0.5 cross-margin not netting OR 8-system coverage
-< 50 OR < 100 runtime hours.
+< 40 OR < 100 runtime hours.
 
 ### M30 (W117 Tue) — Bet-readiness gate (the pivot point)
 
 Five questions:
 
-- **Capstone**: `perp-dex-core` multi-node **v1.0** shipped with cluster-VOPR green (all 8 acceptance criteria)?
-- **Runtime hours trajectory**: on track for 2000 by M30 end?
+- **Capstone**: `perp-dex-core` multi-node **v1.0** shipped with cluster-VOPR green (all **9** acceptance criteria, incl. #9 stub-swap from W103)?
+- **Runtime hours trajectory**: 2000 node-hours reached?
 - **Crate quality / bar (c) audit**: do all bar-(c) crates meet the bar — VOPR ≥10M cumulative, cluster-VOPR ≥1M,
   zero-alloc audit passed on matching + ledger + aeron + risk-engine hot paths, deterministic harness operational?
-- **8-system coverage**: ≥75?
+- **8-system coverage**: ≥ 65?
 - **Network**: ecosystem shortlist ≥ 5 venues passing the checklist; ≥ 2 founding/core-eng conversations advanced; flagship blog live?
 
 This gate decides: place **Bet #1** now, or engage bridge income (crypto-MM) and keep iterating. If two are red,
@@ -880,6 +901,10 @@ track. *Hour caps are a floor — prefer investing more time over trimming cover
 | Best venues want SG/Dubai presence | Pre-stage, don't pre-commit: visa + token-tax prep for both hubs now; event trips to compress network; relocate only when the flip trigger fires. |
 | M24 outbound response rate low | It's controllable: ship flagship blog earlier, widen Binance-alumni outreach, temporarily lower target tier for Bridge₀. |
 | Cluster-VOPR can't be honest without all I/O behind interfaces | Enforce `MessageBus`/`Storage`/`Clock` trait seams from the first venue crate (matching), not retrofitted. |
+| 2-machine rig under-demonstrates quorum durability | Document replica placement; rent a 3rd box for the W108 cluster-VOPR + W135 latency acceptance. |
+| Latency numbers measured on loopback links don't transfer | Label every published p99 with its topology; LAN-validate at W111/W135. |
+| No 1M orders/s load generator | ops-monitoring (W105) owns a loadgen at 2-4 dedicated cores; 1M/s = 1k Prepares/s × 1k ops/Prepare batching envelope. |
+| Residential power/ISP outage in Vietnam threatens node-hour accrual + auto-paging | UPS + 4G failover; the node-hours metric counts cluster nodes, not wall-clock. |
 
 ### v2 risk register (retained in full)
 
@@ -984,12 +1009,12 @@ Per the no-time-constraint call, these are **additive** — funded by extra inve
   portfolio is "another matching engine."
 
 ### New domain crate: `liquidation-engine` (Hyperliquid/dYdX/GMX)
-- **Slot**: v1.0 W101-W104 (partial-liq + minimal insurance fund + waterfall + tripwire).
+- **Slot**: v1.0 W100-W102 (partial-liq + minimal insurance fund + waterfall + tripwire).
 - **Justification**: the backstop is the moat; insurance-fund waterfall + tripwire is the v1.0→v1.5 ADL seam.
   **Risk if skipped**: the venue can't survive a below-bankruptcy-price fill; the moat is stubbed.
 
 ### New capstone: `perp-dex-core` (Hyperliquid / dYdX v4 architecture)
-- **Slot**: assembly W105-W113 (3-node VSR + real hybrid-boundary settle interface + RWA-aware seams + cluster-VOPR) →
+- **Slot**: assembly W103-W113 (3-node VSR + real hybrid-boundary settle interface + RWA-aware seams + cluster-VOPR) →
   2000h runtime + flagship blog + ecosystem shortlist W114-W117 → v1.5 in M31+.
 - **Displaces**: v2's `mini-db` W97-W100 + `vector-db` W101-W104 capstone slots. The DB substrate is consumed inside
   the venue store; `mini-db` v0.5 KV/query facade stays deferred (default DO NOT BUILD). `vector-db` v0.5 slips to an
@@ -1009,11 +1034,12 @@ Per the no-time-constraint call, these are **additive** — funded by extra inve
 ### NEW terminal apex: BFT-on-the-hot-path (bounded MVP) — committed, non-optional, sequenced AFTER readiness
 - **Slot**: design + seed **W118-W120** (HotStuff-derived/pipelined protocol design behind the `ConsensusBackbone`
   interface) → core protocol build **W122-W128** (leader/QC-chaining/pacemaker; interleaved with bet outreach) →
-  Byzantine VOPR **W129-W134** (equivocation, vote-withholding, leader-equivocation, conflicting-QC, partition+Byzantine)
+  Byzantine VOPR **W129-W134** (all 8 scenarios: equivocation, vote-withholding, leader-equivocation, conflicting-QC,
+  partition+Byzantine, orphaned-proposal-before-slot, OpNumber-contiguity-under-view-churn, safety-attack/planted-fork)
   → hot-path latency target + **swap into `perp-dex-core` via the interface** (`perp-dex-core` v2 = BFT-replicated)
   **W135-W142** → **BFT-apex acceptance W143**. Builds on `consensus-bft` (W64-73 v0.5) promoted to hot-path grade.
 - **Guardrails**: (1) does NOT gate Bet #1 — the CFT/VSR core at M30 (W117) is the readiness bar; BFT is sequenced
-  after and may be built *inside* the bet. (2) Bounded MVP, defined by numbers (protocol family / N=4 / p99≤X /
+  after and may be built *inside* the bet. (2) Bounded MVP, defined by numbers (protocol family / N=4 / p99≤2ms /
   Byzantine scenario set) — "non-optional" attaches to this artifact, not to open-ended "make BFT fast." See the
   **Terminal Apex** section above for the full acceptance lock.
 - **Justification**: positions for the trading-optimized-BFT frontier (HyperBFT / Monad-class) and the $20-100M
@@ -1092,8 +1118,10 @@ Sunday evening, 60-90 minutes. Append to `progress.md`.
   signature; schedule only if a bet demands on-chain settlement). **(a)** BFT-on-hot-path = COMMITTED TERMINAL APEX.
 - ✅ **BFT apex = non-optional but correctly bound.** Built before plan close; **Guardrail 1**: does not gate Bet #1
   (CFT/VSR core at M30 is the readiness bar; apex sequenced W118-W143, may overlap/be built inside the bet).
-  **Guardrail 2**: bounded MVP by numbers (pipelined-HotStuff / N=4 / p99≤X / 5-scenario Byzantine VOPR / zero-rewrite
+  **Guardrail 2**: bounded MVP by numbers (pipelined-HotStuff / N=4 / p99≤2ms / 8-scenario Byzantine VOPR / zero-rewrite
   swap), not "make BFT fast."
+- ✅ **X resolved at W118: p99 ≤ 2 ms** (set relative to the VSR commit budget).
+- ✅ **N locked at W118: N=4 (f=1); reconfiguration deferred.**
 - ✅ **Consensus-backbone interface is a HARD v1.0 acceptance criterion (#9).** VSR is the v1.0 impl behind the trait;
   `perp-dex-core` never depends on `consensus-vsr` directly. This is what makes the BFT commitment architecturally
   payable (swap, not rewrite).
@@ -1114,11 +1142,7 @@ Sunday evening, 60-90 minutes. Append to `progress.md`.
    consensus? Open: a decision rule for "build the apex inside the bet" vs "build it solo in parallel." *Assumption:*
    if the bet *is* building fast BFT, the apex folds into bet work (ideal); otherwise it stays a solo terminal artifact
    on reduced hours. Decide at the W131 bet-decision gate.
-3. **The numeric BFT latency target X.** Left as a symbol until `latency-lab` + the CFT capstone p99.99 are measured
-   (M30); X is set relative to the VSR commit budget, not in the abstract. Open until W117.
-4. **N=4 vs N=7 for the apex.** N=4 (f=1) is the bounded MVP. If a bet implies a specific validator-set size, the apex
-   may target that instead. Defer the final N to the W118 apex-design week; do not pre-commit beyond "fixed, small."
-5. **Conditional (b) trigger wording.** "A bet demands on-chain settlement" needs a crisp test (does the venue settle
+3. **Conditional (b) trigger wording.** "A bet demands on-chain settlement" needs a crisp test (does the venue settle
    on its own L1? require a fraud-proof window?) so the conditional extension isn't accidentally pulled in. Draft the
    test at the W116 ecosystem-filter week.
 
@@ -1202,9 +1226,9 @@ below it, wired together with thin glue.
 | storage-trie v1.0                | 5     | bufpool, wal, recovery, txn, bloom, eth-trie, eth-storage-cache                            | ≥0.70  | W44 Mon           |
 | matching-engine v1.0            | 5     | time, backpressure, wal, recovery, runtime-thread-per-core, messaging-aeron, consensus-vsr  | ≥0.70  | W74 Thu           |
 | matching-engine v1.5            | 5     | + mmap-queue (MBO), + messaging-aeron v0.7, + latency-lab                                   | ≥0.70  | W82 Fri           |
-| oracle-mark v0.5                 | 5     | time, log-distributed                                                                       | ≥0.70  | W80 Fri           |
-| risk-engine v1.0 (principal)     | 5     | oracle-mark, ledger-deterministic, runtime-thread-per-core, concurrent, latency-lab         | ≥0.70  | W100 Wed          |
-| liquidation-engine v1.0          | 5     | risk-engine, matching-engine, ledger-deterministic                                          | ≥0.70  | W104 Tue          |
+| oracle-mark v0.5                 | 5     | time, log-distributed                                                                       | ≥0.40 (domain-math-dominated; rationale: funding/mark is mostly net-new domain logic over {time, log-distributed}) | W80 Fri           |
+| risk-engine v1.0 (principal)     | 5     | oracle-mark, ledger-deterministic, runtime-thread-per-core, concurrent, latency-lab         | ≥0.70  | W99 Wed (before the Friday v1.0 tag) |
+| liquidation-engine v1.0          | 5     | risk-engine, matching-engine, ledger-deterministic                                          | ≥0.70  | W102 Tue (before the tag) |
 | ledger-deterministic v1.0        | 5     | time, wal, recovery, txn, runtime-thread-per-core, consensus-vsr, mmap-queue, latency-lab   | ≥0.70  | W92 Wed           |
 | consensus-engine v1.0            | 5     | eth-consensus, eth-stage, exec-vm, storage-trie, consensus-bft                              | ≥0.70  | W91 Wed           |
 | **perp-dex-core v1.0 (CAPSTONE)**| 5     | matching, oracle-mark, risk-engine, liquidation-engine, ledger, consensus-vsr, log-distributed, runtime-tpc, lsm-core, messaging-aeron, marketdata, latency-lab | **≥0.75** | W117 (acceptance gate, Flag-A) |
@@ -1289,15 +1313,26 @@ The venue crates produced in Phase 4-6 need sustained operational time to demons
 - **[Venue] Wednesday**: 30 min — check ops dashboards. Capture runtime hours total. Update `progress.md` venue row.
 - **[Venue] Saturday**: 60 min — chaos drill (rotated: process kill, network partition, clock skew, disk fill, slow
   subscriber, **liquidation-cascade injection**). Capture in `chaos_log.md`.
+- Hours accrual starts W92 (paper-trade rig live).
+
+### Rig spec + topology (the substrate of every published number)
+
+- **Machine count**: 2 boxes, plus a **rented 3rd** for the W108 cluster-VOPR and the W135 latency weeks.
+- **Required class**: ~32 cores/node — sized for the 16-shard margin math + matching + VSR + aeron + loadgen
+  co-residency; NVMe storage; XDP-capable NIC (for AF_XDP / `marketdata-kernelbypass`).
+- **Node placement**: document which VSR/BFT replicas fate-share a box, and which inter-replica links are loopback vs
+  a real NIC — quorum-durability claims are only as honest as the placement map.
+- **Rule**: every published p99 is labeled with its topology (loopback / LAN / mixed).
 
 ### Monthly venue polish checkpoints (M25-M36)
 
-- **[Venue] M25 end (W100)**: matching-engine v1.0 stable on rig; `risk-engine` v1.0 (BTC+ETH netting) shipped.
-- **[Venue] M26 end (W104)**: `liquidation-engine` v1.0 shipped; ops rig provisioned.
+- **[Venue] M25 end (W100)**: matching-engine v1.5 stable on rig; `risk-engine` v1.0 (BTC+ETH netting) shipped.
+- **[Venue] M26 end (W104)**: `liquidation-engine` v1.0 shipped (W102); ops rig provisioned.
 - **[Venue] M27 end (W109)**: ops-monitoring + ops-deploy + ops-chaos shipped; first chaos cycle; blog #4 live.
-- **[Venue] M28 end (W113)**: **`perp-dex-core` v1.0 assembled**; cluster-VOPR green; 800+ runtime hours.
-- **[Venue] M29 end (W117)**: 1300+ runtime hours; ledger v0.7 / aeron v0.7 real-load polish.
-- **[Venue] M30 end (W117)**: 2000+ runtime hours; flagship-prep blog; M30 bet-readiness gate complete.
+- **[Venue] M28 end (W113)**: **`perp-dex-core` v1.0 assembled**; cluster-VOPR green; 1200+ node-hours.
+- **[Venue] M29 end (W117)**: 1300+ node-hours; ledger v1.0 + aeron v0.7 real-load polish.
+- **[Venue] M30 end (W117)**: 2000+ node-hours (W92→W117 ≈ 26 wks × 504 node-h max ⇒ 2000 ≈ 15% average utilization);
+  flagship-prep blog; M30 bet-readiness gate complete.
 - **[Venue] M31 end (W121)**: 2500+ runtime hours; flagship blog live; ecosystem shortlist + outbound started.
 - **[Venue] M32 end (W124)**: 2900+ runtime hours; event trip / recon complete.
 - **[Venue] M33 end (W128)**: 3300+ runtime hours; founding-eng + crypto-MM conversations underway.
@@ -1309,8 +1344,8 @@ The venue crates produced in Phase 4-6 need sustained operational time to demons
 
 - **W74 Thu**: matching-engine v1.0 — ≥0.70.
 - **W92 Wed**: ledger-deterministic v1.0 — ≥0.70.
-- **W100 Wed**: risk-engine v1.0 (principal) — ≥0.70.
-- **W104 Tue**: liquidation-engine v1.0 + cross-crate audit on the venue stack.
+- **W99 Wed (before the Friday v1.0 tag)**: risk-engine v1.0 (principal) — ≥0.70.
+- **W102 Tue (before the tag)**: liquidation-engine v1.0 + cross-crate audit on the venue stack.
 - **W113 Sat**: `perp-dex-core` CAPSTONE — most-important audit. **≥0.75** is the bar.
 - **W117 Tue**: M30 audit across all venue crates.
 - **W144 Tue**: M36 final audit. Capture in retrospective.
@@ -1336,6 +1371,8 @@ The venue crates produced in Phase 4-6 need sustained operational time to demons
 - **Phase 6 (M25-M30)**: 4 blog posts (#4 chaos engineering W109; #5 **risk-engine / cross-margin** W112; #6
   **perp-dex-core architecture** W115; #7 Phase 6 retro W117).
 - **Phase 7 (M31-M36)**: flagship blog W121 (the public artifact for bet-sourcing inbound) + optional close W141.
+- **Count**: #1 optional Phase-5 retro; #4–#7 = W109/W112/W115/W117; flagship W121; optional close W141 —
+  **6 committed**, 7 if the optional Phase-5 post ships.
 
 ---
 
@@ -1358,7 +1395,8 @@ The plan assumes a coast-mode day-job providing infrastructure (salary, health i
 | 4     | M13-M18 | 22    | 3     | 5     | 0   | ~40                     | 14           |
 | 5     | M19-M24 | 12    | 23    | 5     | 0   | ~40                     | 14           |
 | 6     | M25-M30 | 4     | 28    | 3     | 5   | ~40                     | 14           |
-| 7     | M31-M36 | 3     | 27    | 3     | 5   | ~40 (then bridge/bet)   | 14           |
+| 7     | M31-M34 | 3     | 29    | 3     | 5   | ~40 (then bridge/bet)   | 14           |
+| 7     | M35-M36 | 2     | 20    | 3     | 5   | ~40 (then bridge/bet)   | 14           |
 
 *\*M6 venue hours = `latency-lab`. Numbers approximate; the constraint is total work hours (30/wk → 40/wk M19-M34).*
 
@@ -1384,27 +1422,28 @@ The plan assumes a coast-mode day-job providing infrastructure (salary, health i
 | **W85-W90** | **[NEW] risk-engine v0.5 (multi-instrument cross-margin, fixed haircut)**; marketdata-kernelbypass v0.5 |
 | **W91**   | consensus-engine v1.0; **[NEW] `ConsensusBackbone` interface DECLARED (VSR wired behind it; acceptance #9)**; tempo-evm-ext + tempo-payment-lane v0.1.0; exec-vm v1.5 block-stm (W91-W94) |
 | W95-W96   | M24 derivatives-infra readiness checkpoint                                                                 |
-| **W97-W100** | **[NEW] risk-engine v1.0 (BTC-PERP + ETH-PERP netting, per-mark-tick)** + oracle-mark v1.0             |
-| **W101-W104**| **[NEW] liquidation-engine v1.0 (partial-liq + insurance fund + waterfall + tripwire)**               |
-| W105      | ops-monitoring + ops-deploy                                                                                |
+| **W97-W99** | **[NEW] risk-engine v1.0 (BTC-PERP + ETH-PERP netting, per-mark-tick)** + oracle-mark v1.0             |
+| **W100-W102**| **[NEW] liquidation-engine v1.0 (partial-liq + insurance fund + waterfall + tripwire)**               |
 | **W103**  | **[NEW] perp-dex-core depends on `ConsensusBackbone` trait (VSR adapter wired); NOT on consensus-vsr directly — acceptance #9 stub-swap test lives HERE (Flag-A: at dependency formation)** |
-| **W105-W113**| **[NEW] perp-dex-core CAPSTONE assembly (3-node VSR-behind-interface + hybrid-boundary settle + RWA seams + cluster-VOPR)**|
+| W105      | ops-monitoring + ops-deploy                                                                                |
+| **W103-W113**| **[NEW] perp-dex-core CAPSTONE assembly (3-node VSR-behind-interface + hybrid-boundary settle + RWA seams + cluster-VOPR)**|
 | W106      | [Venue] live deployment begins (paper-trade rig)                                                           |
 | **W108**  | ops-chaos + **cluster-VOPR: acceptance #4 (`finality_status` from `commit_point`) + #5 (two projection contracts) verified at the cluster level (Flag-A — distributed properties)** |
 | W109      | ops-runbooks + Blog #4 (chaos engineering)                                                                 |
-| W110-W112 | Sustained operations + matching-engine v1.1 (perf-tuned) + Blog #5 (risk-engine / cross-margin)            |
-| W113      | ledger v0.7 + aeron v0.7 + marketdata v0.7 real-load polish; **Binance-alumni map activation + bet-outreach ramp** (per INDEX; capstone acceptance is NOT here — see W117) |
+| W110-W112 | Sustained operations + matching-engine v1.5.1 (perf-tuned) + Blog #5 (risk-engine / cross-margin)          |
+| W113      | ledger v1.0 + aeron v0.7 + marketdata v0.7 real-load polish; **Binance-alumni map activation + bet-outreach ramp** (per INDEX; capstone acceptance is NOT here — see W117) |
 | W114-W116 | 2000h runtime + Blog #6 (perp-dex-core arch) + ecosystem shortlist                                         |
 | **W117**  | **CAPSTONE v1.0 ACCEPTANCE GATE (Flag-A): converges #4/#5/#9 + multi-instrument netting + minimal insurance fund + hybrid-settle interface + stub-swap re-verified end-to-end against the locked MVP boundary (no NEW test); inheritance ratio ≥0.75** + Blog #7 + M30 Bet-Readiness gate |
 | W118-W120 | perp-dex-core v1.5 (RWA features) start + bet-path prep (outreach, checklist, visa/token-tax); **[NEW] BFT apex DESIGN + SEED (pipelined-HotStuff behind `ConsensusBackbone`)** |
 | W121      | **Flagship blog post (the public artifact for bet-sourcing inbound)** + perp-dex-core v1.5 (ADL/multi-collateral)|
 | W122-W124 | Outbound triage + event/recon trip (geography scout); **[NEW] BFT apex core protocol build (leader / QC-chaining / pacemaker)** (interleaved) |
 | W125-W128 | Founding-eng + crypto-MM conversations; checklist applied per opportunity; **[NEW] BFT apex core protocol (cont.)** |
-| W129-W131 | **Bet #1 decision** (GO only if checklist passes) OR engage Bridge₀; **[NEW] BFT apex Byzantine VOPR (equivocation / withholding / leader-equivocation / conflicting-QC / partition+Byzantine)** |
+| W129-W131 | **Bet #1 decision** (GO only if checklist passes) OR engage Bridge₀; **[NEW] BFT apex Byzantine VOPR (all 8 scenarios: equivocation / withholding / leader-equivocation / conflicting-QC / partition+Byzantine / orphaned-proposal-before-slot / OpNumber-contiguity-under-view-churn / safety-attack-planted-fork)** |
 | W132-W134 | Resignation + (conditional) relocation; start at bet/bridge; **[NEW] BFT apex Byzantine-VOPR green** |
-| W135-W142 | First weeks at bet/bridge; **[NEW] BFT apex hot-path latency target (p99≤X) + SWAP into perp-dex-core via the interface (perp-dex-core v2 = BFT-replicated, no engine rewrite)** — may be built inside the bet |
-| **W143**  | **[NEW] BFT-apex ACCEPTANCE (protocol family ✓ / N=4 / p99≤X / 5 Byzantine scenarios green / zero-rewrite swap ✓)** |
-| W144      | **M36 retrospective + plan close** (8-system coverage ≥85; Bet #2 thesis seeds)                            |
+| W135-W142 | First weeks at bet/bridge; **[NEW] BFT apex hot-path latency target (p99≤2ms) + SWAP into perp-dex-core via the interface (perp-dex-core v2 = BFT-replicated, no engine rewrite)** — may be built inside the bet |
+| **W139-W142** | **aeron + marketdata v1.0 hardening (sustain window)**                                                 |
+| **W143**  | **[NEW] BFT-apex ACCEPTANCE (protocol family ✓ / N=4 / p99≤2ms / 8 Byzantine scenarios green / zero-rewrite swap ✓)** |
+| W144      | **M36 retrospective + plan close** (8-system coverage ≥80; Bet #2 thesis seeds)                            |
 
 ---
 

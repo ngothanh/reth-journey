@@ -31,7 +31,7 @@ The reframe is **directed, not destructive**: it keeps the full primitive substr
 - New domain crates: **`oracle-mark`** (mark/index/funding + RWA-aware seams), **`risk-engine`** (multi-instrument cross-margin — *principal-defining*), **`liquidation-engine`** (partial-liq + fee-accrued insurance fund).
 - **Capstone swap**: `mini-db` (W97–100) → **`perp-dex-core`** — a replicated, fault-tolerant, multi-node hybrid CLOB; the v1.0 lock is in README.md "Capstone scope ladder". `mini-db` is **demoted** to a deferred KV/query facade (its DB substrate lives inside the venue store).
 - **Consensus backbone = VSR** (`consensus-vsr`) **behind a `ConsensusBackbone` interface (W91, hard acceptance #9)**; the order/event log **is** the VSR log (one hot-path log). Aeron Cluster + Kafka-`log-distributed` are off-path mirrors.
-- **[v3.1] BFT terminal apex (COMMITTED, non-optional, bounded):** `consensus-bft` → hot-path pipelined-HotStuff (N=4, p99≤X, 5-scenario Byzantine VOPR), swapped into `perp-dex-core` via the interface. Sequenced **W118–W143** — AFTER the M30 readiness gate, overlapping bet work; does **not** gate Bet #1. See README "Terminal Apex."
+- **[v3.1] BFT terminal apex (COMMITTED, non-optional, bounded):** `consensus-bft` → hot-path pipelined-HotStuff (N=4, p99≤2ms, 8-scenario Byzantine VOPR), swapped into `perp-dex-core` via the interface. Sequenced **W118–W143** — AFTER the M30 readiness gate, overlapping bet work; does **not** gate Bet #1. See README "Terminal Apex."
 - **[v3.1] Scope boundary (a/b/c):** core = the verified deterministic replicated *engine*. **(c)** vault/spot/staking/bridge = OUT (do not schedule). **(b)** fully-on-chain + EVM bridge = CONDITIONAL v1.5/v2 (wires into the `SettlementId` async signature). **(a)** BFT apex = committed (above).
 - **`vector-db`** → retained optionality (AI-infra / risk analytics), v0.5, M31 buffer.
 - **Phase 7** → bet-path (founding/core-eng token-equity bet; crypto-MM cash bridge) instead of job-landing, **+ the BFT apex track**.
@@ -176,12 +176,12 @@ The sections below are annotated **[v3]** where the deliverable changed; un-anno
   - [Week 89](W089.md) — RFC + marketdata: AF_XDP **[v2: + ledger v1.0 static-memory invariants Mon-Tue + consensus-vsr zero-alloc Wed-Thu]**
   - [Week 90](W090.md) — Mentorship + `marketdata-kernelbypass` v0.5 ship **[v2: + ledger v1.0 io_uring journal Mon-Tue + consensus-vsr reconfig + v1.0 SHIP Wed-Thu]**
   - [Week 91](W091.md) — consensus-engine v1.0 + Tempo crates v0.1.0 **[v2: + ledger v1.0 VSR replication wire-up Mon-Tue + exec-vm v1.5 block-stm rwset Thu-Fri]** **[v3.1: + DECLARE the `ConsensusBackbone` interface — VSR wired behind the trait; hard v1.0 acceptance #9; the VSR→BFT swap seam. perp-dex-core (W103) depends on the trait, never on `consensus-vsr` directly]** **[v3.1 + O5 AMENDMENT (applied post-W118): `ConsensusBackbone` v1.0 + the O5 abandonment-surface amendment — `propose → ProposalHandle`, `drain_abandoned`, `Commit::proposal_handle`; trait RE-FROZEN. Gate SPEC-GREEN (incl. `test_orphaned_proposal_before_slot_is_abandoned`); BFT permanent-prune liveness flagged as a W125–W128 obligation.]**
-  - [Week 92](W092.md) — Recognition push + paper-trade rig **[v2: ledger-deterministic v1.0 SHIP Wed + exec-vm v1.5 versioned memory Thu-Fri]**
+  - [Week 92](W092.md) — Recognition push + paper-trade rig **[v2: ledger-deterministic v1.0 SHIP Wed + exec-vm v1.5 versioned memory Thu-Fri]**; paper-trade rig live — node-hour accrual starts
 - Month 24: Phase 5 Close + **M24 Derivatives-Infra Readiness Checkpoint** **[v3: replaces Five-Path decision]**
   - [Week 93](W093.md) — Final feature + 72hr soak **[v2: + exec-vm v1.5 optimistic executor]**
   - [Week 94](W094.md) — Final PR push **[v2: exec-vm v1.5 SHIP block-stm]**
   - [Week 95](W095.md) — Reassessment (M24 calibration)
-  - [Week 96](W096.md) — **[v3]** M24 checkpoint: `matching-engine`+`oracle-mark`+`risk-engine` at bar (c); 8-system coverage ≥55; **controllable outbound metric** (≥20 targeted on-chain-derivatives conversations, ≥25% response, ≥3 Binance-alumni warm intros) — *replaces the v2 "1 HFT recruiter inbound" criterion*
+  - [Week 96](W096.md) — **[v3]** M24 checkpoint: `matching-engine`+`oracle-mark`+`risk-engine` at bar (c); 8-system coverage ≥45; **controllable outbound metric** (≥20 targeted on-chain-derivatives conversations, ≥25% response, ≥3 Binance-alumni warm intros) — *replaces the v2 "1 HFT recruiter inbound" criterion*
 
 ## Phase 6 — CAPSTONE (`perp-dex-core`) + Operations + Bet Recon (M25–M30, W97–W117, 40h/wk) **[v3: capstone re-aimed]**
 
@@ -196,7 +196,7 @@ The sections below are annotated **[v3]** where the deliverable changed; un-anno
   - [Week 103](W103.md) — **[v3.1]** `perp-dex-core` assembly start: wires VSR **behind the `ConsensusBackbone` trait** (depends on the trait, NOT `consensus-vsr` directly) + the order/event log = VSR log + **async settle interface** (`SettlementId`=`commit_point`-derived). **⚠️ Flag-A: acceptance #9 stub-swap test lives HERE (at dependency formation, corrected from "W113").** Uses the amended trait (`propose`→`ProposalHandle`, `drain_abandoned`, `Commit::proposal_handle`).
   - [Week 104](W104.md) — **[v3]** `perp-dex-core` hybrid boundary interface (off-chain match / on-chain settle stub) + RWA-aware seams (oracle iface, parameterized funding)
 - Month 27: **`perp-dex-core` multi-node + cluster-VOPR + live deploy** **[v3]**
-  - [Week 105](W105.md) — **[v3]** 3-node VSR deploy + `ops-monitoring`/`ops-deploy` (monitor runtime/VSR/insurance-fund/VOPR metrics)
+  - [Week 105](W105.md) — **[v3]** 3-node VSR deploy + `ops-monitoring`/`ops-deploy` (monitor runtime/VSR/insurance-fund/VOPR metrics) + loadgen (1M orders/s synthetic flow, 2-4 dedicated cores)
   - [Week 106](W106.md) — **[v3]** Live deployment begins (paper-trade venue rig, multi-node)
   - [Week 107](W107.md) — **[v3]** `ops-deploy` polish + first uptime week + projection fan-out (two staleness contracts)
   - [Week 108](W108.md) — **[v3.1]** `ops-chaos` + **cluster-VOPR** drill (crash/restart/partition; insurance-fund tripwire search). **⚠️ Flag-A: acceptance #4 (`finality_status` from `commit_point`) + #5 (two projection contracts: read-after-commit vs bounded-staleness) verified HERE at the cluster level (distributed properties — only meaningful across nodes).**
@@ -206,11 +206,11 @@ The sections below are annotated **[v3]** where the deliverable changed; un-anno
   - [Week 111](W111.md) — **[v3]** `perp-dex-core` performance pass (per-mark-tick p99.99 at 100k accounts)
   - [Week 112](W112.md) — **[v3]** Blog #5 (cross-margin + liquidation engine — the principal artifact) + sustained ops
   - [Week 113](W113.md) — **[v3]** Binance-alumni map activation + bet-outreach ramp (founders **and** crypto-MM desks)
-- Month 29: Public visibility + 2000hr milestone **[v3]**
+- Month 29–30: Public visibility + 2000 node-hour milestone **[v3]**
   - [Week 114](W114.md) — **[v3]** Public visibility + M30 bet-readiness prep
   - [Week 115](W115.md) — **[v3]** Blog #6 (hybrid CLOB / on-chain settle interface) + ecosystem shortlist build (§6 checklist)
   - [Week 116](W116.md) — **[v3]** Flagship-blog draft + ecosystem-selection filter applied to ≥5 venues
-  - [Week 117](W117.md) — **[v3.1]** **CAPSTONE v1.0 ACCEPTANCE GATE (Flag-A)**: converges the full ladder — #4/#5 (from W108) + #9 (from W103) + multi-instrument netting + minimal insurance fund + hybrid-settle interface + stub-swap re-verified end-to-end against the locked MVP boundary (NO new test; it is the convergence gate) + inheritance ratio ≥0.75 — **AND** M30 **Bet-Readiness Gate** (2000h + shortlist ≥5 + ≥2 founding-eng convos) + Blog #7; 8-system coverage ≥78
+  - [Week 117](W117.md) — **[v3.1]** **CAPSTONE v1.0 ACCEPTANCE GATE (Flag-A)**: converges the full ladder — #4/#5 (from W108) + #9 (from W103) + multi-instrument netting + minimal insurance fund + hybrid-settle interface + stub-swap re-verified end-to-end against the locked MVP boundary (NO new test; it is the convergence gate) + inheritance ratio ≥0.75 — **AND** M30 **Bet-Readiness Gate** (2000h + shortlist ≥5 + ≥2 founding-eng convos) + Blog #7; 8-system coverage ≥68 (projection; gate ≥65)
 
 ## Phase 7 — **Bet Placement / Bridge + BFT TERMINAL APEX** (M31–M36, W118–W144, 40h/wk W118–W136 then 30h/wk W137–W144) **[v3.1: bet-path + the committed BFT apex run as parallel tracks]**
 
@@ -218,43 +218,43 @@ The sections below are annotated **[v3]** where the deliverable changed; un-anno
 > terminal apex** (`consensus-bft` W64-73 v0.5 → hot-path-grade pipelined-HotStuff, swapped into `perp-dex-core` behind
 > the `ConsensusBackbone` interface). **Guardrail 1**: the apex is sequenced AFTER the M30 readiness gate (W117) and
 > does NOT gate Bet #1 — if the bet *is* building fast BFT, the apex folds into bet work (ideal). **Guardrail 2**:
-> bounded MVP (pipelined-HotStuff / N=4 / p99≤X / 5-scenario Byzantine VOPR / zero-rewrite swap). See README "Terminal
+> bounded MVP (pipelined-HotStuff / N=4 / p99≤2ms / 8-scenario Byzantine VOPR / zero-rewrite swap). See README "Terminal
 > Apex." `perp-dex-core` v1.5 (RWA/ADL) still ships early-phase; v2 = the BFT-replicated capstone at W143.
 
 - Month 31: **Capstone v1.5 differentiator + bet-prep + BFT apex DESIGN** **[v3.1]**
   - [Week 118](W118.md) — **[v3.1 — RE-DESIGNATED: BFT terminal-apex DESIGN/DECISION gate]** resolves **O5** (op-level abandonment → **NEEDS outer-trait surface**: `propose`→`ProposalHandle` + `drain_abandoned` + `Commit::proposal_handle`), **O1** (ed25519 + batch-verify; BLS deferred to large-N), and the **MVP numeric bounds** (Jolteon 2-chain+TC, N=4, p99 ≤ 2 ms, 8-scenario Byzantine VOPR, zero-rewrite swap). **Design-only, no BFT code.** ⚠️ **GATE: O5 touched the outer trait → W91 amendment required → W119 does NOT start (and W119–W143 are NOT regenerated) until the amendment is reviewed + applied + `test_orphaned_proposal_before_slot_is_abandoned` green.** *(The RWA-v1.5 build formerly here is preserved in git history and re-slots into Track A as part of the gated W119+ regeneration.)*
-  - ⚠️ **W119–W143: GATED — pending O5 review + the W91 amendment.** Do not regenerate until the W118 close-gate is reviewed. Lines below reflect the PRE-O5 plan and will be re-slotted by the amendment.
-  - [Week 119](W119.md) — **[v3 / PRE-O5, gated]** v1.5: ADL + socialized loss + multi-collateral **[v3.1 BFT: GATE week — apply W91 O5 amendment FIRST, then `BftQuorum` + `SignedPeers` (ed25519+batch)]**
-  - [Week 120](W120.md) — **[v3]** Warm-network activation; Dubai/SG cheap prep **[v3.1 BFT: + apex pacemaker/view-change design]**
+  - ✅ **W119–W143: GATE CLEARED** — the O5 amendment is applied at W91 (SPEC-GREEN) and W119–W143 are regenerated post-gate as dual-track files (Track A bet-path + Track B BFT-apex appendix). See COMPLETION_MANIFEST.md §6.
+  - [Week 119](W119.md) — **[v3]** v1.5: ADL + socialized loss + multi-collateral **[v3.1 BFT: GATE week — apply W91 O5 amendment FIRST, then `BftQuorum` + `SignedPeers` (ed25519+batch)]**
+  - [Week 120](W120.md) — **[v3]** Warm-network activation; Dubai/SG cheap prep **[v3.1 BFT: + apex leader rotation + view structure + high-QC (ViewManager 1/2)]**
 - Month 32: **Flagship blog + event-trip recon + BFT apex core build** **[v3.1]**
-  - [Week 121](W121.md) — **[v3]** Flagship blog post (cross-margin + liquidation engine; "architected for RWA-perps")
-  - [Week 122](W122.md) — **[v3]** Inbound triage + bet-outreach (≥20 targeted convos) **[v3.1 BFT: + apex core protocol — leader + QC-chaining]**
-  - [Week 123](W123.md) — **[v3]** Event-trip recon part 1 (Token2049-style) — source Bet #1, **no move** **[v3.1 BFT: + apex pacemaker / leader rotation]**
-  - [Week 124](W124.md) — **[v3]** Recon part 2; evaluate the flip-trigger **[v3.1 BFT: + apex view-change liveness]**
+  - [Week 121](W121.md) — **[v3]** Flagship blog post (cross-margin + liquidation engine; "architected for RWA-perps") **[v3.1 BFT: + apex pacemaker / TC view-change (ViewManager 2/2)]**
+  - [Week 122](W122.md) — **[v3]** Inbound triage + bet-outreach (≥20 targeted convos) **[v3.1 BFT: + apex QC formation (opaque Certificate)]**
+  - [Week 123](W123.md) — **[v3]** Event-trip recon part 1 (Token2049-style) — source Bet #1, **no move** **[v3.1 BFT: + apex 2-chain commit rule (consecutive rounds) + O4 OpNumber densification]**
+  - [Week 124](W124.md) — **[v3]** Recon part 2; evaluate the flip-trigger **[v3.1 BFT: + apex DetectEquivocation (evidence)]**
 - Month 33: **Active bet outreach + BFT apex core (cont.)** **[v3.1]**
-  - [Week 125](W125.md) — **[v3]** Active outreach (target list via §6 checklist) **[v3.1 BFT: + apex happy-path commit working N=4]**
-  - [Week 126](W126.md) — **[v3]** First founding/core-eng conversations (apply §6) **[v3.1 BFT: + apex safety-proof harness]**
-  - [Week 127](W127.md) — **[v3]** Deep-dive / trial collaborations; crypto-MM bridge interviews **[v3.1 BFT: + apex integrate into cluster-VOPR scaffold]**
-  - [Week 128](W128.md) — **[v3]** Finalist conversations / work-trials **[v3.1 BFT: + apex Byzantine fault-injection harness]**
+  - [Week 125](W125.md) — **[v3]** Active outreach (target list via §6 checklist) **[v3.1 BFT: + apex permanent-prune liveness (drain_abandoned; impl-only, no trait touch)]**
+  - [Week 126](W126.md) — **[v3]** First founding/core-eng conversations (apply §6) **[v3.1 BFT: + apex happy-path 4-node commit]**
+  - [Week 127](W127.md) — **[v3]** Deep-dive / trial collaborations; crypto-MM bridge interviews **[v3.1 BFT: + apex ProposalHandle/abandonment wiring end-to-end]**
+  - [Week 128](W128.md) — **[v3]** Finalist conversations / work-trials **[v3.1 BFT: + apex BftReplica integrated behind ConsensusBackbone]**
 - Month 34: **Bet decision OR bridge + BFT apex Byzantine VOPR** **[v3.1]**
-  - [Week 129](W129.md) — **[v3]** Remaining finalist conversations **[v3.1 BFT: + Byzantine VOPR — equivocation + vote-withholding]**
-  - [Week 130](W130.md) — **[v3]** Bridge safety net: crypto-MM seat if no GO-bet **[v3.1 BFT: + Byzantine VOPR — leader-equivocation + conflicting-QC]**
+  - [Week 129](W129.md) — **[v3]** Remaining finalist conversations **[v3.1 BFT: + Byzantine cluster-VOPR — ALL 8 scenarios + planted-bug canary]**
+  - [Week 130](W130.md) — **[v3]** Bridge safety net: crypto-MM seat if no GO-bet **[v3.1 BFT: + Byzantine VOPR sustain (nightly seed-sweep)]**
   - [Week 131](W131.md) — **[v3]** **Bet #1 decision** (GO only if §6 passes) OR engage bridge **[v3.1 BFT: apex-vs-bet decision rule — fold apex into bet if the bet builds fast BFT, else continue solo]**
-  - [Week 132](W132.md) — **[v3]** Resignation + (conditional) relocation **[v3.1 BFT: + Byzantine VOPR — partition+Byzantine combined; all 5 scenarios green]**
+  - [Week 132](W132.md) — **[v3]** Resignation + (conditional) relocation **[v3.1 BFT: + Byzantine VOPR — partition+Byzantine combined; 8-scenario sustain green]**
   - [Week 133](W133.md) — **[v3]** Day-job final 2 weeks + ramp-down
   - [Week 134](W134.md) — **[v3]** Start at the bet (or bridge); remote-first **[v3.1 BFT: apex may now be built INSIDE the bet]**
 - Month 35: First month at the bet/bridge + BFT hot-path latency & swap (30h/wk begins W137) **[v3.1]**
-  - [Week 135](W135.md) — **[v3]** First month: ramp into the core engine **[v3.1 BFT: + apex hot-path latency tuning toward p99≤X]**
+  - [Week 135](W135.md) — **[v3]** First month: ramp into the core engine **[v3.1 BFT: + apex hot-path latency p99≤2ms]**
   - [Week 136](W136.md) — **[v3]** First month: deeper critical-path task **[v3.1 BFT: + apex zero-alloc / static-mem message path]**
   - [Week 137](W137.md) — **[v3]** Cultural integration + vesting tracked **[v3.1 BFT: + SWAP apex into perp-dex-core via the interface (no engine rewrite)]**
   - [Week 138](W138.md) — **[v3]** First month: midpoint check **[v3.1 BFT: + perp-dex-core v2 = BFT-replicated; cluster-VOPR re-run]**
 - Month 36: Settling + BFT-apex acceptance + M36 retrospective **[v3.1]**
-  - [Week 139](W139.md) — **[v3]** Settling in; Bet #2 thesis seeds **[v3.1 BFT: + apex p99≤X validated in `latency-lab`]**
+  - [Week 139](W139.md) — **[v3]** Settling in; Bet #2 thesis seeds **[v3.1 BFT: + apex p99≤2ms validated in `latency-lab`]**
   - [Week 140](W140.md) — Permanent housing (hub if relocated, else remote base)
   - [Week 141](W141.md) — **[v3]** Public artifact update (perp-dex-core + the BFT apex + the bet)
   - [Week 142](W142.md) — Settle + first quarterly review prep
-  - [Week 143](W143.md) — **[v3.1 BFT: BFT-APEX ACCEPTANCE — protocol family ✓ / N=4 / p99≤X / 5 Byzantine scenarios green / zero-rewrite swap ✓]**
-  - [Week 144](W144.md) — **[v3]** M36 retrospective + Bet #2 prep; **8-system coverage ≥85** + BFT apex shipped as close metrics
+  - [Week 143](W143.md) — **[v3.1 BFT: BFT-APEX ACCEPTANCE — protocol family ✓ / N=4 / p99≤2ms / 8 Byzantine scenarios green / zero-rewrite swap ✓]**
+  - [Week 144](W144.md) — **[v3]** M36 retrospective + Bet #2 prep; **8-system coverage ≥80** + BFT apex shipped as close metrics
 
 ---
 
@@ -289,4 +289,4 @@ The sections below are annotated **[v3]** where the deliverable changed; un-anno
 | **W119** | **`perp-dex-core` v1.5 (RWA features + ADL + multi-collateral)** | **c** |
 | **W118–W134** | **BFT terminal apex: design→core→Byzantine-VOPR (pipelined-HotStuff, N=4) — AFTER readiness, overlaps bet work** | **c** |
 | **W137–W138** | **BFT apex SWAP into `perp-dex-core` via the interface → perp-dex-core v2 (BFT-replicated, no engine rewrite)** | **c** |
-| **W143** | **BFT-APEX ACCEPTANCE (protocol family / N=4 / p99≤X / 5 Byzantine scenarios green / zero-rewrite swap) — committed terminal apex** | **c** |
+| **W143** | **BFT-APEX ACCEPTANCE (protocol family / N=4 / p99≤2ms / 8 Byzantine scenarios green / zero-rewrite swap) — committed terminal apex** | **c** |
