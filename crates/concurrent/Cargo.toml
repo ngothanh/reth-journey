@@ -26,6 +26,10 @@ harness = false
 name = "atomic_cell"
 harness = false
 
+[[bench]]
+name = "false_sharing"
+harness = false
+
 [lints]
 workspace = true
 

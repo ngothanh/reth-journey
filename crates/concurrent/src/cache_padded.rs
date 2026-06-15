@@ -31,6 +31,19 @@
 //!     ring: *mut [T],
 //! }
 //! ```
+//!
+//! ## Reference — LMAX Disruptor `Sequence`
+//!
+//! Mirrors LMAX's `Sequence` cache-line sandwich:
+//! <https://github.com/LMAX-Exchange/disruptor/blob/master/src/main/java/com/lmax/disruptor/Sequence.java>
+//! LMAX hand-pads with 56-byte `LhsPadding` + 8-byte `value` + 56-byte
+//! `RhsPadding` (= 120 B, deliberately wider than one 64 B line so neither
+//! neighbour can share the value's line). `CachePadded<T>` achieves the same
+//! isolation via `#[repr(align(128))]` — no manual padding fields. The
+//! false-sharing cliff this buys is measured in `benches/false_sharing.rs`
+//! (~6× on aarch64; see `notes/cache_padded_bench_results.md`). Reapply sites
+//! cite this one place: W11 Vyukov head/tail, W58 `PriceLevel`, W65 Disruptor
+//! cursor, W77 aeron term counters.
 
 use core::fmt;
 use core::ops::{Deref, DerefMut};

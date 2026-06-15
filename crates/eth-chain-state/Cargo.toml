@@ -14,5 +14,8 @@ concurrent.workspace = true
 [lints]
 workspace = true
 
-[target.'cfg(loom)'.dev-dependencies]
+# loom is used in library code (the `cfg(loom)` yield helper in chain_head.rs),
+# not just tests, so it must be a regular dependency — dev-dependencies are not
+# linked into the lib target. Mirrors `concurrent`'s setup.
+[target.'cfg(loom)'.dependencies]
 loom = "0.7.2"
