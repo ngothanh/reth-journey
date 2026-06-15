@@ -1,14 +1,3 @@
-//! Lock-free cell for `Copy` types up to 8 bytes (fast path) with spinlock
-//! fallback for everything else.
-//!
-//! # Fast-path safety
-//!
-//! `T` must be a no-padding type when it would hit the fast path
-//! (`size_of::<T>() == 8 && align_of::<T>() == 8`). For example, `u64`,
-//! `i64`, `*const X` are fine; `#[repr(C, align(8))] struct S { a: u32,
-//! b: u16 }` passes the gate but has 2 bytes of padding — reading those
-//! bytes through `AtomicU64` is UB. A future revision should require
-//! `T: bytemuck::Pod` to make padding-containing T a compile error.
 mod sync {
     #[cfg(not(loom))]
     pub(super) use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -43,15 +32,16 @@ use core::{mem, ptr};
 
 use sync::{spin_hint, AtomicBool, Ordering, UnsafeCell};
 
+use crate::Pod;
 #[cfg(not(loom))]
 use sync::AtomicU64;
 
-pub struct AtomicCell<T: Copy> {
+pub struct AtomicCell<T: Pod> {
     value: UnsafeCell<T>,
     lock: AtomicBool,
 }
 
-impl<T: Copy> AtomicCell<T> {
+impl<T: Pod> AtomicCell<T> {
     pub fn new(value: T) -> Self {
         Self {
             value: UnsafeCell::new(value),
@@ -132,7 +122,7 @@ impl<T: Copy> AtomicCell<T> {
     }
 }
 
-unsafe impl<T: Copy + Send> Sync for AtomicCell<T> {}
+unsafe impl<T: Pod + Send> Sync for AtomicCell<T> {}
 
 #[cfg(test)]
 mod test {
