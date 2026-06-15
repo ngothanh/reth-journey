@@ -54,7 +54,7 @@ The sections below are annotated **[v3]** where the deliverable changed; un-anno
   - [Week 1](done/W001.md) — Ownership/borrowing/lifetimes via `eth-primitives` foundation ✓
   - [Week 2](done/W002.md) — Smart pointers + sync concurrency via `eth-storage-cache` ✓
   - [Week 3](done/W003.md) — Async/Pin/Future via `eth-network-codec` ✓
-  - [Week 4](W004.md) — Atomics, unsafe, variance, macros via `eth-primitives` v0.2
+  - [Week 4](done/W004.md) — Atomics, unsafe, variance, macros via `eth-primitives` v0.2 ✓
 - Month 2: Production Rust + Early Alloy
   - [Week 5](W005.md) — `eth-rlp` crate + Alloy onboarding
   - [Week 6](W006.md) — `eth-consensus` core + [NEW] `time` crate v0.1
