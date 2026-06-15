@@ -22,6 +22,10 @@ harness = false
 name = "parker"
 harness = false
 
+[[bench]]
+name = "atomic_cell"
+harness = false
+
 [lints]
 workspace = true
 

@@ -13,14 +13,12 @@ mod sync {
     #[cfg(loom)]
     pub(super) use loom::cell::UnsafeCell;
 
-    // Spin hint. Under loom a bare `spin_loop` makes the model "exceed maximum
-    // branches": loom has no progress guarantee for a spinning thread, so it
-    // re-runs the spinner forever and never schedules the lock holder's release.
-    // `yield_now` hands control back to loom's scheduler so it runs the holder.
-    #[cfg(not(loom))]
-    pub(super) fn spin_hint() {
-        core::hint::spin_loop();
-    }
+    // Loom spin hint. A bare `spin_loop` makes the model "exceed maximum
+    // branches" (loom re-runs the spinner forever and never schedules the lock
+    // holder's release), so under loom the acquire loop hands control back to
+    // loom's scheduler. The non-loom build backs off with `Backoff` (spin band
+    // -> `yield_now`) instead; loom can model neither `Backoff`'s `spin_loop`
+    // band nor `std` yields.
     #[cfg(loom)]
     pub(super) fn spin_hint() {
         loom::thread::yield_now();
@@ -30,7 +28,13 @@ mod sync {
 #[cfg(not(loom))]
 use core::{mem, ptr};
 
-use sync::{spin_hint, AtomicBool, Ordering, UnsafeCell};
+use sync::{AtomicBool, Ordering, UnsafeCell};
+
+#[cfg(loom)]
+use sync::spin_hint;
+
+#[cfg(not(loom))]
+use crate::backoff::Backoff;
 
 use crate::Pod;
 #[cfg(not(loom))]
@@ -49,6 +53,29 @@ impl<T: Pod> AtomicCell<T> {
         }
     }
 
+    /// Spin-acquire the slow-path spinlock.
+    ///
+    /// Off loom, retries back off with [`Backoff`] (spin band -> `yield_now`):
+    /// under contention the waiter yields its core to the lock holder instead of
+    /// busy-spinning, which bounds the acquire tail (p99) rather than letting a
+    /// starved waiter accumulate scheduler-scale stalls. Under loom, route the
+    /// retry through loom's scheduler (`spin_hint`) so the holder is scheduled to
+    /// release — loom can't model `Backoff`'s `spin_loop` band or `std` yields.
+    fn acquire_lock(&self) {
+        #[cfg(not(loom))]
+        let backoff = Backoff::new();
+        while self
+            .lock
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            #[cfg(not(loom))]
+            backoff.snooze();
+            #[cfg(loom)]
+            spin_hint();
+        }
+    }
+
     pub fn store(&self, val: T) {
         // Fast path is compiled out under loom: loom's `UnsafeCell` has no raw
         // `.get()` pointer, and loom can't model the `AtomicU64` transmute trick
@@ -64,16 +91,7 @@ impl<T: Pod> AtomicCell<T> {
             return;
         }
 
-        loop {
-            if self
-                .lock
-                .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-                .is_ok()
-            {
-                break;
-            }
-            spin_hint();
-        }
+        self.acquire_lock();
 
         //SAFETY: Only one thread holds the lock, so this write is exclusive.
         #[cfg(not(loom))]
@@ -100,16 +118,7 @@ impl<T: Pod> AtomicCell<T> {
             return unsafe { ptr::read(&bits as *const _ as *const T) };
         }
 
-        loop {
-            if self
-                .lock
-                .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-                .is_ok()
-            {
-                break;
-            }
-            spin_hint();
-        }
+        self.acquire_lock();
 
         //SAFETY: Only one thread holds the lock, so this read is exclusive.
         #[cfg(not(loom))]

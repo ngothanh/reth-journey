@@ -1,0 +1,26 @@
+AtomicCell<u64> fast-path disassembly (R3)
+==========================================
+host:   aarch64-apple-darwin
+how:    cargo asm -p concurrent --example asm_probe --release probe_fast_store
+        cargo asm -p concurrent --example asm_probe --release probe_fast_load
+        (probes are #[no_mangle] wrappers in examples/asm_probe.rs)
+
+----- probe_fast_store: cell.store(v) -----
+_probe_fast_store:
+	stlr x1, [x0]      ; store-release: v (x1) -> *cell (x0)
+	ret
+
+----- probe_fast_load: cell.load() -----
+_probe_fast_load:
+	ldapr x0, [x0]     ; load-acquire (RCpc): *cell (x0) -> x0
+	ret
+
+Verdict (eyeball-confirm one instruction):
+  - store = a single `stlr` (store-release). load = a single `ldapr`
+    (load-acquire, RCpc). One memory instruction each, then `ret`.
+  - NO branch, NO CAS loop, NO jump into the `AtomicBool` spinlock slow path.
+  - The `const { size_of::<T>() == 8 && align_of::<T>() == 8 }` gate is folded at
+    compile time for T = u64, so the slow-path arm is never emitted.
+  - `ldapr` (Load-Acquire RCpc) is the weaker-but-sufficient acquire LLVM picks
+    for `Ordering::Acquire` on Apple Silicon (FEAT_LRCPC); `ldar` is the stricter
+    equivalent. Either is a single instruction — the claim holds.
