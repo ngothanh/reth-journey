@@ -3,6 +3,7 @@ mod backoff;
 mod cache_padded;
 mod parker;
 mod pod;
+mod arc;
 
 pub use atomic_cell::AtomicCell;
 pub use backoff::Backoff;
