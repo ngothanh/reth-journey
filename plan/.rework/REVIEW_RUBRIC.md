@@ -56,6 +56,16 @@ G7. **Inheritance discipline** (SPEC §5) — every exercise mirrors a named ups
 G8. **Day-load balance** — no day exceeds ~5-6h of `(~N min)` estimates. Checkbox `[X]`/`[ ]` states preserved
    from the original. Day headers + Sunday ritual block intact.
 
+G9. **Paper drill present per concept** (SPEC §4, `PAPER_DRILLS.md`) — every Build/Extend/Refactor's Phase 1
+   carries a 🧮 Paper drill block selecting catalog artifact(s) on a CONCRETE instance, covering EVERY concept
+   AND domain skill it teaches (not only memory ordering). A Build that drills a catalogued concept but omits
+   its by-hand artifact is a reject; name the missing drill. Domain-only weeks must still carry D-WALK (+
+   D-LAYOUT for wire/disk formats).
+
+G10. **Concept cadence honored** (`../concept_cadence.md`) — if this week sits in a drought window for a
+   concept in the ledger, the scheduled small touchpoint is folded in (real component, not throwaway). Reject
+   if a drought-window week ignores its due touchpoint.
+
 ## QUALITY signals (don't block alone, but note them; many minor misses ⇒ reject)
 - Numbers are specific and correct (cliff ratios, sizes, alignments per target arch).
 - Pre-mortem interleavings are concrete enough to be falsifiable.

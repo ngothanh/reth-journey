@@ -86,6 +86,11 @@ Every `**Build**`/`**Extend**`/`**Refactor**` exercise expands to this shape. (C
 lock-free/variance/macro exercises get the DEEPEST version; ordinary Reth data-type builds get a lighter but
 still complete version — see §6 for depth tiers.)
 
+**Two companion files govern this template:** `PAPER_DRILLS.md` (the by-hand reasoning-artifact catalog — every
+Build's Phase 1 must carry a 🧮 Paper drill selecting from it, for ALL its concepts + domain skills), and
+`../concept_cadence.md` (the spaced-repetition ledger — when authoring a W1–W70 week that sits in a concept's
+drought window, fold in that concept's scheduled touchpoint, sized small, obeying the Inheritance Principle).
+
 ```
 - [ ] **Build**: `crates/<crate>/src/<file>.rs` — <one-line what>. (~total N min across 3 phases)
   - 🔧 **Why this matters**: <upstream mirror> + the 2-4 specific traps + named downstream consumers (W.. , W..).
@@ -108,7 +113,14 @@ still complete version — see §6 for depth tiers.)
       can't write the bad interleaving, you can't prove your design prevents it — that's the point.
     - **Dy. Anti-shortcut audit:** name the "obvious" std/crossbeam/alloc reach for each motivation and one
       line on why it's wrong HERE.
-  - **Output**: `notes/NN_<name>_design.md` with R1..Rn, D1..Dn, the bad-interleaving sketch.
+  - 🧮 **Paper drill** — write by hand in `notes/NN_<name>_drill.md` (the worked reasoning, distinct from the
+    sealed prediction + the R/D design doc). Select 1–3 artifacts from `PAPER_DRILLS.md` matching EVERY core
+    concept AND domain skill this Build teaches — not only memory ordering. Each names a CONCRETE instance:
+    `- <D-XX> on <concrete instance, e.g. a 3-node tree / repr(C) struct / 5-record log>: <one-line task>.`
+    Domain-knowledge builds get **D-WALK** (hand-trace one concrete input) and **D-LAYOUT** where a wire/disk
+    format is involved. A Build that teaches a catalogued concept but omits its drill is a rework reject (G9).
+  - **Output**: `notes/NN_<name>_design.md` with R1..Rn, D1..Dn, the bad-interleaving sketch; plus
+    `notes/NN_<name>_drill.md` with the worked paper drills.
 
   #### Phase 2 — Write the failing tests (~N min)
   Each test is engineered so at least one common naive impl FAILS it. Annotate the skill tier it traps
