@@ -35,6 +35,7 @@ The reframe is **directed, not destructive**: it keeps the full primitive substr
 - **[v3.1] Scope boundary (a/b/c):** core = the verified deterministic replicated *engine*. **(c)** vault/spot/staking/bridge = OUT (do not schedule). **(b)** fully-on-chain + EVM bridge = CONDITIONAL v1.5/v2 (wires into the `SettlementId` async signature). **(a)** BFT apex = committed (above).
 - **`vector-db`** → retained optionality (AI-infra / risk analytics), v0.5, M31 buffer.
 - **Phase 7** → bet-path (founding/core-eng token-equity bet; crypto-MM cash bridge) instead of job-landing, **+ the BFT apex track**.
+- **[v3.2] Durable-infra additions (HyperCore/TiKV/DataFusion coverage audit):** two NEW crates — **`query-columnar`** (W84 v0.1 → W110–112 v0.5; DataFusion+arrow off-path columnar/vectorized analytics) and **`model-check`** (W90 VSR + W129 BFT; Stateright exhaustive protocol verification) — plus **`txn` v1.1** (W93–94 Percolator MVCC, TSO = VSR commit point) and the **`sim-storage`** fault module (W88/W108/W129). Perp-domain + test sub-tasks fold into existing weeks (open-order IM + tiered MM, multi-source index + clamped basis EMA, no-crossed-book + conservation-of-value invariants, venue differential). Reference mirrors: Malachite/openraft (consensus), glommio/monoio (runtime). Full spec: `.rework/HYPERCORE_ADDITIONS.md`.
 
 The sections below are annotated **[v3]** where the deliverable changed; un-annotated weeks are unchanged from v2.
 
@@ -290,3 +291,9 @@ The sections below are annotated **[v3]** where the deliverable changed; un-anno
 | **W118–W134** | **BFT terminal apex: design→core→Byzantine-VOPR (pipelined-HotStuff, N=4) — AFTER readiness, overlaps bet work** | **c** |
 | **W137–W138** | **BFT apex SWAP into `perp-dex-core` via the interface → perp-dex-core v2 (BFT-replicated, no engine rewrite)** | **c** |
 | **W143** | **BFT-APEX ACCEPTANCE (protocol family / N=4 / p99≤2ms / 8 Byzantine scenarios green / zero-rewrite swap) — committed terminal apex** | **c** |
+| **W84** | **[v3.2] `query-columnar` v0.1 (Arrow RecordBatch + columnar append from the VSR-log analytics projection)** | **b** |
+| **W88** | **[v3.2] `sim-storage` fault model folded into ledger VOPR (torn-write/bit-rot/misdirect/FaultAtlas)** | **c** |
+| **W90** | **[v3.2] `model-check` VSR safety model (Stateright) + `txn` v1.1 Percolator-MVCC seed (TSO = VSR commit point)** | **b** |
+| **W94** | **[v3.2] `txn` v1.1 (Percolator MVCC snapshot isolation + coprocessor pushdown)** | **b** |
+| **W112** | **[v3.2] `query-columnar` v0.5 (vectorized scan/filter/aggregate + zone-map pushdown + group-by)** | **b** |
+| **W129** | **[v3.2] `model-check` BFT-apex safety/liveness model (Jolteon 2-chain + TC) + sim-storage⊕Byzantine fault composition** | **c** |

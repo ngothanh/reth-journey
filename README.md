@@ -172,7 +172,8 @@ These were the open questions; the answers below are baked into the plan.
 
 Every crate below sits in `crates/<name>/` of a single Cargo workspace. Builds proceed bottom-up; each layer is fully
 usable in isolation. **v3 adds 6 crates** (`latency-lab`, `log-distributed`, `oracle-mark`, `risk-engine`,
-`liquidation-engine`, `perp-dex-core`) and reframes `mini-db`, taking the workspace to **~36 crates**.
+`liquidation-engine`, `perp-dex-core`) and reframes `mini-db`, taking the workspace to ~36 crates; **v3.2 adds 2 more**
+(`query-columnar`, `model-check`) + the `txn` v1.1 Percolator milestone + the `sim-storage` harness module → **~38 crates**.
 
 ```
 LAYER 0 — bootstrap primitives (W1-W11)
@@ -221,7 +222,8 @@ LAYER 1 — universal low-level primitives + runtime substrate + latency harness
                                       sharded reactor on epoll/io_uring + back-pressure aware scheduling.
                                       v1.0: bar (c) — zero-alloc hot path, deterministic test harness with
                                       injected clock, 1000h runtime burn-in.   [bar c]
-                                      MIRROR: Seastar (ScyllaDB runtime substrate)
+                                      MIRROR: Seastar (ScyllaDB runtime substrate); glommio + monoio (Rust-native
+                                      thread-per-core io_uring runtimes — the day-to-day Rust mirrors)   [NEW v3.2 ref]
                                       INHERITS: concurrent, time, backpressure, epoch-gc
                                       INHERITED BY: matching-engine (1 symbol = 1 shard),
                                       marketdata-kernelbypass, messaging-aeron, mini-db substrate,
@@ -263,18 +265,26 @@ LAYER 3 — concurrency + transaction primitives (W38-W42, W72)
                                       perp-dex-core position/orderbook store (ScyllaDB leg)
   txn/                   W42 v0.5 -> lifecycle + 2PL + deadlock detect + OCC
                          W72 v1.0 -> + 2PC for distributed
-                                      INHERITS: time, wal, recovery
-                                      INHERITED BY: storage-trie, ledger, mini-db substrate, matching-engine
+                         W93 v1.1 -> [NEW v3.2] Percolator MVCC (snapshot isolation; lock/write/data CFs) +
+                                      coprocessor predicate pushdown into lsm-core scans. TIMESTAMP ORACLE =
+                                      the VSR commit point / op-number (reuse — NO separate TSO service).
+                                      MIRROR: TiKV / Percolator.   [bar b]
+                                      INHERITS: time, wal, recovery; (v1.1) consensus-vsr (commit point), lsm-core
+                                      INHERITED BY: storage-trie, ledger, mini-db substrate, matching-engine;
+                                      (v1.1) the venue position/account store (snapshot reads for risk-engine W97+)
 
 LAYER 4 — distribution + transport primitives (W52-W90)
   p2p/                   W52-W55  -> Kademlia + Noise XX + gossip
                                       INHERITS: time, eth-network-codec   [bar c]
                                       INHERITED BY: consensus-raft, consensus-bft, consensus-vsr, messaging-aeron
   consensus-raft/        W56-W67  -> election + log replication + membership + log compaction
+                                      MIRROR: [NEW v3.2 ref] openraft (production Rust Raft)
                                       INHERITS: time, wal, p2p, txn   [bar c]
                                       INHERITED BY: log-distributed (OFF hot path) + Aeron-Cluster mirror ONLY.
                                       NOT on the matching/settlement hot path (that is VSR).
   consensus-bft/         W64-W73  -> 3-phase voting + locking + fork-choice + evidence
+                                      MIRROR: [NEW v3.2 ref] Malachite (Informal Systems' Rust BFT,
+                                      Tendermint/HotStuff-class) — the Rust mirror for the W118 Jolteon apex
                                       INHERITS: time, wal, p2p   [bar c]
                                       INHERITED BY: consensus-engine (Engine API fork-choice analogue).
                                       Spine/optionality only — venue uses CFT (VSR), not BFT. Hold at v0.5.
@@ -377,6 +387,27 @@ LAYER 5 — products (capstones; each is ≥70% inherited)
                                       INHERITS: matching-engine, oracle-mark, risk-engine, liquidation-engine,
                                       ledger-deterministic, consensus-vsr, log-distributed, runtime-thread-per-core,
                                       lsm-core (venue store), bufpool, latency-lab, messaging-aeron, marketdata
+  [NEW v3.2 — durable-infra crates (HyperCore/TiKV/DataFusion additions; see .rework/HYPERCORE_ADDITIONS.md)]
+  query-columnar/        W84 v0.1 -> Arrow-layout columnar trade-log store + vectorized scan/filter/aggregate
+                         W110 v0.5   over the OFF-PATH analytics projection of the VSR log (never the hot path).
+                         M31 v0.7    v0.1: RecordBatch + columnar append from the log-distributed projection.
+                                      v0.5: vectorized kernels + zone-map (min/max) pushdown + group-by aggregate.
+                                      v0.7 (M31 buffer): dictionary/RLE encoding + late-materialization join.
+                                      MIRROR: Apache DataFusion (vectorized execution) + arrow-rs (columnar layout).
+                                      In-process Rust query API only — NO SQL/RPC surface.   [bar b]
+                                      INHERITS: log-distributed (projection source), lsm-core (column-chunk store),
+                                      bufpool, time, latency-lab (kernel microbench).  Target >=0.50.
+                                      INHERITED BY: perp-dex-core (analytics fan-out / trade-log queries),
+                                      risk-engine v1.5 (historical rolling-correlation backfill)
+  model-check/           W90  -> Stateright bounded model checker of the CONSENSUS PROTOCOLS (not the impls):
+                         W129    W90: VSR safety (single-log linearizability + no-two-leaders-per-view +
+                                      commit-monotonicity, N=3). W129: Jolteon 2-chain + TC view-change
+                                      (safety under equivocation + liveness after GST, N=4 f=1).
+                                      Exhaustive complement to the sampled VOPR (each catches different bugs).
+                                      MIRROR: Stateright (Rust); published TLA+ specs of VSR/HotStuff as model SOURCE
+                                      (read for invariants — NOT a TLA+ build).   [supports bar (c) consensus claims]
+                                      INHERITS: net-new (re-encodes the protocol state machine; no crate dep)
+                                      INHERITED BY: the safety claims of consensus-vsr (W90) + BFT apex (W143)
   [Option legs]
   mini-db/               (deferred) -> DEMOTED + RESTRUCTURED (not deleted). DB substrate (lsm-core/wal/recovery/txn/
                                       bufpool/bloom) built once and exercised INSIDE the venue store. DB-infra
@@ -461,6 +492,10 @@ consumed by the capstone.
 | 19 | Vector search *(option)* | — | SIMD, quantization | real-time risk analytics / anomaly-on-flow | Qdrant | `vector-db` (v0.5) |
 | 20 | Payment/stablecoin rails *(option)* | — | — | RWA-perps collateral rails | Tempo | `tempo-*` |
 | 21 | **Deterministic-core discipline + per-consumer staleness + consensus-derived identity** *(cross-cutting)* | replay-safe replicated core; non-determinism at edges; **per-consumer staleness contracts (zookie/Spanner): read-after-commit control plane vs bounded-staleness+op-token analytics plane**; **identity derived from consensus (`SettlementId` = VSR op-number → free idempotency, no side table)** | zero-alloc, single PRNG seed, VOPR; integer-only money math (no float across replicas) | margin/liquidation/settlement replay bit-identically; a risk read served from the analytics contract is a correctness bug | TigerBeetle VOPR; Spanner/Zanzibar zookie | the VSR-core design across `perp-dex-core` + cluster-VOPR; the two staleness contracts (acceptance #5); `SettlementId` (acceptance #4) |
+| 22 | **Columnar / vectorized analytics** *(v3.2)* | columnar scan, compression-as-architecture | SIMD batch kernels, zero-alloc inner loop, zone-map skip | trade-log / fills / funding analytics, OFF the hot path | Apache DataFusion + arrow-rs | **`query-columnar`** (bar b; reads the analytics projection) |
+| 23 | **Model checking (exhaustive)** *(v3.2)* | correctness-from-unreliable-parts | — | proves consensus safety/liveness the venue depends on | Stateright (+ VSR/HotStuff TLA+ specs as source) | **`model-check`** (VSR W90 + BFT apex W129; complements VOPR) |
+| 24 | **Distributed MVCC / snapshot isolation** *(v3.2)* | Spanner/Percolator timestamps | bounded slots, coprocessor pushdown | consistent position-snapshot reads for risk without blocking writers | TiKV / Percolator | **`txn` v1.1** (TSO = VSR commit point; no second clock) |
+| 25 | **Perp-domain + test refinements** *(v3.2 sub-tasks)* | per-tick fan-out (margin); fault-as-common-case (storage) | O(1) order-path margin reservation; integer-money invariants | open-order IM reservation + tiered MM (risk); multi-source index + clamped basis EMA (oracle); no-crossed-book + conservation-of-value; venue differential | Hyperliquid/dYdX; TigerBeetle | `risk-engine`, `oracle-mark`, `matching-engine`, `ledger` + `sim-storage` |
 
 **Convergence cell (the capstone's heart):** row 9 (`risk-engine`) is the only cell simultaneously `jeff-dean`-hard
 (per-mark-tick portfolio recompute across all accounts), `hft-review`-hard (zero-alloc, deterministic, sub-tick
@@ -680,6 +715,9 @@ If a Layer-5 crate breaks the 70% rule at v0.5, the scope was wrong. Audit befor
 | runtime-thread-per-core version                 | —    | —    | v0.5  | v1.0 | v1.0 |
 | mmap-queue version                              | —    | —    | v0.1  | v0.5 | v0.5 |
 | consensus-vsr version                           | —    | —    | v0.5  | v1.0 | v1.0 |
+| **query-columnar version** (v3.2, DataFusion/arrow off-path) | — | — | v0.1 | v0.5 | v0.7 |
+| **model-check** (v3.2, Stateright)              | —    | —    | —     | VSR  | VSR+BFT |
+| **txn MVCC milestone** (v3.2, Percolator)       | —    | —    | —     | v1.1 | v1.1 |
 | **`ConsensusBackbone` interface (hard accept. #9)** | — | —  | —     | shipped | shipped |
 | **BFT apex (pipelined-HotStuff, N=4, Byzantine-VOPR)** | — | — | —    | —    | **v1.0 (W143, terminal apex)** |
 | exec-vm block-stm variant                       | —    | —    | —     | v1.5 | v1.5 |
@@ -905,6 +943,10 @@ track. *Hour caps are a floor — prefer investing more time over trimming cover
 | Latency numbers measured on loopback links don't transfer | Label every published p99 with its topology; LAN-validate at W111/W135. |
 | No 1M orders/s load generator | ops-monitoring (W105) owns a loadgen at 2-4 dedicated cores; 1M/s = 1k Prepares/s × 1k ops/Prepare batching envelope. |
 | Residential power/ISP outage in Vietnam threatens node-hour accrual + auto-paging | UPS + 4G failover; the node-hours metric counts cluster nodes, not wall-clock. |
+| **[v3.2] `query-columnar` scope balloons** | Lock v0.5 to scan/filter/aggregate + one group-by + zone-map pushdown; defer joins/encodings to v0.7/M31. Fallback: slip v0.5 to the M31 buffer beside `vector-db` if the W110–112 window is tight. |
+| **[v3.2] Stateright state-space explosion** | Model the *protocol*, not the impl; bound N (3 for VSR / 4 for BFT) + op-depth; the model is a complement to VOPR, not a replacement — keep both. |
+| **[v3.2] Percolator MVCC introduces a second clock** | The timestamp oracle IS the VSR commit point / op-number — no standalone TSO service (would break "one hot-path log"). Enforced by a seam test (`cargo tree`-style proof + a determinism replay). |
+| **[v3.2] `sim-storage` makes a test unwinnable** | `FaultAtlas` keeps ≥1 valid replica per block, so a green-then-red flip is a real bug, not an impossible scenario; the planted-bug negative control proves the harness bites. |
 
 ### v2 risk register (retained in full)
 
@@ -1045,6 +1087,49 @@ Per the no-time-constraint call, these are **additive** — funded by extra inve
 - **Justification**: positions for the trading-optimized-BFT frontier (HyperBFT / Monad-class) and the $20-100M
   upper-band bet. **Risk if skipped**: stranded at the CFT tier while the frontier moves to fast BFT.
 
+---
+
+## v3.2 Crate Slotting (additive — HyperCore + TiKV + DataFusion durable-infra; see `.rework/HYPERCORE_ADDITIONS.md`)
+
+These are the "stand on it for 10–15 years" durable-infra additions from the 2026-06 coverage audit. Additive on
+top of the v2 + v3 schedules; funded by invested time, not by trimming the spine or venue.
+
+### NEW crate: `query-columnar` (DataFusion + arrow-rs mirror) — columnar/vectorized analytics
+- **Slot**: v0.1 W84 (rides `log-distributed` v0.5 first projection) → v0.5 W110–W112 (sustained-ops window) →
+  v0.7 M31 buffer (beside `vector-db`). Fallback: slip v0.5 to M31 if W110–112 is tight.
+- **Mirror**: Apache DataFusion (vectorized execution) + arrow-rs (columnar layout). In-process Rust query API
+  only — NO SQL/RPC surface. Reads the OFF-PATH analytics projection of the VSR log (never the hot path).
+- **Justification**: the OLAP/data-infra career surface (DataFusion/DuckDB/ClickHouse/Polars) — the biggest
+  transferable second-specialty beside the latency/consensus core. **Risk if skipped**: no columnar/vectorized
+  story; the analytics plane stays a row-at-a-time toy.
+
+### NEW crate: `model-check` (Stateright mirror) — exhaustive protocol verification
+- **Slot**: VSR safety model W90 (when `consensus-vsr` v1.0 ships) → BFT-apex safety/liveness model W129
+  (alongside the Byzantine VOPR). Minimal scope (consensus only); matching/ledger linearizability noted optional.
+- **Mirror**: Stateright (Rust, in-workspace — buildable, not a separate toolchain). Published TLA+ specs of VSR
+  and HotStuff read as the model SOURCE (for invariants), not built.
+- **Justification**: lightweight formal methods — the correctness-engineering surface that marks top-tier systems
+  builders (TigerBeetle/FoundationDB/AWS-via-TLA+). *Exhausts* a small space; VOPR *samples* a huge one — they
+  catch different bugs. **Risk if skipped**: the consensus safety claim rests on sampling alone.
+
+### NEW milestone: `txn` v1.1 — Percolator MVCC + coprocessor pushdown (TiKV)
+- **Slot**: seed W90 (after VSR v1.0 gives a commit point) → build W93–W94 (P5 close, beside exec-vm block-stm)
+  → exercised W97+ (the venue position store; `risk-engine` reads positions at a snapshot).
+- **Mirror**: TiKV / Percolator. Built as a MODE of the existing `txn` crate — no duplicate primitive. Timestamp
+  oracle = the VSR commit point (no standalone TSO).
+- **Justification**: the distributed-database career surface (TiKV/CockroachDB/Spanner-likes): snapshot isolation,
+  MVCC GC, lock/write/data CFs, predicate pushdown. **Risk if skipped**: the venue store has no consistent
+  non-blocking snapshot reads; the TiKV technique cluster is uncovered.
+
+### NEW harness module: `sim-storage` — storage-fault injection (TigerBeetle)
+- **Slot**: W88 (fold into `ledger-deterministic` VOPR v0.7) → W108 (cluster-VOPR across the 3-node placement)
+  → W129 (compose with Byzantine faults). A module of the deterministic-sim harness behind the `Storage` seam,
+  reused by every VOPR leg — not a standalone crate (no primitive twice).
+- **Mirror**: TigerBeetle VOPR storage faults (read/write-fault probability, torn writes, bit-corruption,
+  misdirected I/O, `ClusterFaultAtlas`).
+- **Justification**: the storage-reliability surface ("assume the disk lies") that hardens every durability claim.
+  **Risk if skipped**: recovery/VOPR only exercise process/network faults; disk-level faults go untested.
+
 > **Reconciliation note (vs the current v3 file):** `oracle-mark` / `risk-engine` / `liquidation-engine` /
 > `perp-dex-core` / VSR-backbone were **already** standalone in v3 — this resolution *hardens* them (risk + liquidation
 > are now explicitly "do-not-fold" standalone milestones; the consensus interface is now a *hard* acceptance criterion)
@@ -1145,6 +1230,14 @@ Sunday evening, 60-90 minutes. Append to `progress.md`.
 3. **Conditional (b) trigger wording.** "A bet demands on-chain settlement" needs a crisp test (does the venue settle
    on its own L1? require a fraud-proof window?) so the conditional extension isn't accidentally pulled in. Draft the
    test at the W116 ecosystem-filter week.
+4. **[v3.2] `query-columnar` ↔ `log-distributed` projection seam.** Push (projection drives columnar append) vs
+   pull (columnar polls the projection)? Decide at the W84 v0.1 design phase. *Risk:* a pull model re-introduces
+   staleness coupling the two-contract design was meant to remove.
+5. **[v3.2] `model-check` depth bounds.** Exact N + op-depth that keeps the state space tractable while still
+   exhausting the safety-critical interleavings — tune at W90 (VSR) and W129 (BFT). Default minimal; matching/ledger
+   linearizability models are optional stretch.
+6. **[v3.2] `query-columnar` v0.7 timing.** Ships in M31 buffer or slips with `vector-db`? Decide at the W116/M30
+   capacity check — the W110–112 v0.5 is the committed bar; v0.7 is optional.
 
 **Open strategic questions: none.** Every scope call (a/b/c), the BFT commitment + its two guardrails, and the
 consensus-interface acceptance criterion are locked. Remaining items above are *implementation-detail* questions for
@@ -1242,6 +1335,9 @@ below it, wired together with thin glue.
 | mmap-queue v0.5                  | 2     | bufpool, time, eth-storage-cache::Page                                                      | ≥0.50  | W79 Fri           |
 | log-distributed v0.5             | 2/4   | wal, mmap-queue, consensus-raft, runtime-thread-per-core, backpressure                      | ≥0.50  | W84 Fri           |
 | consensus-vsr v1.0               | 4     | time, wal, p2p, runtime-thread-per-core                                                     | ≥0.50  | W90 Fri           |
+| **query-columnar v0.5** (v3.2)   | 5     | log-distributed, lsm-core, bufpool, time, latency-lab                                       | ≥0.50  | W112 (before tag) |
+| **model-check** (v3.2)           | 4-adj | net-new (re-encodes the protocol state machine; no crate dep)                               | net-new| W90 / W129        |
+| **txn v1.1 Percolator** (v3.2)   | 3     | txn v1.0 + consensus-vsr (commit point) + lsm-core                                          | ≥0.50  | W94 Fri           |
 
 If any crate falls below its target ratio at audit, scope is wrong — audit before tagging.
 
@@ -1286,6 +1382,13 @@ If any crate falls below its target ratio at audit, scope is wrong — audit bef
 ```
 
 Read bottom-up: Layer 0 is built in Phase 1-2. Each layer above is fully built before the layer above it consumes it.
+
+> **[v3.2] additions slot into this graph without restructuring it:** `query-columnar` (L5, off-path analytics) hangs
+> off `log-distributed`'s projection + `lsm-core` and feeds `perp-dex-core`'s analytics plane; `model-check` (L4-adjacent
+> verification) takes no runtime dependency — it re-encodes the `consensus-vsr` / BFT-apex protocols for exhaustive
+> checking; `txn` v1.1 (Percolator MVCC) is a mode of the existing L3 `txn`, with its timestamp oracle = the
+> `consensus-vsr` commit point (no new ordering authority); `sim-storage` is a fault module inside the deterministic-sim
+> harness behind the existing `Storage` seam. None sit on the matching/settlement hot path.
 
 ---
 
@@ -1470,6 +1573,10 @@ The plan assumes a coast-mode day-job providing infrastructure (salary, health i
 - Layer-5 products: cargo-fuzz + loom for race-prone modules by v0.5.
 - Bar-(c) crates: VOPR-style deterministic harness; the venue carries **cluster-level VOPR** (linearizability + replica
   convergence + insurance-fund tripwire StateChecker).
+- **[NEW v3.2] `sim-storage` fault module** (TigerBeetle mirror) — a fault-injecting `Storage` impl behind the mandated
+  `Storage` trait seam, reused by every VOPR leg (no primitive twice): per-seed read/write-fault probability, torn
+  writes, bit-corruption, misdirected I/O, crash-corruption of in-flight writes, with a `FaultAtlas` keeping ≥1 valid
+  replica per block. Folded into `ledger` VOPR (W88), cluster-VOPR (W108), and the Byzantine VOPR (W129, faults⊕Byzantine).
 - Inheritance audit at v1.0 (and v0.5 for Layer-5 capstones).
 
 ### Docs
