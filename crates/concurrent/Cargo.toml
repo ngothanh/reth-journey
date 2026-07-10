@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 atomic-wait = "1.1.0"
+loom = "0.7.2"
 
 [dev-dependencies]
 criterion.workspace = true
