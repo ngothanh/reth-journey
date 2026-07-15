@@ -1,9 +1,10 @@
 use crate::Error;
 use bytes::BufMut;
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct Header {
-    list: bool,
-    payload_length: usize,
+    pub list: bool,
+    pub payload_length: usize,
 }
 
 impl Header {
