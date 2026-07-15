@@ -610,6 +610,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "eth-rlp"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "eth-storage-cache"
 version = "0.1.0"
 dependencies = [
