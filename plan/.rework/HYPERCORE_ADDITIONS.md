@@ -36,7 +36,7 @@ approved. On approval, Part 4 (README edits) + Part 5 (week-file insertions) are
 | **C3** | B1 Percolator MVCC + coprocessor | **`txn` v1.1** milestone (+ `lsm-core` pushdown) | L3 | TiKV / Percolator | b | n/a (extends txn) | seed W90 → build W93–94 → exercised W97+ | 4–5 d |
 | **C4** | A1 storage-fault injection | **harness module** `sim-storage` (in the VOPR harness) | bar-(c) test infra | TigerBeetle VOPR | (c)-supporting | n/a | W88 (ledger) + W108 (cluster) + W129 (BFT) | 2–3 d |
 | **D2** | A2 open-order IM reservation | sub-task | `risk-engine` v1.0 (+`matching` hook) | Hyperliquid/dYdX | c | — | W97–99 | 2 d |
-| **D3** | A3 tiered maintenance-margin | sub-task | `risk-engine` v0.5→v1.0 | Binance/Hyperliquid tiers | c | — | W85–99 | 1 d |
+| **D3** | A3 tiered maintenance-margin | sub-task | `risk-engine` v0.5→v1.0 | Binance/Hyperliquid tiers | c | — | W85–90 | 1 d |
 | **D5** | A5 multi-source index + clamped basis EMA | sub-task | `oracle-mark` v0.5 | Hyperliquid oracle | c | — | W77–80 | 2 d |
 | **D8** | A8 named invariants | sub-task | `matching` v1.0 + `ledger` VOPR | TigerBeetle | c | — | W74 + W88 | 2 d |
 | **D10** | A10 venue differential testing | sub-task | `matching` + `risk-engine` | TigerBeetle model-based | c | — | W74 + W99 | 2–3 d |
@@ -84,7 +84,7 @@ decision is the same correctness bug acceptance #5 already forbids.
     group-by-symbol-and-window aggregate (the funding/volume rollup).
   - **v0.7 — M31 buffer** (alongside `vector-db`): dictionary encoding + run-length + a late-materialization
     join (trade × mark). Optional.
-- **Acceptance (v0.5):** (1) ingests the W108 cluster-VOPR trade stream into Arrow batches; (2) a vectorized
+- **Acceptance (v0.5):** (1) ingests the W107 analytics projection into Arrow batches; (2) a vectorized
   filter+aggregate over ≥10M rows beats a row-at-a-time baseline by ≥5× on `latency-lab` (the back-of-envelope
   drill must predict the band first); (3) zone-map pushdown skips ≥1 chunk on a selective predicate, proven by
   a counter; (4) zero alloc in the per-batch kernel inner loop (audited like the hot-path crates, though the
@@ -229,7 +229,7 @@ cancel restores free margin exactly (conservation). **Drill:** 🧮 D-WALK — t
 orders + 1 fill + 1 cancel; show free-margin at each step. 🧮 D-COST — the reservation update must be O(1) on
 the order hot path (incremental, not a recompute).
 
-### D3 — Tiered maintenance-margin schedule → `risk-engine` v0.5→v1.0 (W85–99)
+### D3 — Tiered maintenance-margin schedule → `risk-engine` v0.5→v1.0 (W85–90)
 A deterministic **margin-tier bracket table**: MM% steps up with position notional (tier 0: ≤X notional → m0%;
 tier 1 → m1% …). Swept deterministically like the haircut (never randomized in-core). **Acceptance:** crossing a
 tier boundary raises required MM at exactly the declared notional; the table is a declared model param.
@@ -290,6 +290,7 @@ production must agree bit-for-bit (determinism contract). 🧮 D-VOPR — the op
    `latency-lab`/`log-distributed`/domain-crate block format (slot, mirror, justification, risk-if-skipped).
 4. **v3 ship calendar** — add rows: W84 `query-columnar` v0.1; W90 `model-check` VSR model + `txn` v1.1 seed;
    W94 `txn` v1.1 (Percolator MVCC); W112 `query-columnar` v0.5; W129 `model-check` BFT model.
+   *Erratum: this spec wrote W112 for `query-columnar` v0.5; the landing week is **W110** (the build + tag land in W110; W112 is a no-code week).*
 5. **North-Star (Venue track)** — add rows: `query-columnar version` (—/—/v0.1/v0.5/v0.7); `model-check`
    (—/—/—/VSR/VSR+BFT); `txn` MVCC milestone (—/—/—/v1.1/v1.1). Reference-system 8-system table is unchanged
    (these map to existing systems / are new reference repos noted in a footnote).
@@ -304,7 +305,7 @@ production must agree bit-for-bit (determinism contract). 🧮 D-VOPR — the op
 
 | Week | Crate(s) | Additive bullet (Build/Extend + 🧮 paper drill in Phase 1) |
 |------|----------|-----------------------------------------------------------|
-| W74 | matching, model-check(seed) | no-crossed-book invariant proptest (D8); naive reference matcher for differential (D10) |
+| W74 | matching | no-crossed-book invariant proptest (D8); naive reference matcher for differential (D10) |
 | W77–80 | oracle-mark | multi-source index + clamped basis EMA (D5) |
 | W84 | query-columnar | v0.1 seed: Arrow RecordBatch + columnar append from projection (C1) |
 | W85–90 | risk-engine | tiered MM bracket table (D3) folded into v0.5 |

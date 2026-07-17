@@ -30,18 +30,19 @@ consecutive drills (no cramming) AND **no drought longer than ~12 weeks** (revie
 | Concept | Reps now | Original worst gap | Touchpoint reps (✓ landed through W48) |
 |---|---|---|---|
 | **async / Pin / Future (C18)** | 10+ | 40 wk (W3→W43) | W12✓, W20✓, W28✓, W36✓ + W43–44 natural (reactor/executor) — **drought closed** |
-| **proc-macros (C15)** | 7 | huge | W15✓, W31✓, W39✓, W21 natural; W60 pending — **closed** |
-| **declarative macros (C14)** | 8 | 27 wk | W17✓, W38✓, W21/W31 natural — **closed** |
+| **proc-macros (C15)** | 8 | huge | W15✓, W31✓, W39✓, W21 natural; **W60 ✓ landed** — "[cadence: proc-macro C15] `#[derive(PodRecord)]` Extend in `eth-primitives-derive` applied to matching-engine Order structs"; drought W39→W60 = 21wk, closed by this insertion (was a 31wk violation) — **closed** |
+| **declarative macros (C14)** | 10 | 27 wk | W17✓, W38✓, W21/W31 natural; **W51 ✓ landed** (`test_matrix!` macro on the exec-vm opcode-coverage grid) + **W63 ✓ landed** (`order!`/`fixture!` builder macro in matching-engine tests); gaps W38→W51 = 13wk (accepted, at tolerance), W51→W63 = 12wk — **closed** |
 | **futex / parking / blocking (C11)** | 15+ | 28 wk (W12→W40) | W14✓, W28✓, W36✓ + W40/W42 natural — **closed** |
-| **miri / UB (active drill) (C10)** | 11 | 23 wk (W4→W27) | W12✓, W16✓ + W27/W33/W37/W43 natural — **closed** |
-| **variance / PhantomData (C4)** | 11 | 21 wk (W12→W33) | W16✓, W33✓ (EBR `Shared<'g>`), W43✓ (`!Send` executor); W60 pending — **closed** |
+| **miri / UB (active drill) (C10)** | 11 | 23 wk (W4→W27) | W12✓, W16✓ + W27/W33/W37/W43 natural; W44→W58 = 14wk gap accepted within tolerance — **closed** |
+| **variance / PhantomData (C4)** | 14 | 21 wk (W12→W33) | W16✓, W33✓ (EBR `Shared<'g>`), W43✓ (`!Send` executor); W54✓, W57✓, W68✓ — closed (also W79, W85); worst gap W43→W54 = 11wk; W54→W57 = 3wk (below the ≥4wk spacing floor — natural reps, not injected cram) — **closed** |
 | **manual-alloc / Layout (C17)** | 9 | 23 wk (W14→W37) | W22✓, W30✓ + W26/W28/W39 natural (mmap/slotted-page/footer) — **closed** |
 
 > **All 7 W1–W70 droughts are now closed through W48** (Waves 1–4). The injected touchpoints + the natural reps
 > the lock-free/storage/async weeks contribute mean every concept now has ≥5 reps with no >12-week gap across
 > W1–W48. W20-overload was avoided by spreading touchpoints to fitting vehicles (futex→W14, variance/miri→W16,
 > decl-macro→W17, async→W20, undo-pool→W30, MPT-derive→W31, async/futex→W36, decl-macro→W38, proc-macro→W39).
-> Only **W60** (proc-macros + variance reps) remains, in the W49–W72 range. The no-code weeks (W25, W45, W46,
+> The W49–W72 reps have since **all landed**: W51/W63 (decl-macro), W54/W57/W68 (variance, replacing the old
+> "W60 pending" plan), W60 (proc-macro) — no pending touchpoints remain. The no-code weeks (W25, W45, W46,
 > W48) carry no drills by design.
 
 ---
@@ -57,14 +58,16 @@ vehicles (refine when authoring the week):
   - W28: B-tree async cursor (`poll_next` over leaf pages).
   - W36: snapshot async export (backpressured `Future` writer).
 - **C15 proc-macros** — W15 (`#[derive(RlpEncodable)]` on EOF structs), W31 (`#[derive]` on MPT node types),
-  W45 (derive on storage-trie records), W60 (derive on matching-engine messages).
+  W45 (derive on storage-trie records), W60 ✓ (landed as the `#[derive(PodRecord)]` Extend in
+  `eth-primitives-derive` applied to matching-engine Order structs).
 - **C14 decl-macros** — W20 (`trie_node!` const builder), W45 (a `bench_case!` macro for the perf harness).
 - **C11 futex/parking** — W20 (a `bufpool` blocking-acquire on exhaustion), W28 (B-tree page-latch wait),
   W36 (snapshot import barrier wait).
 - **C10 miri** — make miri an *active* drill (not just CI): W12 (bufpool UnsafeCell slab under miri),
   W20 (trie unsafe node access under miri).
-- **C4 variance/PhantomData** — W20 (a lifetime-branded `TrieCursor<'tx>`), W45 (branded storage handle),
-  W60 (a `PhantomData`-tagged price-level marker).
+- **C4 variance/PhantomData** — W20 (a lifetime-branded `TrieCursor<'tx>`), W45 (branded storage handle);
+  the W60 proposal (a `PhantomData`-tagged price-level marker) is superseded — the reps landed naturally at
+  W54/W57/W68 instead (see the row above).
 - **C17 manual-alloc** — W22 (a small arena for stage buffers), W30 (recovery undo-record pool).
 
 > These are **injections into existing weeks**, sized small (~30–60 min each), added as a secondary Build or an
@@ -78,14 +81,14 @@ in W56–W72, then recurs densely through the consensus + capstone + BFT-apex ar
 
 | Tier-2 concept | Drill | First rep | Recurs (dense) |
 |---|---|---|---|
-| Consensus quorum/view-change | D-QUORUM | **W56 ✓ landed** (raft scaffold) | W59✓,62,65,68,72,91,118,120-128,143 |
-| Deterministic simulation / VOPR | D-VOPR | **W60 ✓ landed** (det-sim harness) | W63,72,88,108,129-134,143 |
-| Linearizability / single-log | D-LIN | **W59 ✓ landed** (raft replication; earlier than projected W72) | W72,91,103,108,117 |
-| Cross-replica determinism (money) | D-DET | **W60 ✓ landed** (order-book match; earlier than projected W66) | W66,69,71,91,103,108,143 |
-| Distributed capacity / tail | D-CAP | W58 (LMAX topology) — *not yet drilled as D-CAP; W58 used D-LAYOUT/D-COST* | W96,103,105,108 |
-| Fault-tolerance / blast-radius | D-FAIL | W67 (raft snapshot) | W72,105,108,143 |
-| Staleness contracts | D-STALE | W91 (ConsensusBackbone) | W103,108,117 |
-| Interface swap-safety | D-SEAM | **W47 ✓ landed** (ConfigureEvm seam) | W91,103,117,135 |
+| Consensus quorum/view-change | D-QUORUM | **W56 ✓ landed** (raft scaffold) | W59✓, 62, 65, 68, 91, **W118 ✓** (D-QUORUM on the O1 N=4 instance — quorum-intersection table + MAC-vs-signature TC, added this rework pass), W119–W129 (the BFT apex build carries it week over week), 143. *(Stale W72 claim dropped — W72 carries no D-QUORUM.)* |
+| Deterministic simulation / VOPR | D-VOPR | **W60 ✓ landed** (det-sim harness) | W63, 72, 88, 108, **W129 (drill) + W130–134 (operational runs — seed-sweep, not fresh drills)**, 143 |
+| Linearizability / single-log | D-LIN | **W59 ✓ landed** (raft replication; earlier than projected W72) | W72, **W91 ✓** (the `replication.rs` Build now carries D-LIN — 5-op log with one orphaned handle terminating via `drain_abandoned`, added this rework pass), 103, 108, 117 |
+| Cross-replica determinism (money) | D-DET | **W60 ✓ landed** (order-book match; earlier than projected W66) | W66, 69, 71, 91, 103, **W107** (carries D-DET alongside D-CAP), **W108 ✓** (D-DET drill added this rework pass by the W108 rework), **W138** (repointed from W143) |
+| Distributed capacity / tail | D-CAP | **W66 ✓** | W78, W84–89, W95, W97–100, W105–107, W110–111, W119, W135, W143 |
+| Fault-tolerance / blast-radius | D-FAIL | W67 (raft snapshot) | W72, 105, 108, **W138** (repointed from W143) |
+| Staleness contracts | D-STALE | **W73 ✓** (first rep W73, not W91 as previously recorded) | W78, W84, W87, W90, W98, W99, W103, W104, W107, W108, W110–111, W119 |
+| Interface swap-safety | D-SEAM | **W47 ✓ landed** (ConfigureEvm seam) | W91, 103, **W119/W122** (repointed from W117), **W137** (repointed from W135) |
 
 So the Tier-2 cadence is healthy (≥5 reps, well-spread) **provided** the W56–W72 first-reps land — those weeks
 are partly v3-superseded, so when they're JIT-regenerated, the SPEC's G9/G10 ensure the Tier-2 drill is folded

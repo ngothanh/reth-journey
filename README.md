@@ -265,7 +265,7 @@ LAYER 3 — concurrency + transaction primitives (W38-W42, W72)
                                       perp-dex-core position/orderbook store (ScyllaDB leg)
   txn/                   W42 v0.5 -> lifecycle + 2PL + deadlock detect + OCC
                          W72 v1.0 -> + 2PC for distributed
-                         W93 v1.1 -> [NEW v3.2] Percolator MVCC (snapshot isolation; lock/write/data CFs) +
+                         W94 v1.1 -> [NEW v3.2] Percolator MVCC (snapshot isolation; lock/write/data CFs) +
                                       coprocessor predicate pushdown into lsm-core scans. TIMESTAMP ORACLE =
                                       the VSR commit point / op-number (reuse — NO separate TSO service).
                                       MIRROR: TiKV / Percolator.   [bar b]
@@ -647,7 +647,7 @@ attaches to **this bounded artifact**, not to "make BFT fast":
 | Protocol family | HotStuff-derived, pipelined — **locked W118: Jolteon 2-chain commit + Timeout-Certificate view-change** (TC pacemaker, leader rotation, QC chaining) |
 | Node count | **fixed N = 4** (tolerates f = 1 Byzantine); reconfiguration deferred to a follow-on |
 | Hot-path latency target | BFT path commits a matched batch at **p99 ≤ 2 ms** (locked W118; derivation: 2 rounds × [RTT + batched-verify] ≈ ~700 µs median + pacemaker tail), inside the venue tick budget (same discipline as the CFT p99.99 budget) |
-| Byzantine VOPR scenario set | equivocation (double-propose), vote-withholding, leader-equivocation, conflicting-QC, partition+Byzantine combined, **+ the 3 added at W118**: orphaned-proposal-before-slot (O5 proof), OpNumber-contiguity-under-view-churn (O4), safety-attack/planted-fork — cluster-VOPR StateChecker green under all eight |
+| Byzantine VOPR scenario set | the canonical 8 (W118 Friday): equivocation (double-propose), vote-withholding, leader-equivocation/conflicting-QC, safety-attack (conflicting commit), partition+Byzantine combined, stale-high-QC proposal, orphaned-proposal-before-slot (O5 proof), OpNumber-contiguity-under-view-churn (O4) — cluster-VOPR StateChecker green under all eight |
 | Integration | swapped into `perp-dex-core` **behind the `ConsensusBackbone` interface** — VSR → BFT is a swap, **no engine rewrite** (acceptance #9 above is the enabler) |
 
 **BFT-apex acceptance (the lock):** protocol family ✓ Jolteon 2-chain + TC; N = 4 cluster survives f = 1 Byzantine node
@@ -1076,8 +1076,8 @@ Per the no-time-constraint call, these are **additive** — funded by extra inve
 ### NEW terminal apex: BFT-on-the-hot-path (bounded MVP) — committed, non-optional, sequenced AFTER readiness
 - **Slot**: design + seed **W118-W120** (HotStuff-derived/pipelined protocol design behind the `ConsensusBackbone`
   interface) → core protocol build **W122-W128** (leader/QC-chaining/pacemaker; interleaved with bet outreach) →
-  Byzantine VOPR **W129-W134** (all 8 scenarios: equivocation, vote-withholding, leader-equivocation, conflicting-QC,
-  partition+Byzantine, orphaned-proposal-before-slot, OpNumber-contiguity-under-view-churn, safety-attack/planted-fork)
+  Byzantine VOPR **W129-W134** (all 8 scenarios: equivocation, vote-withholding, leader-equivocation/conflicting-QC,
+  safety-attack, partition+Byzantine, stale-high-QC, orphaned-proposal-before-slot, OpNumber-contiguity-under-view-churn)
   → hot-path latency target + **swap into `perp-dex-core` via the interface** (`perp-dex-core` v2 = BFT-replicated)
   **W135-W142** → **BFT-apex acceptance W143**. Builds on `consensus-bft` (W64-73 v0.5) promoted to hot-path grade.
 - **Guardrails**: (1) does NOT gate Bet #1 — the CFT/VSR core at M30 (W117) is the readiness bar; BFT is sequenced
@@ -1335,7 +1335,7 @@ below it, wired together with thin glue.
 | mmap-queue v0.5                  | 2     | bufpool, time, eth-storage-cache::Page                                                      | ≥0.50  | W79 Fri           |
 | log-distributed v0.5             | 2/4   | wal, mmap-queue, consensus-raft, runtime-thread-per-core, backpressure                      | ≥0.50  | W84 Fri           |
 | consensus-vsr v1.0               | 4     | time, wal, p2p, runtime-thread-per-core                                                     | ≥0.50  | W90 Fri           |
-| **query-columnar v0.5** (v3.2)   | 5     | log-distributed, lsm-core, bufpool, time, latency-lab                                       | ≥0.50  | W112 (before tag) |
+| **query-columnar v0.5** (v3.2)   | 5     | log-distributed, lsm-core, bufpool, time, latency-lab                                       | ≥0.50  | W110 (before tag) |
 | **model-check** (v3.2)           | 4-adj | net-new (re-encodes the protocol state machine; no crate dep)                               | net-new| W90 / W129        |
 | **txn v1.1 Percolator** (v3.2)   | 3     | txn v1.0 + consensus-vsr (commit point) + lsm-core                                          | ≥0.50  | W94 Fri           |
 
@@ -1432,7 +1432,7 @@ The venue crates produced in Phase 4-6 need sustained operational time to demons
 - **[Venue] M25 end (W100)**: matching-engine v1.5 stable on rig; `risk-engine` v1.0 (BTC+ETH netting) shipped.
 - **[Venue] M26 end (W104)**: `liquidation-engine` v1.0 shipped (W102); ops rig provisioned.
 - **[Venue] M27 end (W109)**: ops-monitoring + ops-deploy + ops-chaos shipped; first chaos cycle; blog #4 live.
-- **[Venue] M28 end (W113)**: **`perp-dex-core` v1.0 assembled**; cluster-VOPR green; 1200+ node-hours.
+- **[Venue] M28 end (W113)**: **`perp-dex-core` v1.0 tagged** (assembly W103–W111; v0.95 perf-pass tag W111); cluster-VOPR green; 1200+ node-hours.
 - **[Venue] M29 end (W117)**: 1300+ node-hours; ledger v1.0 + aeron v0.7 real-load polish.
 - **[Venue] M30 end (W117)**: 2000+ node-hours (W92→W117 ≈ 26 wks × 504 node-h max ⇒ 2000 ≈ 15% average utilization);
   flagship-prep blog; M30 bet-readiness gate complete.
@@ -1541,7 +1541,7 @@ The plan assumes a coast-mode day-job providing infrastructure (salary, health i
 | W121      | **Flagship blog post (the public artifact for bet-sourcing inbound)** + perp-dex-core v1.5 (ADL/multi-collateral)|
 | W122-W124 | Outbound triage + event/recon trip (geography scout); **[NEW] BFT apex core protocol build (leader / QC-chaining / pacemaker)** (interleaved) |
 | W125-W128 | Founding-eng + crypto-MM conversations; checklist applied per opportunity; **[NEW] BFT apex core protocol (cont.)** |
-| W129-W131 | **Bet #1 decision** (GO only if checklist passes) OR engage Bridge₀; **[NEW] BFT apex Byzantine VOPR (all 8 scenarios: equivocation / withholding / leader-equivocation / conflicting-QC / partition+Byzantine / orphaned-proposal-before-slot / OpNumber-contiguity-under-view-churn / safety-attack-planted-fork)** |
+| W129-W131 | **Bet #1 decision** (GO only if checklist passes) OR engage Bridge₀; **[NEW] BFT apex Byzantine VOPR (all 8 scenarios: equivocation / vote-withholding / leader-equivocation-conflicting-QC / safety-attack / partition+Byzantine / stale-high-QC / orphaned-proposal-before-slot / OpNumber-contiguity-under-view-churn)** |
 | W132-W134 | Resignation + (conditional) relocation; start at bet/bridge; **[NEW] BFT apex Byzantine-VOPR green** |
 | W135-W142 | First weeks at bet/bridge; **[NEW] BFT apex hot-path latency target (p99≤2ms) + SWAP into perp-dex-core via the interface (perp-dex-core v2 = BFT-replicated, no engine rewrite)** — may be built inside the bet |
 | **W139-W142** | **aeron + marketdata v1.0 hardening (sustain window)**                                                 |

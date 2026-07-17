@@ -293,7 +293,7 @@ The sections below are annotated **[v3]** where the deliverable changed; un-anno
 | **W143** | **BFT-APEX ACCEPTANCE (protocol family / N=4 / p99≤2ms / 8 Byzantine scenarios green / zero-rewrite swap) — committed terminal apex** | **c** |
 | **W84** | **[v3.2] `query-columnar` v0.1 (Arrow RecordBatch + columnar append from the VSR-log analytics projection)** | **b** |
 | **W88** | **[v3.2] `sim-storage` fault model folded into ledger VOPR (torn-write/bit-rot/misdirect/FaultAtlas)** | **c** |
-| **W90** | **[v3.2] `model-check` VSR safety model (Stateright) + `txn` v1.1 Percolator-MVCC seed (TSO = VSR commit point)** | **b** |
+| **W90** | **[v3.2] `model-check` VSR safety model (Stateright) + `txn` v1.1 Percolator-MVCC seed (TSO = VSR commit point)** | **b (txn seed) / (c)-supporting (model-check)** |
 | **W94** | **[v3.2] `txn` v1.1 (Percolator MVCC snapshot isolation + coprocessor pushdown)** | **b** |
-| **W112** | **[v3.2] `query-columnar` v0.5 (vectorized scan/filter/aggregate + zone-map pushdown + group-by)** | **b** |
+| **W110** | **[v3.2] `query-columnar` v0.5 (vectorized scan/filter/aggregate + zone-map pushdown + group-by)** | **b** |
 | **W129** | **[v3.2] `model-check` BFT-apex safety/liveness model (Jolteon 2-chain + TC) + sim-storage⊕Byzantine fault composition** | **c** |
