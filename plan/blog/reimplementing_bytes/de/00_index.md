@@ -15,7 +15,13 @@ fällt vom Himmel; jede Entscheidung wird von der vorherigen *erzwungen*.
 Du musst `Bytes`, `BytesMut` oder `freeze` vorher nicht kennen — Teil 1 baut alles
 von null auf.
 
-## Die fünf Teile
+Die Serie teilt sich in zwei Abschnitte: **Teil 1–5 sind *Entwurf*** (warum `Bytes`
+diese Form hat), **Teil 6–8 sind *Implementierung*** (sich hinsetzen und jede
+vtable-Funktion, `from_vec` und `slice` korrekt schreiben, samt den Code-Details, die
+der Entwurfsteil absichtlich aufschob: die Memory-Ordering-Disziplin des refcounts, den
+Bit-Packing-Trick und den Promotion-Wettlauf).
+
+## Der Entwurf — fünf Teile
 
 **[Teil 1 — Die Reise eines Bytes vom Draht ins Programm.](01_the_problem.md)**
 Wir setzen die Bühne: Ein Netzwerkprogramm nimmt Daten auf, braucht einen
@@ -56,6 +62,32 @@ mutability, CAS und Memory Ordering — aber diesmal hängt jedes an einem konkr
 Problem, das wir wirklich lösen müssen, nicht an bloßer Theorie. Er schließt mit fünf
 Fragen, die man in jedes spätere Systems-Problem mitnehmen kann.
 
+## Die Implementierung — drei Teile
+
+**[Teil 6 — Vom Modell zum Code: `static` und `shared`.](06_static_and_shared.md)**
+Wir schreiben die ersten vier vtable-Funktionen. `static` ist die Aufwärmübung (eine
+leere `drop`-Funktion ist genau „0-mal free"). `shared` ist nur an einer einzigen
+Stelle schwer, aber diese Stelle ist die wichtige ordering-Lektion, die der Entwurfsteil
+noch nicht berührte: `share_drop` muss *free-while-read* abwehren — den buffer
+freigeben, während ein anderer Thread noch liest — mit `Release` beim Verringern des
+counters und einem `fence(Acquire)` vor der Freigabe. Wir stellen es dem
+*publish*-ordering aus Teil 5 gegenüber, um die zwei verschiedenen Gefahren zu sehen.
+
+**[Teil 7 — `from_vec` und der Bit-Packing-Trick.](07_from_vec_and_bit_tagging.md)**
+Wie kann eine 8-Byte-Zelle (`data`) zugleich einen buffer-Pointer und einen
+counter-Pointer halten und die zwei Arten unterscheiden? Der Trick borgt das *niedrigste
+Bit*, zusammengefasst in einem Satz: **VEC ungerade, ARC gerade**. Weil ein `u8`-buffer
+gerade oder ungerade sein kann, brauchen wir *zwei* vtables (`EVEN`/`ODD`) — und dieser
+Teil zeigt, warum eine vtable *nicht genug Information* ist, nicht etwa Faulheit.
+
+**[Teil 8 — promotable vollständig, und `slice` O(1).](08_promotable_and_slice.md)**
+Alles zusammenfügen: die vier dispatch-Funktionen, die Funktion `promote_vec` mit dem
+CAS und dem *Verlierer*-Zweig (die Stelle, wo `actual` sich von `shared` unterscheidet —
+ein klassischer Bug), und `slice` als clone-dann-verengen. Der geschlossene Kreis:
+`slice` *befolgt* das invariant „VEC wird nie geschnitten" nicht nur — es *erzwingt*
+dieses invariant durch Struktur, und genau dieses invariant macht das Wiederherstellen
+von `cap` per Arithmetik sicher.
+
 ## Wie man liest
 
 Der Reihe nach — jeder Teil baut direkt auf dem auf, was der vorherige gerade
@@ -65,10 +97,33 @@ nächste aufgreift.
 
 ## Umfang
 
-Die Serie handelt vom *Entwurf*, nicht von Implementierungsdetails. Wir lassen
-absichtlich ein paar reine Code-Dinge weg (genaue Funktionssignaturen, ein paar
-`Layout`-Feinheiten, einen Bit-Packing-Trick zum Speichersparen). Die ergeben sich
-von selbst, sobald man sich hinsetzt und schreibt — wenn man die fünf Teile hat.
+Der Entwurfsteil (1–5) handelt vom *warum* und lässt Code-Details absichtlich weg,
+damit das Modell klar hervortritt. Der Implementierungsteil (6–8) greift genau diese
+Details wieder auf — Funktionssignaturen, die ordering-Disziplin des refcounts, den
+Bit-Packing-Trick, den CAS-Wettlauf — und schreibt sie so weit aus, dass du sie
+mittippen kannst. Willst du nur den Entwurf *verstehen*, ist Teil 5 ein vollständiger
+Abschluss; willst du `Bytes` *neu schreiben*, geh die letzten drei Teile weiter.
+
+## Glossar (schnelles Nachschlagen)
+
+Wir behalten die englischen Terms bei; hier eine einzeilige Bedeutungsübersetzung,
+damit du den Artikel nicht zum Nachschlagen verlassen musst:
+
+- **`deref`** — die slice `&[u8]` aus einer `Bytes` holen (über das `Deref`-Trait). Der
+  *Lese*-Pfad, billig und ohne den Besitz-Teil anzufassen.
+- **refcount** — der Zähler, wie viele handles sich einen buffer teilen; bei 0 wird
+  freigegeben.
+- **CAS** (*compare-and-swap*) — die atomare Operation „wenn du noch X bist, mach Y
+  daraus", ohne dass ein Thread dazwischenrutscht. Das Fundament lock-freier
+  Aktualisierungen.
+- **`Release` / `Acquire`** — ein Paar von *Memory-Ordering*-Labeln: die eine Seite
+  *veröffentlicht*, die andere *abonniert*; sie wirken nur als Paar auf derselben
+  Variable.
+- **UB** (*undefined behavior*) — undefiniertes Verhalten; ist es einmal eingetreten,
+  darf der Compiler *alles* tun, und der Fehler bleibt meist still.
+- **`Miri`** — ein Interpreter, der Rust-Code unter einem schwachen Speichermodell
+  ausführt, um UB in `unsafe`-Code (use-after-free, double-free, data race) zu *fangen*,
+  das `cargo test` übersieht.
 
 *English: [`../en/00_index.md`](../en/00_index.md) · Tiếng Việt:
 [`../vi/00_index.md`](../vi/00_index.md) · 简体中文: [`../zh/00_index.md`](../zh/00_index.md)*

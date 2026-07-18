@@ -66,6 +66,13 @@ G10. **Concept cadence honored** (`../concept_cadence.md`) — if this week sits
    concept in the ledger, the scheduled small touchpoint is folded in (real component, not throwaway). Reject
    if a drought-window week ignores its due touchpoint.
 
+G11. **Rebuild Ladder honored** (`../rebuild_ladder.md`) — if this week has one or more reps DUE per the ladder,
+   it carries a `**Sunday — 🔁 Rebuild Day**` block listing exactly those items (rep#/tier/source-week/file/oracle),
+   as a full ~5h pure-rebuild day (no weekly summary — the rebuild supersedes it). Reject if a due-week omits its
+   Sunday block, lists the wrong items, or pads the day with summary/retro filler. A cold-rebuild artifact is an
+   APEX (memory ordering / lock-free / CAS / loom / custom sync) or CORE (unsafe / raw-ptr / Layout / vtable /
+   Pin / variance) Build — never pure logic. This supersedes G8's "Sunday ritual" for rebuild weeks.
+
 ## QUALITY signals (don't block alone, but note them; many minor misses ⇒ reject)
 - Numbers are specific and correct (cliff ratios, sizes, alignments per target arch).
 - Pre-mortem interleavings are concrete enough to be falsifiable.

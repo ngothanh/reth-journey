@@ -14,7 +14,12 @@ mảnh nào từ trên trời rơi xuống; mỗi quyết định đều bị *�
 Bạn không cần biết trước `Bytes`, `BytesMut`, hay `freeze` là gì — Phần 1 sẽ dựng
 mọi thứ từ số 0.
 
-## Loạt bài gồm năm phần
+Loạt bài chia hai chặng: **Phần 1–5 là *thiết kế*** (vì sao `Bytes` có hình dạng
+như vậy), **Phần 6–8 là *hiện thực*** (ngồi viết đúng từng hàm vtable, `from_vec`,
+`slice`, cùng những chi tiết code mà chặng thiết kế cố tình để dành: kỷ luật memory
+ordering của refcount, mẹo nhồi-bit, và cuộc đua promotion).
+
+## Chặng thiết kế — năm phần
 
 **[Phần 1 — Một byte đi từ dây mạng vào chương trình.](01_the_problem.md)**
 Ta dựng bối cảnh: một chương trình mạng hứng dữ liệu, cần một buffer ghi-được
@@ -51,6 +56,29 @@ mỗi khái niệm gắn với một vấn đề cụ thể ta đang thật sự
 lý thuyết suông. Khép lại bằng năm câu hỏi có thể mang sang mọi bài toán systems sau
 này.
 
+## Chặng hiện thực — ba phần
+
+**[Phần 6 — Từ mô hình xuống code: `static` và `shared`.](06_static_and_shared.md)**
+Viết bốn hàm vtable đầu tiên. `static` là bài khởi động (một hàm `drop` rỗng chính là
+"free 0 lần"). `shared` chỉ khó đúng một chỗ, nhưng chỗ đó là bài học ordering quan
+trọng mà chặng thiết kế chưa chạm: `share_drop` phải chống *free-while-read* — giải
+phóng buffer trong khi thread khác còn đọc — bằng `Release` khi giảm counter và một
+`fence(Acquire)` trước khi giải phóng. Ta đối chiếu nó với ordering *publish* của
+Phần 5 để thấy hai mối nguy khác nhau.
+
+**[Phần 7 — `from_vec` và mẹo nhồi-bit.](07_from_vec_and_bit_tagging.md)**
+Làm sao một ô 8 byte (`data`) vừa chứa con trỏ buffer vừa chứa con trỏ counter, và
+phân biệt được hai loại? Mẹo mượn *bit thấp nhất*, tóm trong một câu: **VEC lẻ, ARC
+chẵn**. Vì buffer `u8` có thể chẵn hoặc lẻ, ta cần *hai* vtable (`EVEN`/`ODD`) — và
+bài này chỉ ra vì sao một vtable là *không đủ thông tin*, chứ không phải lười.
+
+**[Phần 8 — promotable đầy đủ, và `slice` O(1).](08_promotable_and_slice.md)**
+Ráp tất cả: bốn hàm dispatch, hàm `promote_vec` với cú CAS và nhánh *thua cuộc* (chỗ
+`actual` khác `shared` — bug kinh điển), và `slice` clone-rồi-thu-hẹp. Điểm khép kín:
+`slice` không chỉ *tuân* invariant "VEC không bao giờ bị cắt" — nó *thực thi* invariant
+đó bằng cấu trúc, và chính invariant ấy khiến việc khôi phục `cap` bằng số học là an
+toàn.
+
 ## Đọc thế nào
 
 Đọc tuần tự — phần sau dựa trực tiếp vào cái phần trước vừa dựng. Mỗi phần dài
@@ -59,9 +87,27 @@ mà phần sau sẽ nhặt lên.
 
 ## Phạm vi
 
-Loạt bài bàn về *thiết kế*, không phải chi tiết cài đặt. Ta cố tình bỏ qua vài thứ
-chỉ liên quan tới code (chữ ký hàm chính xác, vài mẹo về `Layout`, một thủ thuật
-nhồi-bit để tiết kiệm bộ nhớ). Những cái đó tự lộ ra khi bạn ngồi viết, nếu đã nắm
-được năm phần này.
+Chặng thiết kế (1–5) bàn về *vì sao*, cố tình bỏ qua chi tiết code để mô hình hiện ra
+rõ. Chặng hiện thực (6–8) nhặt lại đúng những chi tiết đó — chữ ký hàm, kỷ luật
+ordering của refcount, mẹo nhồi-bit, cuộc đua CAS — và viết chúng ra đủ để bạn gõ
+theo. Nếu bạn chỉ muốn *hiểu* thiết kế, đọc tới Phần 5 là trọn vẹn; nếu muốn *viết
+lại* `Bytes`, đi tiếp ba phần cuối.
+
+## Thuật ngữ (tra nhanh khi cần)
+
+Ta giữ nguyên các term tiếng Anh; đây là bản dịch nghĩa một dòng để bạn khỏi rời bài
+đi tra:
+
+- **`deref`** — lấy ra slice `&[u8]` từ một `Bytes` (qua trait `Deref`). Đường *đọc*
+  dữ liệu, rẻ và không đụng gì tới phần sở hữu.
+- **refcount** — bộ đếm số handle đang cùng chia sẻ một buffer; về 0 thì giải phóng.
+- **CAS** (*compare-and-swap*) — thao tác nguyên tử "nếu mày vẫn là X thì đổi thành
+  Y", không thread nào chen giữa. Nền tảng của cập nhật lock-free.
+- **`Release` / `Acquire`** — cặp nhãn *memory ordering*: một bên *công bố*, một bên
+  *đăng ký nhận*; chúng chỉ có tác dụng khi đi thành cặp trên cùng một biến.
+- **UB** (*undefined behavior*) — hành vi không xác định; một khi dính, compiler được
+  phép làm *bất cứ gì*, và cái sai thường im lặng.
+- **`Miri`** — trình thông dịch chạy code Rust dưới mô hình bộ nhớ yếu, để *bắt* UB
+  trong code `unsafe` (use-after-free, double-free, data race) mà `cargo test` bỏ sót.
 
 *English version: [`../en/00_index.md`](../en/00_index.md)*

@@ -18,29 +18,41 @@ pub struct Bytes {
 unsafe impl Send for Bytes {}
 unsafe impl Sync for Bytes {}
 
+// Equality/hashing are BY CONTENT (via the deref'd slice), never by pointer identity —
+// two Bytes over equal bytes must compare equal and hash the same, even if they back
+// different allocations. This is what lets Bytes be a HashMap key.
 impl PartialEq for Bytes {
     fn eq(&self, other: &Self) -> bool {
-        todo!()
+        **self == **other
     }
 }
 
 impl Eq for Bytes {}
 
+impl PartialEq<[u8]> for Bytes {
+    fn eq(&self, other: &[u8]) -> bool {
+        **self == *other
+    }
+}
+
 impl Hash for Bytes {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        todo!()
+        (**self).hash(state);
     }
 }
 
 impl Debug for Bytes {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        todo!()
+        // Reuse the hex Display form: Bytes(0x0aff)
+        write!(f, "Bytes(")?;
+        Display::fmt(self, f)?;
+        write!(f, ")")
     }
 }
 
 impl Default for Bytes {
     fn default() -> Self {
-        todo!()
+        Bytes::from_static(&[])
     }
 }
 
@@ -440,5 +452,212 @@ impl FromStr for Bytes {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         crate::hex::decode_to_vec(s).map(Bytes::from_vec)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_static_exposes_the_underlying_bytes() {
+        let b = Bytes::from_static(b"hello");
+        assert_eq!(&*b, b"hello");
+        assert_eq!(b.len(), 5);
+        assert!(!b.is_empty());
+    }
+
+    #[test]
+    fn from_static_empty_is_empty() {
+        let b = Bytes::from_static(&[]);
+        assert!(b.is_empty());
+        assert_eq!(b.len(), 0);
+        assert_eq!(&*b, &[] as &[u8]);
+    }
+
+    #[test]
+    fn clone_of_static_is_cheap_and_equal() {
+        let b = Bytes::from_static(b"static");
+        let c = b.clone();
+        assert_eq!(&*b, &*c);
+    }
+
+    #[test]
+    fn slice_of_static_yields_subrange() {
+        let b = Bytes::from_static(b"0123456789");
+        assert_eq!(&*b.slice(2..5), b"234");
+        assert_eq!(&*b.slice(..), b"0123456789");
+        assert_eq!(&*b.slice(7..), b"789");
+    }
+
+    // ── owned (from_vec) representation ────────────────────────────────────
+    #[test]
+    fn from_vec_roundtrips_contents() {
+        let b = Bytes::from_vec(vec![1, 2, 3, 4, 5]);
+        assert_eq!(&*b, &[1, 2, 3, 4, 5]);
+        assert_eq!(b.len(), 5);
+    }
+
+    #[test]
+    fn from_vec_empty_routes_to_empty_repr() {
+        let b = Bytes::from_vec(Vec::new());
+        assert!(b.is_empty());
+        assert_eq!(&*b, &[] as &[u8]);
+    }
+
+    #[test]
+    fn clone_of_owned_shares_contents() {
+        let b = Bytes::from_vec(vec![9, 8, 7]);
+        let c = b.clone(); // first clone promotes b to shared
+        assert_eq!(&*b, &*c);
+        assert_eq!(&*c, &[9, 8, 7]);
+    }
+
+    #[test]
+    fn owned_clone_outlives_the_original() {
+        let c = {
+            let b = Bytes::from_vec(vec![10, 20, 30]);
+            let c = b.clone();
+            drop(b); // original gone, backing must survive via refcount
+            c
+        };
+        assert_eq!(&*c, &[10, 20, 30]);
+    }
+
+    // ── slice sharing ──────────────────────────────────────────────────────
+    #[test]
+    fn slice_of_owned_returns_subrange() {
+        let b = Bytes::from_vec((0u8..10).collect());
+        assert_eq!(&*b.slice(3..7), &[3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn slice_empty_range_is_empty() {
+        let b = Bytes::from_vec(vec![1, 2, 3]);
+        assert!(b.slice(1..1).is_empty());
+    }
+
+    #[test]
+    fn nested_slices_stay_correct() {
+        let b = Bytes::from_vec((0u8..20).collect());
+        let s = b.slice(5..15); // [5..15]
+        assert_eq!(&*s.slice(2..4), &[7, 8]); // [7..9] of the original
+    }
+
+    #[test]
+    #[should_panic]
+    fn slice_end_past_len_panics() {
+        let b = Bytes::from_static(b"abc");
+        let _ = b.slice(0..99);
+    }
+
+    #[test]
+    #[should_panic]
+    fn slice_start_after_end_panics() {
+        let b = Bytes::from_static(b"abcdef");
+        #[allow(clippy::reversed_empty_ranges)]
+        let _ = b.slice(4..2);
+    }
+
+    // ── constructors / helpers ─────────────────────────────────────────────
+    #[test]
+    fn concat_joins_all_parts() {
+        let b = Bytes::concat([&b"ab"[..], &b"cd"[..], &b"ef"[..]]);
+        assert_eq!(&*b, b"abcdef");
+    }
+
+    #[test]
+    fn map_chunks_transforms_each_chunk() {
+        let b = Bytes::from_vec((0u8..6).collect());
+        let out = b.map_chunks(2, |c| Bytes::from_vec(c.to_vec()));
+        assert_eq!(&*out, &[0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn display_formats_as_0x_hex() {
+        let b = Bytes::from_static(&[0x0a, 0xff, 0x00]);
+        assert_eq!(format!("{b}"), "0x0aff00");
+    }
+
+    #[test]
+    fn from_str_parses_hex() {
+        let b: Bytes = "0x0aff".parse().unwrap();
+        assert_eq!(&*b, &[0x0a, 0xff]);
+    }
+
+    #[test]
+    fn view_borrows_the_same_bytes() {
+        let b = Bytes::from_vec(vec![1, 2, 3]);
+        assert_eq!(b.view().as_ref(), &[1, 2, 3]);
+    }
+
+    // ── content-based traits ───────────────────────────────────────────────
+    #[test]
+    fn equality_is_by_content_across_representations() {
+        // same bytes, different backing allocations / representations
+        let owned = Bytes::from_vec(vec![1, 2, 3]);
+        let stat = Bytes::from_static(&[1, 2, 3]);
+        assert_eq!(owned, stat);
+        assert_ne!(owned, Bytes::from_static(&[1, 2, 4]));
+    }
+
+    #[test]
+    fn hash_agrees_with_equality() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(Bytes::from_vec(vec![7, 7]));
+        assert!(set.contains(&Bytes::from_static(&[7, 7])));
+    }
+
+    #[test]
+    fn default_is_empty() {
+        assert!(Bytes::default().is_empty());
+    }
+
+    #[test]
+    fn debug_shows_hex() {
+        let b = Bytes::from_static(&[0x0a, 0xff]);
+        assert_eq!(format!("{b:?}"), "Bytes(0x0aff)");
+    }
+
+    // ── concurrency: exercises the promotion CAS race + refcount ordering ──
+    // Run repeatedly and under Miri/loom to shake out ordering bugs:
+    //   cargo +nightly miri test concurrent
+    #[test]
+    fn concurrent_first_clones_race_promotion_safely() {
+        let original = Bytes::from_vec((0u8..64).collect());
+        std::thread::scope(|s| {
+            let handles: Vec<_> = (0..16)
+                .map(|_| {
+                    s.spawn(|| {
+                        // all threads clone the SAME handle → concurrent promote_vec
+                        let c = original.clone();
+                        assert_eq!(c.len(), 64);
+                        c
+                    })
+                })
+                .collect();
+            for h in handles {
+                let c = h.join().unwrap();
+                assert_eq!(&*c, &(0u8..64).collect::<Vec<_>>()[..]);
+            }
+        });
+        // original still valid after every clone dropped
+        assert_eq!(&*original, &(0u8..64).collect::<Vec<_>>()[..]);
+    }
+
+    #[test]
+    fn clones_dropped_across_threads_free_exactly_once() {
+        let original = Bytes::from_vec(vec![1, 2, 3, 4]);
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                let c = original.clone();
+                s.spawn(move || {
+                    assert_eq!(&*c, &[1, 2, 3, 4]);
+                    drop(c);
+                });
+            }
+        });
+        assert_eq!(&*original, &[1, 2, 3, 4]);
     }
 }

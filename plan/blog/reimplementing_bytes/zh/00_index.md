@@ -12,7 +12,11 @@ handle）**。如果你用过 Rust 的 `bytes` crate、Facebook 的 `IOBuf`，�
 
 你不需要事先知道 `Bytes`、`BytesMut` 或 `freeze` 是什么——第 1 部分会从零把一切搭起来。
 
-## 五个部分
+这个系列分两段：**第 1–5 部分是*设计***（为什么 `Bytes` 长成这样），**第 6–8 部分是*实
+现***（动手把每个 vtable 函数、`from_vec`、`slice` 都写对，连同设计阶段有意留下的那些代码
+细节：refcount 的 memory ordering 纪律、bit 打包的技巧，以及 promotion 竞争）。
+
+## 设计阶段——五个部分
 
 **[第 1 部分——一个字节从网线到程序的旅程。](01_the_problem.md)**
 我们搭好背景：一个网络程序把数据收进来，需要一个可写的缓冲区（`BytesMut`），然后要通过一
@@ -42,6 +46,26 @@ handle）**。如果你用过 Rust 的 `bytes` crate、Facebook 的 `IOBuf`，�
 ordering）——但这一次每个概念都挂在一个我们真正必须解决的具体问题上，而不是空谈理论。结尾
 给出五个问题，你可以把它们带到往后任何系统编程的难题里。
 
+## 实现阶段——三个部分
+
+**[第 6 部分——从模型到代码：`static` 和 `shared`。](06_static_and_shared.md)**
+写头四个 vtable 函数。`static` 是热身（一个空的 `drop` 函数正是"free 0 次"）。`shared`
+只有一个地方难，但那个地方是设计阶段还没触及的一课重要 ordering：`share_drop` 必须防
+*free-while-read*——在别的 thread 还在读时释放 buffer——靠减 counter 时用 `Release` 和释
+放前的一个 `fence(Acquire)`。我们把它和第 5 部分的 *publish* ordering 对照，看清两种不同
+的危险。
+
+**[第 7 部分——`from_vec` 和 bit 打包的技巧。](07_from_vec_and_bit_tagging.md)**
+怎么让一个 8 字节的格子（`data`）既装 buffer 指针又装 counter 指针，还能区分两类？借*最低
+位*的技巧，一句话概括：**VEC 奇，ARC 偶**。因为 `u8` buffer 可能是偶数也可能是奇数，我们
+需要*两张* vtable（`EVEN`/`ODD`）——而这篇指出为什么一张 vtable 是*信息不够*，而不是偷懒。
+
+**[第 8 部分——完整的 promotable，以及 O(1) 的 `slice`。](08_promotable_and_slice.md)**
+把所有东西拼起来：四个 dispatch 函数，带 CAS 和*败者*分支的 `promote_vec` 函数（`actual`
+不同于 `shared` 的那处——经典 bug），以及 clone-再-收窄的 `slice`。闭环之处：`slice` 不只
+*遵守*"VEC 永远不会被切"这条 invariant——它靠结构*执行*了那条 invariant，而正是这条
+invariant 让用算术恢复 `cap` 变得安全。
+
 ## 怎么读
 
 按顺序读——每一部分都直接建立在上一部分刚立起来的东西上。每部分约 15 分钟，自成一体，从上一
@@ -49,9 +73,26 @@ ordering）——但这一次每个概念都挂在一个我们真正必须解决
 
 ## 范围
 
-这个系列讲的是*设计*，不是实现细节。我们有意略过一些纯代码的东西（精确的函数签名、几处
-`Layout` 的细节、一个省内存的位打包（bit-packing）小技巧）。只要你掌握了这五部分，坐下来
-写的时候这些自然会浮现。
+设计阶段（1–5）讲的是*为什么*，有意略过代码细节，好让模型清楚地显出来。实现阶段（6–8）把
+那些细节一一捡回来——函数签名、refcount 的 ordering 纪律、bit 打包的技巧、CAS 竞争——并写
+到你能照着敲的程度。如果你只想*理解*设计，读到第 5 部分就完整了；如果想*重写* `Bytes`，就
+继续走最后三部分。
+
+## 术语速查（需要时快速查）
+
+我们保留英文术语；这里给出一行中文释义，省得你离开正文去查：
+
+- **`deref`** — 从一个 `Bytes` 取出 `&[u8]` slice（通过 `Deref` trait）。这是*读*数据
+  的路径，便宜，不碰拥有权部分。
+- **refcount** — 记录有多少 handle 正共享同一个 buffer 的计数器；归 0 就释放。
+- **CAS**（*compare-and-swap*）——"如果你还是 X 就换成 Y"的原子操作，没有哪个 thread 能
+  插在中间。lock-free 更新的基础。
+- **`Release` / `Acquire`** — 一对*内存序（memory ordering）*标签：一边*发布*，一边*订
+  阅接收*；它们只有成对作用在同一个变量上才有效。
+- **UB**（*undefined behavior*）——未定义行为；一旦沾上，编译器就被允许做*任何事*，而出
+  错往往是悄无声息的。
+- **`Miri`** — 一个在弱内存模型下运行 Rust 代码的解释器，用来*抓* `unsafe` 代码里的 UB
+  （use-after-free、double-free、data race），这些正是 `cargo test` 会漏掉的。
 
 *English: [`../en/00_index.md`](../en/00_index.md) · Tiếng Việt:
 [`../vi/00_index.md`](../vi/00_index.md) · Deutsch: [`../de/00_index.md`](../de/00_index.md)*

@@ -10,6 +10,13 @@ the consensus-backbone interface, and the BFT apex is applied there).
 
 **Format**: one file per week, named `WNNN.md` (zero-padded). Open the week you're working on.
 
+**Cross-cutting spaced systems** (scheduled INTO the week files, tracked in their own ledgers):
+- 🧮 **Paper Drills** ([`.rework/PAPER_DRILLS.md`](.rework/PAPER_DRILLS.md), rubric G9) — by-hand derivation in each Build's Phase 1.
+- 🔁 **Concept Cadence** ([`concept_cadence.md`](concept_cadence.md), rubric G10) — spaced re-*recognition* of concepts.
+- 🔁 **Rebuild Ladder** ([`rebuild_ladder.md`](rebuild_ladder.md), rubric G11) — spaced re-*implementation from a blank file* of the
+  44 core unsafe/concurrency artifacts (APEX 4 reps, CORE 3 reps), on a weekly **Sunday Rebuild Day** (one full ~5h day,
+  pure rebuild — no summary). Converts *understand-when-shown* → *produce-from-blank*. **99 weeks carry a Sunday block.**
+
 ---
 
 ## ⚠️ v3 migration status (read before opening any week file ≥ W73)
