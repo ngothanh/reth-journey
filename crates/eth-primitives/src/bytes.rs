@@ -1,12 +1,12 @@
 use crate::PrimitivesError;
-use alloc::sync::Arc;
-use core::fmt::{Display, Formatter};
+use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Bound, Deref, RangeBounds};
 use core::ptr;
 use core::ptr::NonNull;
 use core::str::FromStr;
 use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use core::hash::{Hash, Hasher};
 
 pub struct Bytes {
     ptr: NonNull<u8>,
@@ -17,6 +17,32 @@ pub struct Bytes {
 
 unsafe impl Send for Bytes {}
 unsafe impl Sync for Bytes {}
+
+impl PartialEq for Bytes {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
+}
+
+impl Eq for Bytes {}
+
+impl Hash for Bytes {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        todo!()
+    }
+}
+
+impl Debug for Bytes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        todo!()
+    }
+}
+
+impl Default for Bytes {
+    fn default() -> Self {
+        todo!()
+    }
+}
 
 struct Vtable {
     clone: unsafe fn(&AtomicPtr<()>, *const u8, usize) -> Bytes,
@@ -50,13 +76,6 @@ static STATIC_VTABLE: Vtable = Vtable {
     drop: static_drop,
 };
 
-// Two vtables for the not-yet-promoted (KIND_VEC) state. Which one a Bytes gets is
-// chosen in `from_vec` by the real low bit of the buffer pointer:
-//   EVEN  → buffer ptr had low bit 0. We set the bit to mark KIND_VEC, so recovering
-//           the real ptr means MASKING the low bit off:  (ctx & !KIND_MASK).
-//   ODD   → buffer ptr had low bit 1 already (== KIND_VEC coincidentally). We store it
-//           verbatim, so recovering the real ptr is just `ctx` as-is (NO masking).
-// Both treat `ctx & KIND_MASK == KIND_ARC` as "already promoted → act like SHARE".
 static PROMOTABLE_EVEN_VTABLE: Vtable = Vtable {
     clone: promotable_even_clone,
     drop: promotable_even_drop,
@@ -90,9 +109,6 @@ fn share_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
     unsafe { shallow_clone_arc(shared, ptr, len) }
 }
 
-// Reusable: given a pointer to an EXISTING Shared, bump its refcount and hand back a
-// SHARE_VTABLE Bytes viewing (ptr, len). Both share_clone and the promotable "already
-// promoted" branch call this. Caller guarantees `shared` is a live `*mut Shared`.
 unsafe fn shallow_clone_arc(shared: *mut Shared, ptr: *const u8, len: usize) -> Bytes {
     unsafe {
         let old = (*shared).ref_count.fetch_add(1, Ordering::Relaxed);
@@ -137,7 +153,7 @@ fn promotable_even_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Byt
 
 fn promotable_odd_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
     let tagged = ctx.load(Ordering::Acquire);
-    if tagged as usize & KIND_MASK == KIND_VEC {
+    if tagged as usize & KIND_MASK == KIND_ARC {
         unsafe { shallow_clone_arc(tagged as *mut Shared, ptr, len) }
     } else {
         let buf = tagged as *mut u8;
@@ -147,7 +163,7 @@ fn promotable_odd_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Byte
 
 fn promotable_even_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, len: usize) {
     let tagged = *ctx.get_mut();
-    if tagged as usize & KIND_MASK == KIND_VEC {
+    if tagged as usize & KIND_MASK == KIND_ARC {
         unsafe {
             release_shared(tagged as *mut Shared);
         }
@@ -161,7 +177,7 @@ fn promotable_even_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, len: usize) {
 
 fn promotable_odd_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, len: usize) {
     let tagged = *ctx.get_mut();
-    if tagged as usize & KIND_MASK == KIND_VEC {
+    if tagged as usize & KIND_MASK == KIND_ARC {
         unsafe {
             release_shared(tagged as *mut Shared);
         }
@@ -201,7 +217,7 @@ unsafe fn promote_vec(
             },
             Err(actual) => {
                 drop(Box::from_raw(shared));
-                shallow_clone_arc(shared, ptr, len)
+                shallow_clone_arc(actual as *mut Shared, ptr, len)
             }
         }
     }
@@ -227,7 +243,7 @@ impl Bytes {
         let boxed: Box<[u8]> = bytes.into_boxed_slice();
         let len = boxed.len();
         let buf = Box::into_raw(boxed) as *mut u8;
-        if buf as usize & KIND_MASK == KIND_ARC {
+        if buf as usize & KIND_MASK == 0 {
             let ctx = (buf as usize | KIND_VEC) as *mut ();
             unsafe {
                 Bytes {
@@ -300,7 +316,7 @@ impl Bytes {
     }
 
     pub fn view(&self) -> BytesView<'_> {
-        BytesView(&self)
+        BytesView(self.as_ref())
     }
 
     pub fn map_chunks<F>(&self, chunk_size: usize, f: F) -> Self
@@ -335,7 +351,7 @@ impl Display for Bytes {
 
 impl AsRef<[u8]> for Bytes {
     fn as_ref(&self) -> &[u8] {
-        &self
+        &**self
     }
 }
 
