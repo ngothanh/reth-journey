@@ -1,12 +1,12 @@
 use crate::PrimitivesError;
 use core::fmt::{Debug, Display, Formatter};
+use core::hash::{Hash, Hasher};
 use core::ops::{Bound, Deref, RangeBounds};
 use core::ptr;
 use core::ptr::NonNull;
 use core::str::FromStr;
 use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::hash::{Hash, Hasher};
 
 pub struct Bytes {
     ptr: NonNull<u8>,
@@ -458,6 +458,7 @@ impl FromStr for Bytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::BytesMut;
 
     #[test]
     fn from_static_exposes_the_underlying_bytes() {
@@ -659,5 +660,15 @@ mod tests {
             }
         });
         assert_eq!(&*original, &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn zero_copy() {
+        let mut bytes_mut = BytesMut::new(1024);
+        bytes_mut.extend_from_slice(b"payload");
+        let prev_ptr = bytes_mut.as_ptr();
+        let bytes = bytes_mut.freeze();
+
+        assert_eq!(bytes.as_ptr(), prev_ptr);
     }
 }

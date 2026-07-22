@@ -23,12 +23,6 @@ impl BytesMut {
         Self { ptr, cap, len: 0 }
     }
 
-    // TODO(W5-Wed): freeze is NOT zero-copy today. `Bytes` wraps `Arc<[u8]>`, so the
-    // `Vec<u8>` we hand to `Bytes::from_raw_parts` goes through `Arc::from(Vec<u8>)` which
-    // allocates a fresh refcount+slice block and memcpys the contents — freeze() is O(n)
-    // plus one alloc + one free of the original buffer. To make it true O(1) handoff,
-    // `Bytes` needs a variant that owns a raw (ptr, len, cap) and frees it on drop
-    // (mirror `bytes::Bytes`' vtable dispatch). Scheduled: W5 Wed — see plan/W005.md.
     pub fn freeze(self) -> Bytes {
         let ptr = self.ptr;
         let len = self.len;
@@ -94,6 +88,10 @@ impl BytesMut {
 
     pub fn is_empty(&self) -> bool {
         self.len == 0
+    }
+
+    pub fn as_ptr(&self) -> *const u8 {
+        self.ptr.as_ptr()
     }
 }
 
