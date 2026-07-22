@@ -55,16 +55,19 @@ ordering）——但这一次每个概念都挂在一个我们真正必须解决
 放前的一个 `fence(Acquire)`。我们把它和第 5 部分的 *publish* ordering 对照，看清两种不同
 的危险。
 
-**[第 7 部分——`from_vec` 和 bit 打包的技巧。](07_from_vec_and_bit_tagging.md)**
-怎么让一个 8 字节的格子（`data`）既装 buffer 指针又装 counter 指针，还能区分两类？借*最低
-位*的技巧，一句话概括：**VEC 奇，ARC 偶**。因为 `u8` buffer 可能是偶数也可能是奇数，我们
-需要*两张* vtable（`EVEN`/`ODD`）——而这篇指出为什么一张 vtable 是*信息不够*，而不是偷懒。
+**[第 7 部分——最简单的一版：zero-copy、zero-alloc 的 `freeze`。](07_from_vec_and_bit_tagging.md)**
+搭出恰好满足当前需求的*能跑的最小版*。关键：对一个还没 slice 的单主 handle，`self.ptr` *本
+就是* buffer 的 base，所以 `ctx` 空出来可以直接把 `cap` pack 进去——**一张 `OWNED_VTABLE`，
+没有 EVEN/ODD**。全套：`from_vec`（保留 cap，不 realloc）、`promote_owned`（CAS + 败者分
+支）、`slice` *执行* `self.ptr == buf` 这条 invariant。结果：`freeze` zero-copy **且**
+zero-alloc，Miri strict 干净。
 
-**[第 8 部分——完整的 promotable，以及 O(1) 的 `slice`。](08_promotable_and_slice.md)**
-把所有东西拼起来：四个 dispatch 函数，带 CAS 和*败者*分支的 `promote_vec` 函数（`actual`
-不同于 `shared` 的那处——经典 bug），以及 clone-再-收窄的 `slice`。闭环之处：`slice` 不只
-*遵守*"VEC 永远不会被切"这条 invariant——它靠结构*执行*了那条 invariant，而正是这条
-invariant 让用算术恢复 `cap` 变得安全。
+**[第 8 部分——当需求长出来：advance、lazy-promote、trilemma。](08_promotable_and_slice.md)**
+现实会长出更多需求。*一个一个*地加，看什么会崩：**就地 `advance`**（何时需要、为什么
+cap-in-ctx 会崩、以及两条修法——EVEN/ODD *正是存指针的代价*，或者 refcount-从头），然后是
+把 **lazy-promote** 当作硬约束。把*每一种* `ctx` 编码并排列出，并以 **trilemma** 收尾：
+{lazy-promote、`advance`、zero-alloc-freeze}——4 个字里只能得 2 个。"对"的设计 = *你的*需
+求。
 
 ## 怎么读
 

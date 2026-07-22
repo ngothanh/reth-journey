@@ -17,21 +17,23 @@ Cả chặng hiện thực xoay quanh một động tác: mỗi hàm vtable đ�
 repr nào, rồi rẽ. Neo cái này trong đầu trước khi vào code:
 
 ```
-vtable = STATIC       ctx = null              clone: copy struct   · drop: no-op        (free 0 lần)
+vtable = STATIC       ctx = null                  clone: copy struct   · drop: no-op        (free 0 lần)
 
-vtable = SHARE        ctx = *mut Shared       clone: +refcount     · drop: -refcount    (free 1 lần)
+vtable = SHARE        ctx = *mut Shared           clone: +refcount     · drop: -refcount    (free 1 lần)
 
-vtable = PROMOTABLE   ctx LẺ  (KIND_VEC)      clone: promote_vec   · drop: free_boxed_slice
-                      ctx CHẴN (KIND_ARC)     clone/drop: đi qua Shared (như hàng SHARE)
+vtable = OWNED        ctx LẺ  (cap<<1|1)          clone: promote_owned · drop: dealloc(self.ptr, cap)
+                      ctx CHẴN (*mut Shared)      clone/drop: đi qua Shared (như hàng SHARE)
 
      chuyển trạng thái DUY NHẤT, một chiều:
-        PROMOTABLE/VEC ──(clone lần đầu: promote_vec, CAS)──► PROMOTABLE/ARC
+        OWNED (cap trong ctx) ──(clone lần đầu: promote_owned, CAS)──► OWNED/ARC (Shared trong ctx)
 ```
 
-Phần 6 viết hai hàng đầu (`STATIC`, `SHARE`). Phần 7 lo cách *encode* `ctx` cho
-`PROMOTABLE` (mẹo lẻ/chẵn). Phần 8 viết cú chuyển trạng thái (`promote_vec`) và hai
-hàm `PROMOTABLE`. Nhớ: `vtable` đóng băng lúc sinh ra; chỉ *bit KIND trong `ctx`* đổi
-khi promote — nên "PROMOTABLE/ARC" vẫn dùng vtable promotable, chỉ rẽ sang nhánh
+Phần 6 viết hai hàng đầu (`STATIC`, `SHARE`). **Phần 7 xây trọn hàng `OWNED`** — bản
+đơn giản nhất đạt zero-copy/zero-alloc `freeze`: encode `cap` vào `ctx`, `promote_owned`,
+`slice`. **Phần 8** thêm những yêu cầu *đời thường* (in-place advance, lazy-promote như
+ràng buộc cứng), cho thấy EVEN/ODD của `bytes` là *cái giá của advance*, và chốt bằng
+**trilemma**. Nhớ: `vtable` đóng băng lúc sinh ra; chỉ *bit thấp của `ctx`* đổi khi
+promote — nên một handle OWNED đã-promote vẫn dùng `OWNED_VTABLE`, chỉ rẽ sang nhánh
 Shared.
 
 ## `static`: bài khởi động
@@ -240,15 +242,17 @@ Bốn hàm xong: `static_*` (0 lần giải phóng), `share_*` (kỷ luật `Rel
 `Release`+`fence(Acquire)` khi giảm). Điểm cốt: ordering của `share_drop` không phải
 cái ordering của Phần 5 — nó chống free-while-read, không phải publish-before-read.
 
-Nhưng ta vẫn chưa *tạo* được một `Bytes` `shared`. Chưa có gì gọi tới `SHARE_VTABLE`.
-Mảnh còn thiếu là `from_vec` — biến một `Vec<u8>` thành `Bytes`. Và đúng lúc viết
-`from_vec`, ta đâm vào cái Phần 5 cố tình để dành trong một ghi chú ngoài lề: làm sao
-*một ô 8 byte* vừa chứa được một con trỏ buffer vừa chứa được một con trỏ `Shared`, và
-phân biệt được hai loại? Đó là mẹo nhồi-bit, và Phần 7 mổ nó tới tận đáy.
+Nhưng ta vẫn chưa *tạo* được một `Bytes` `shared` hay OWNED. Mảnh còn thiếu là
+`from_vec`/`freeze` — và đúng lúc đó ta phải trả lời: *một ô 8 byte* (`ctx`) mã hoá
+trạng thái một-chủ thế nào để `drop`/`clone` làm đúng, mà vẫn phân biệt được với con
+trỏ `Shared`? **Phần 7 xây bản đơn giản nhất** — pack `cap` vào `ctx` — đạt
+zero-copy/zero-alloc `freeze` với đúng một `OWNED_VTABLE`. **Phần 8** mới hỏi "nếu cần
+`advance` thì sao?" — và ở đó *pointer tagging* (EVEN/ODD của `bytes`) mới xuất hiện,
+như cái giá của một yêu cầu mới.
 
 ---
 
-*Tiếp theo: [Phần 7 — `from_vec` và mẹo nhồi-bit](07_from_vec_and_bit_tagging.md) ·
+*Tiếp theo: [Phần 7 — Bản đơn giản nhất: zero-copy `freeze`](07_from_vec_and_bit_tagging.md) ·
 [Mục lục](00_index.md)*
 
 *English: [`../en/06_static_and_shared.md`](../en/06_static_and_shared.md)*

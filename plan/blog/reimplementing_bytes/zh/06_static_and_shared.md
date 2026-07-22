@@ -17,21 +17,23 @@ ordering。
 岔。进代码前先把这个钉在脑子里：
 
 ```
-vtable = STATIC       ctx = null              clone: copy struct   · drop: no-op        (释放 0 次)
+vtable = STATIC       ctx = null                  clone: copy struct   · drop: no-op        (释放 0 次)
 
-vtable = SHARE        ctx = *mut Shared       clone: +refcount     · drop: -refcount    (释放 1 次)
+vtable = SHARE        ctx = *mut Shared           clone: +refcount     · drop: -refcount    (释放 1 次)
 
-vtable = PROMOTABLE   ctx 奇  (KIND_VEC)      clone: promote_vec   · drop: free_boxed_slice
-                      ctx 偶 (KIND_ARC)     clone/drop: 走 Shared（同 SHARE 那行）
+vtable = OWNED        ctx 奇  (cap<<1|1)          clone: promote_owned · drop: dealloc(self.ptr, cap)
+                      ctx 偶 (*mut Shared)        clone/drop: 走 Shared（同 SHARE 那行）
 
      唯一的状态转移，单向：
-        PROMOTABLE/VEC ──(首次 clone: promote_vec, CAS)──► PROMOTABLE/ARC
+        OWNED (cap 在 ctx) ──(首次 clone: promote_owned, CAS)──► OWNED/ARC (Shared 在 ctx)
 ```
 
-第 6 部分写头两行（`STATIC`、`SHARE`）。第 7 部分负责怎么给 `PROMOTABLE` *编码* `ctx`
-（奇/偶的技巧）。第 8 部分写那个状态转移（`promote_vec`）和两个 `PROMOTABLE` 函数。记
-住：`vtable` 在出生时就冻结了；promote 时变的只是 *`ctx` 里的 KIND bit*——所以
-"PROMOTABLE/ARC" 用的仍是 promotable vtable，只是分岔到 Shared 那一支。
+第 6 部分写头两行（`STATIC`、`SHARE`）。**第 7 部分把 `OWNED` 那一行整个搭起来**——满足
+zero-copy/zero-alloc `freeze` 的最简单一版：把 `cap` 编码进 `ctx`、`promote_owned`、
+`slice`。**第 8 部分**加上那些*现实*需求（就地 advance、把 lazy-promote 当硬约束），展示
+`bytes` 的 EVEN/ODD 是 *advance 的代价*，并以 **trilemma** 收尾。记住：`vtable` 在出生时就
+冻结了；promote 时变的只是 *`ctx` 的最低位*——所以一个已 promote 的 OWNED handle 用的仍是
+`OWNED_VTABLE`，只是分岔到 Shared 那一支。
 
 ## `static`：热身
 

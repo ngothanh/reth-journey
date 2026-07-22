@@ -302,7 +302,7 @@ của khối Shared luôn là số chẵn — do quy tắc căn lề của bộ 
 của nó luôn là 0; ta bèn bật bit thấp lên 1 khi cất một con số vào, và chỉ cần nhìn
 bit thấp là biết đang chứa loại nào. Đây thuần túy là một *tối ưu không gian* — thay
 nó bằng một trường riêng để chứa độ dài cũng hoàn toàn đúng, chỉ tốn thêm một từ máy.
-Thư viện `bytes` nhồi bit vì nó đếm từng byte; một bản làm-để-học thì không nhất
+Thư viện `bytes` dùng pointer tagging vì nó đếm từng byte; một bản làm-để-học thì không nhất
 thiết.)
 
 ## Tổng kết: design hoàn chỉnh

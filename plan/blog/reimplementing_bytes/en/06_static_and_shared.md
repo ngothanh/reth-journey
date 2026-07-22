@@ -20,22 +20,24 @@ The whole implementation track revolves around one move: each vtable function re
 into code:
 
 ```
-vtable = STATIC       ctx = null              clone: copy struct   · drop: no-op        (freed 0 times)
+vtable = STATIC       ctx = null                  clone: copy struct   · drop: no-op        (freed 0 times)
 
-vtable = SHARE        ctx = *mut Shared       clone: +refcount     · drop: -refcount    (freed 1 time)
+vtable = SHARE        ctx = *mut Shared           clone: +refcount     · drop: -refcount    (freed 1 time)
 
-vtable = PROMOTABLE   ctx ODD  (KIND_VEC)     clone: promote_vec   · drop: free_boxed_slice
-                      ctx EVEN (KIND_ARC)     clone/drop: go through Shared (like the SHARE row)
+vtable = OWNED        ctx ODD  (cap<<1|1)         clone: promote_owned · drop: dealloc(self.ptr, cap)
+                      ctx EVEN (*mut Shared)      clone/drop: go through Shared (like the SHARE row)
 
      the ONE state transition, one-way:
-        PROMOTABLE/VEC ──(first clone: promote_vec, CAS)──► PROMOTABLE/ARC
+        OWNED (cap in ctx) ──(first clone: promote_owned, CAS)──► OWNED/ARC (Shared in ctx)
 ```
 
-Part 6 writes the first two rows (`STATIC`, `SHARE`). Part 7 handles how to *encode*
-`ctx` for `PROMOTABLE` (the odd/even trick). Part 8 writes the state transition
-(`promote_vec`) and the two `PROMOTABLE` functions. Remember: `vtable` is frozen at
-birth; only the *KIND bit in `ctx`* changes when we promote — so "PROMOTABLE/ARC" still
-uses the promotable vtable, it just branches into the Shared path.
+Part 6 writes the first two rows (`STATIC`, `SHARE`). **Part 7 builds the entire `OWNED`
+row** — the simplest design that achieves zero-copy/zero-alloc `freeze`: encode `cap`
+into `ctx`, `promote_owned`, `slice`. **Part 8** adds the *real-world* requirements
+(in-place advance, lazy-promote as a hard constraint), shows that `bytes`'s EVEN/ODD is
+*the price of advance*, and closes on the **trilemma**. Remember: `vtable` freezes at
+birth; only the *low bit of `ctx`* changes when we promote — so an already-promoted OWNED
+handle still uses `OWNED_VTABLE`, it just branches into the Shared path.
 
 ## `static`: the warm-up
 
@@ -251,15 +253,18 @@ Four functions done: `static_*` (0 frees), `share_*` (`Relaxed` discipline on th
 bump, `Release` + `fence(Acquire)` on the decrement). The core point: `share_drop`'s
 ordering is not Part 5's ordering — it fights free-while-read, not publish-before-read.
 
-But we still can't *create* a `shared` `Bytes`. Nothing calls into `SHARE_VTABLE` yet.
-The missing piece is `from_vec` — turning a `Vec<u8>` into a `Bytes`. And right when we
-write `from_vec`, we hit the thing Part 5 deliberately parked in an aside: how does
-*one 8-byte slot* hold both a buffer pointer and a `Shared` pointer, and tell the two
-apart? That's the bit-packing trick, and Part 7 dissects it all the way down.
+But we still can't *create* a `shared` or OWNED `Bytes`. The missing piece is
+`from_vec`/`freeze` — and right there we have to answer: how does *one 8-byte slot*
+(`ctx`) encode the sole-owner state so `drop`/`clone` do the right thing, while still
+being distinguishable from a `Shared` pointer? **Part 7 builds the simplest design** —
+pack `cap` into `ctx` — achieving zero-copy/zero-alloc `freeze` with exactly one
+`OWNED_VTABLE`. **Part 8** is the one that asks "what if we need `advance`?" — and *there*
+is where *pointer tagging* (`bytes`'s EVEN/ODD) appears, as the price of a new
+requirement.
 
 ---
 
-*Next: [Part 7 — `from_vec` and the bit-packing trick](07_from_vec_and_bit_tagging.md) ·
+*Next: [Part 7 — The simplest design: zero-copy `freeze`](07_from_vec_and_bit_tagging.md) ·
 [Index](00_index.md)*
 
 *Tiếng Việt: [`../vi/06_static_and_shared.md`](../vi/06_static_and_shared.md)*

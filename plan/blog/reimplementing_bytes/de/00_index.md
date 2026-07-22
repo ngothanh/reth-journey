@@ -73,20 +73,22 @@ freigeben, während ein anderer Thread noch liest — mit `Release` beim Verring
 counters und einem `fence(Acquire)` vor der Freigabe. Wir stellen es dem
 *publish*-ordering aus Teil 5 gegenüber, um die zwei verschiedenen Gefahren zu sehen.
 
-**[Teil 7 — `from_vec` und der Bit-Packing-Trick.](07_from_vec_and_bit_tagging.md)**
-Wie kann eine 8-Byte-Zelle (`data`) zugleich einen buffer-Pointer und einen
-counter-Pointer halten und die zwei Arten unterscheiden? Der Trick borgt das *niedrigste
-Bit*, zusammengefasst in einem Satz: **VEC ungerade, ARC gerade**. Weil ein `u8`-buffer
-gerade oder ungerade sein kann, brauchen wir *zwei* vtables (`EVEN`/`ODD`) — und dieser
-Teil zeigt, warum eine vtable *nicht genug Information* ist, nicht etwa Faulheit.
+**[Teil 7 — Die einfachste Variante: zero-copy, zero-alloc `freeze`.](07_from_vec_and_bit_tagging.md)**
+Die *lauffähige Minimalvariante* für genau die aktuellen Anforderungen bauen. Der
+Schlüssel: Bei einem einzeln-besessenen, noch-nicht-geslicten handle *ist* `self.ptr`
+bereits der buffer-Boden, also ist `ctx` frei, um direkt `cap` hineinzupacken — **eine
+`OWNED_VTABLE`, kein EVEN/ODD**. Das ganze Paket: `from_vec` (cap behalten, kein realloc),
+`promote_owned` (CAS + Verlierer-Zweig), `slice`, das das invariant `self.ptr == buf`
+*erzwingt*. Ergebnis: `freeze` zero-copy **und** zero-alloc, Miri strict sauber.
 
-**[Teil 8 — promotable vollständig, und `slice` O(1).](08_promotable_and_slice.md)**
-Alles zusammenfügen: die vier dispatch-Funktionen, die Funktion `promote_vec` mit dem
-CAS und dem *Verlierer*-Zweig (die Stelle, wo `actual` sich von `shared` unterscheidet —
-ein klassischer Bug), und `slice` als clone-dann-verengen. Der geschlossene Kreis:
-`slice` *befolgt* das invariant „VEC wird nie geschnitten" nicht nur — es *erzwingt*
-dieses invariant durch Struktur, und genau dieses invariant macht das Wiederherstellen
-von `cap` per Arithmetik sicher.
+**[Teil 8 — Wenn die Anforderungen wachsen: advance, lazy-promote, trilemma.](08_promotable_and_slice.md)**
+Die echte Welt gebiert weitere Anforderungen. *Eine nach der anderen* hinzufügen und
+sehen, was bricht: **`advance` an Ort und Stelle** (wann nötig, warum cap-in-ctx bricht,
+und zwei Wege es zu reparieren — EVEN/ODD *ist genau der Preis dafür, einen Pointer zu
+speichern*, oder refcount-von-Anfang-an), dann **lazy-promote** als harte Randbedingung.
+*Jede* Kodierung von `ctx` nebeneinander aufgelistet, und Abschluss mit dem **trilemma**:
+{lazy-promote, `advance`, zero-alloc-freeze} — in 4 Wörtern nur 2 möglich. Der „richtige"
+Entwurf = *deine* Anforderungen.
 
 ## Wie man liest
 

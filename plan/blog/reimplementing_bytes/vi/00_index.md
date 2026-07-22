@@ -17,7 +17,7 @@ mọi thứ từ số 0.
 Loạt bài chia hai chặng: **Phần 1–5 là *thiết kế*** (vì sao `Bytes` có hình dạng
 như vậy), **Phần 6–8 là *hiện thực*** (ngồi viết đúng từng hàm vtable, `from_vec`,
 `slice`, cùng những chi tiết code mà chặng thiết kế cố tình để dành: kỷ luật memory
-ordering của refcount, mẹo nhồi-bit, và cuộc đua promotion).
+ordering của refcount, pointer tagging, và cuộc đua promotion).
 
 ## Chặng thiết kế — năm phần
 
@@ -66,18 +66,19 @@ phóng buffer trong khi thread khác còn đọc — bằng `Release` khi giảm
 `fence(Acquire)` trước khi giải phóng. Ta đối chiếu nó với ordering *publish* của
 Phần 5 để thấy hai mối nguy khác nhau.
 
-**[Phần 7 — `from_vec` và mẹo nhồi-bit.](07_from_vec_and_bit_tagging.md)**
-Làm sao một ô 8 byte (`data`) vừa chứa con trỏ buffer vừa chứa con trỏ counter, và
-phân biệt được hai loại? Mẹo mượn *bit thấp nhất*, tóm trong một câu: **VEC lẻ, ARC
-chẵn**. Vì buffer `u8` có thể chẵn hoặc lẻ, ta cần *hai* vtable (`EVEN`/`ODD`) — và
-bài này chỉ ra vì sao một vtable là *không đủ thông tin*, chứ không phải lười.
+**[Phần 7 — Bản đơn giản nhất: zero-copy, zero-alloc `freeze`.](07_from_vec_and_bit_tagging.md)**
+Xây *bản tối thiểu chạy được* cho đúng yêu cầu hiện tại. Chìa khoá: với một handle
+một-chủ chưa-slice, `self.ptr` *đã là* base của buffer, nên `ctx` rảnh để pack thẳng `cap`
+vào — **một `OWNED_VTABLE`, không EVEN/ODD**. Trọn bộ: `from_vec` (giữ cap, không
+realloc), `promote_owned` (CAS + nhánh thua cuộc), `slice` *thực thi* invariant
+`self.ptr == buf`. Kết quả: `freeze` zero-copy **và** zero-alloc, Miri strict sạch.
 
-**[Phần 8 — promotable đầy đủ, và `slice` O(1).](08_promotable_and_slice.md)**
-Ráp tất cả: bốn hàm dispatch, hàm `promote_vec` với cú CAS và nhánh *thua cuộc* (chỗ
-`actual` khác `shared` — bug kinh điển), và `slice` clone-rồi-thu-hẹp. Điểm khép kín:
-`slice` không chỉ *tuân* invariant "VEC không bao giờ bị cắt" — nó *thực thi* invariant
-đó bằng cấu trúc, và chính invariant ấy khiến việc khôi phục `cap` bằng số học là an
-toàn.
+**[Phần 8 — Khi yêu cầu đẻ thêm: advance, lazy-promote, trilemma.](08_promotable_and_slice.md)**
+Đời thật đẻ thêm yêu cầu. Thêm *từng cái*, xem cái gì vỡ: **in-place `advance`** (khi
+nào cần, vì sao cap-in-ctx vỡ, và hai lối sửa — EVEN/ODD *chính là cái giá của việc cất
+con trỏ*, hoặc refcount-từ-đầu), rồi **lazy-promote** như ràng buộc cứng. Liệt kê *mọi*
+cách mã hoá `ctx` cạnh nhau, và chốt bằng **trilemma**: {lazy-promote, `advance`,
+zero-alloc-freeze} — trong 4 từ chỉ được 2. Thiết kế "đúng" = yêu cầu của *bạn*.
 
 ## Đọc thế nào
 
@@ -89,7 +90,7 @@ mà phần sau sẽ nhặt lên.
 
 Chặng thiết kế (1–5) bàn về *vì sao*, cố tình bỏ qua chi tiết code để mô hình hiện ra
 rõ. Chặng hiện thực (6–8) nhặt lại đúng những chi tiết đó — chữ ký hàm, kỷ luật
-ordering của refcount, mẹo nhồi-bit, cuộc đua CAS — và viết chúng ra đủ để bạn gõ
+ordering của refcount, pointer tagging, cuộc đua CAS — và viết chúng ra đủ để bạn gõ
 theo. Nếu bạn chỉ muốn *hiểu* thiết kế, đọc tới Phần 5 là trọn vẹn; nếu muốn *viết
 lại* `Bytes`, đi tiếp ba phần cuối.
 

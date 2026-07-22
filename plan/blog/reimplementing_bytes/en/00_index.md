@@ -68,19 +68,21 @@ must fight *free-while-read* — freeing the buffer while another thread is stil
 — with `Release` on the counter decrement and a `fence(Acquire)` before freeing. We
 contrast it with Part 5's *publish* ordering to see two different hazards.
 
-**[Part 7 — `from_vec` and the bit-packing trick.](07_from_vec_and_bit_tagging.md)**
-How does one 8-byte slot (`data`) hold both a buffer pointer and a counter pointer, and
-tell the two apart? The trick borrows the *lowest bit*, captured in one sentence: **VEC
-odd, ARC even**. Because a `u8` buffer can be even or odd, we need *two* vtables
-(`EVEN`/`ODD`) — and this part shows why one vtable is *not enough information*, rather
-than laziness.
+**[Part 7 — The simplest design: zero-copy, zero-alloc `freeze`.](07_from_vec_and_bit_tagging.md)**
+Build the *minimum that works* for exactly the current requirements. The key: for a
+sole-owned, not-yet-sliced handle, `self.ptr` *is already* the buffer's base, so `ctx` is
+free to pack `cap` straight in — **one `OWNED_VTABLE`, no EVEN/ODD**. The whole set:
+`from_vec` (keep cap, no realloc), `promote_owned` (CAS + losing branch), `slice` that
+*enforces* the `self.ptr == buf` invariant. Result: `freeze` that's zero-copy **and**
+zero-alloc, clean under Miri strict.
 
-**[Part 8 — full promotable, and O(1) `slice`.](08_promotable_and_slice.md)**
-Assembling it all: the four dispatch functions, the `promote_vec` function with its CAS
-and its *losing* branch (where `actual` differs from `shared` — the classic bug), and
-clone-then-narrow `slice`. The closing point: `slice` doesn't just *obey* the "VEC is
-never cut" invariant — it *enforces* it by construction, and that very invariant is
-what makes recovering `cap` by arithmetic safe.
+**[Part 8 — When requirements grow: advance, lazy-promote, the trilemma.](08_promotable_and_slice.md)**
+Real life breeds new requirements. Add them *one at a time*, watch what breaks:
+**in-place `advance`** (when it's needed, why cap-in-ctx breaks, and the two fixes —
+EVEN/ODD *is the price of storing a pointer*, or refcount-from-birth), then
+**lazy-promote** as a hard constraint. Lay out *every* `ctx` encoding side by side, and
+close on the **trilemma**: {lazy-promote, `advance`, zero-alloc-freeze} — in 4 words you
+only get 2. The "right" design = *your* requirements.
 
 ## How to read it
 

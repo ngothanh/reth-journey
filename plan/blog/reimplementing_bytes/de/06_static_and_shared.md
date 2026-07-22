@@ -21,23 +21,25 @@ Der ganze Implementierungsteil dreht sich um eine Bewegung: Jede vtable-Funktion
 Kopf, bevor du in den Code gehst:
 
 ```
-vtable = STATIC       ctx = null                clone: copy struct   · drop: no-op        (0-mal freigegeben)
+vtable = STATIC       ctx = null                  clone: copy struct   · drop: no-op        (0-mal freigegeben)
 
-vtable = SHARE        ctx = *mut Shared         clone: +refcount     · drop: -refcount    (1-mal freigegeben)
+vtable = SHARE        ctx = *mut Shared           clone: +refcount     · drop: -refcount    (1-mal freigegeben)
 
-vtable = PROMOTABLE   ctx UNGERADE (KIND_VEC)    clone: promote_vec   · drop: free_boxed_slice
-                      ctx GERADE   (KIND_ARC)    clone/drop: über Shared (wie Zeile SHARE)
+vtable = OWNED        ctx UNGERADE (cap<<1|1)     clone: promote_owned · drop: dealloc(self.ptr, cap)
+                      ctx GERADE   (*mut Shared)  clone/drop: über Shared (wie Zeile SHARE)
 
      einziger Zustandsübergang, einseitig:
-        PROMOTABLE/VEC ──(erster clone: promote_vec, CAS)──► PROMOTABLE/ARC
+        OWNED (cap in ctx) ──(erster clone: promote_owned, CAS)──► OWNED/ARC (Shared in ctx)
 ```
 
-Teil 6 schreibt die ersten zwei Zeilen (`STATIC`, `SHARE`). Teil 7 kümmert sich darum,
-wie man `ctx` für `PROMOTABLE` *encodet* (der ungerade/gerade-Trick). Teil 8 schreibt
-den Zustandsübergang (`promote_vec`) und die zwei `PROMOTABLE`-Funktionen. Merke:
-`vtable` friert bei der Geburt ein; nur das *KIND-Bit in `ctx`* ändert sich beim
-Hochstufen — deshalb benutzt „PROMOTABLE/ARC" weiter die promotable-vtable, verzweigt nur
-in den Shared-Zweig.
+Teil 6 schreibt die ersten zwei Zeilen (`STATIC`, `SHARE`). **Teil 7 baut die ganze
+`OWNED`-Zeile** — die einfachste Variante, die zero-copy/zero-alloc `freeze` erreicht:
+`cap` in `ctx` encoden, `promote_owned`, `slice`. **Teil 8** fügt die *alltäglichen*
+Anforderungen hinzu (advance an Ort und Stelle, lazy-promote als harte Randbedingung),
+zeigt, dass EVEN/ODD von `bytes` *der Preis für advance* ist, und schließt mit dem
+**trilemma**. Merke: `vtable` friert bei der Geburt ein; nur das *niedrige Bit von `ctx`*
+ändert sich beim Hochstufen — deshalb benutzt ein bereits-hochgestufter OWNED-handle
+weiter `OWNED_VTABLE`, verzweigt nur in den Shared-Zweig.
 
 ## `static`: die Aufwärmübung
 

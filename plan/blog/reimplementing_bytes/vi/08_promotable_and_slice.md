@@ -1,233 +1,135 @@
-# Phần 8 — promotable đầy đủ, và `slice` O(1)
+# Phần 8 — Khi yêu cầu đẻ thêm: `advance`, lazy-promote, và trilemma
 
-Ta đã có `from_vec` tạo ra một `Bytes` `promotable` (Phần 7), và đã hiểu *vì sao*
-promotion tồn tại (Phần 4) cùng *những công cụ concurrency* nó cần (Phần 5). Bài cuối
-này ráp tất cả thành code: bốn hàm `promotable_*`, hàm `promote_vec` với cuộc đua CAS,
-hàm `slice` O(1), và cái invariant lặng lẽ chống đỡ cho tất cả.
+Phần 7 xây bản đơn giản nhất — cap-in-ctx — thoả đúng yêu cầu *hiện tại*: zero-copy,
+zero-alloc `freeze`, `slice` O(1), lazy-promote. Nhưng phần mềm thật hiếm khi đứng yên.
+Bài này thêm yêu cầu *từng cái một*, xem cái gì vỡ, và liệt kê **mọi cách mã hoá `ctx`**
+cùng cái giá của từng cách. Kết lại bằng một định lý bất-khả: trong struct 4-từ, bạn
+không thể có tất cả.
 
-Điều dễ chịu: sau ngần ấy chuẩn bị, bốn hàm dispatch gần như tự viết. Cái khó dồn hết
-vào đúng một hàm — `promote_vec` — và đúng một nhánh của nó, nhánh *thua cuộc*.
+## Yêu cầu A: in-place `advance`
 
-## Bốn hàm `promotable_*` chỉ là dispatch
+**`advance` là gì.** `bytes::Buf::advance(n)` — "nuốt" `n` byte đầu bằng cách *dời con
+trỏ view* (`self.ptr += n`, `len -= n`) **in place**, trên một handle đang-một-chủ, *mà
+không clone*. Đây là con dao của một *cursor tiêu thụ*.
 
-Mỗi hàm làm đúng một việc: đọc `ctx`, xem KIND (theo câu "VEC lẻ, ARC chẵn" của Phần
-7), rồi rẽ. Nhánh ARC uỷ cho các helper `shared` đã viết ở Phần 6; nhánh VEC làm việc
-riêng của Vec.
+**Khi nào cần.** Đọc frame mạng theo con trỏ chạy; vài decoder streaming walk thẳng
+trên một owned buffer. (Chú ý: RLP của Ethereum thường *không* cần — bạn walk cursor
+trên `&[u8]` mượn, không dời con trỏ của owned `Bytes`. Đó là lý do Phần 7 hợp cho
+`Bytes` này.)
 
-```rust
-fn promotable_even_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
-    let tagged = ctx.load(Ordering::Acquire); // Acquire: có thể vừa có kẻ promote & công bố Shared
-    if tagged as usize & KIND_MASK == KIND_ARC {
-        unsafe { shallow_clone_arc(tagged as *mut Shared, ptr, len) } // đã promote → như share_clone
-    } else {
-        let buf = (tagged as usize & !KIND_MASK) as *mut u8;          // EVEN: mask bỏ bit
-        unsafe { promote_vec(ctx, tagged, buf, ptr, len) }            // cú clone đầu → promote
-    }
-}
-```
+**Vì sao cap-in-ctx vỡ.** Sau `advance(3)`, `self.ptr = buf + 3 ≠ buf`. Nhưng
+`owned_drop` free bằng `dealloc(self.ptr, cap)` = `dealloc(buf + 3, ...)` — giải phóng
+một con trỏ *giữa* allocation → **UB / hỏng heap**. Gốc rễ: cap-in-ctx *giả định*
+`self.ptr == buf`, và `advance` phá đúng giả định đó.
 
-`promotable_odd_clone` giống hệt, chỉ khác nhánh VEC recover không mask:
-`let buf = tagged as *mut u8;`. Còn hai hàm drop giống thế, chỉ đảo hai việc: ARC →
-`release_shared` (giảm counter), VEC → `free_boxed_slice` (giải phóng buffer thẳng,
-không atomic):
+Có `advance` thì `self.ptr` không còn đáng tin làm `buf`. Ta phải cất `buf` chỗ khác.
+Có hai lối, mỗi lối một cái giá.
 
-```rust
-fn promotable_even_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, len: usize) {
-    let tagged = *ctx.get_mut(); // &mut = độc quyền → đọc thường, khỏi atomic (nhớ Phần 5)
-    if tagged as usize & KIND_MASK == KIND_ARC {
-        unsafe { release_shared(tagged as *mut Shared) }
-    } else {
-        let buf = (tagged as usize & !KIND_MASK) as *mut u8;
-        unsafe { free_boxed_slice(buf, ptr, len) }
-    }
-}
-```
+## Lối 1 cho `advance`: cất `buf` vào `ctx` → sinh ra EVEN/ODD
 
-> **Bẫy chết người:** dễ nhất là *đảo ngược* điều kiện KIND. Cứ bám chặt "VEC lẻ, ARC
-> chẵn": nhánh `== KIND_ARC` mới đi đường `Shared`; nhánh còn lại (VEC) mới promote /
-> free buffer. Viết nhầm thành `== KIND_VEC` cho đường `Shared` là ép buffer thành
-> `*mut Shared` → UB im lặng. Đây đúng là loại bug mà `miri` sinh ra để bắt.
+Nếu `self.ptr` không đáng tin, nhét *con trỏ buffer* vào `ctx`. Nhưng giờ `cap` không
+còn chỗ trong `ctx` (ô đã bận chứa con trỏ). Ta khôi phục `cap` bằng **số học**:
+`cap = (ptr - buf) + len` = khoảng cách từ base tới *cuối* view. Đúng *chỉ khi* view
+luôn chạm cuối allocation — mà `advance` chỉ trim đầu (view-end đứng yên), nên số học
+ổn... **với điều kiện `cap == len` lúc tạo.** Ép `cap == len` = `into_boxed_slice`
+(shrink Vec) → **mất zero-copy-từ-Vec** (một cú realloc + memcpy nếu Vec dư chỗ).
 
-Chú ý cú `load` trong clone là `Acquire`, còn trong drop là đọc thường qua `get_mut`
-— đúng như Phần 5 đã lý giải: clone chia sẻ tham chiếu (có thể đua), drop độc quyền
-(không đua).
-
-## `promote_vec`: cấp `Shared`, CAS, và xử lý kẻ thua
-
-Đây là trái tim. Nó hiện thực đúng "sửa ngược vào cái gốc" của Phần 4 và cú CAS của
-Phần 5.
-
-```rust
-unsafe fn promote_vec(
-    ctx: &AtomicPtr<()>, tagged: *mut (), buf: *mut u8, ptr: *const u8, len: usize,
-) -> Bytes {
-    // 1. Khôi phục kích thước allocation. Xem "vì sao số học này an toàn" bên dưới.
-    let cap = (ptr as usize - buf as usize) + len;
-
-    // 2. Cấp khối Shared, ref_count = 2 (handle gốc + bản clone ta sắp trả về).
-    let shared = Box::into_raw(Box::new(Shared {
-        buf, cap, ref_count: AtomicUsize::new(2),
-    }));
-
-    // 3. Công bố nó: swap ctx từ `tagged` sang `shared`.
-    match ctx.compare_exchange(tagged, shared as *mut (), Ordering::AcqRel, Ordering::Acquire) {
-        Ok(_) => Bytes {
-            ptr: NonNull::new_unchecked(ptr as *mut u8), len,
-            ctx: AtomicPtr::new(shared as *mut ()), vtable: &SHARE_VTABLE,
-        },
-        Err(actual) => {
-            // Kẻ khác đã promote trước. Vứt Shared của MÌNH, bám vào của kẻ thắng.
-            drop(Box::from_raw(shared));                          // free vỏ điều khiển, KHÔNG free buf
-            shallow_clone_arc(actual as *mut Shared, ptr, len)   // dùng `actual`, KHÔNG dùng `shared`
-        }
-    }
-}
-```
-
-Ba điểm cần nói.
-
-**`ref_count = 2`, không phải 1.** Cú CAS công bố `Shared` cho *hai* handle cùng lúc:
-handle gốc (`b1`, mà `ctx` của nó ta vừa CAS) và bản clone ta đang trả về. Cả hai giờ
-đều trỏ vào `Shared` này, nên counter khởi tạo bằng 2. Kiểm bằng cách nghĩ đếm-số-lần
-của Phần 3: hai handle → hai lần drop → về 0 → free một lần. Cân.
-
-**Nhánh `Ok` — cái đẹp của promotion.** Cú CAS ghi vào `ctx` của *handle gốc `b1`*
-(ta nhận `ctx: &AtomicPtr` chính là `&b1.ctx`). Nên `b1` *biến thành chia sẻ ngay tại
-chỗ*, dù `b1.vtable` vẫn là `PROMOTABLE_*` (không đổi được — Phần 5). Lần sau `b1`
-clone/drop, hàm `promotable_*` đọc `ctx`, thấy KIND_ARC (bit 0), tự đi nhánh `Shared`.
-Bản clone mới thì mang thẳng `SHARE_VTABLE`. Hai "vị" handle arc-backed cùng tồn tại,
-cùng đếm đúng một counter.
-
-**Nhánh `Err(actual)` — `actual` KHÁC `shared`.** Đây là chỗ Phần 4 gọi là "phải cẩn
-thận khi vứt counter thừa", và là bug kinh điển. `compare_exchange(expected, new)`
-nghĩa: "*nếu* `ctx` vẫn bằng `expected` thì đổi thành `new`, không thì báo giá trị
-hiện tại". Khi `Err(actual)`:
-
-- `shared` = khối `Shared` **của mình** vừa cấp (ví dụ 0xBBB) — thua cuộc, *vô dụng*.
-- `actual` = giá trị đang thật sự nằm trong `ctx` = khối `Shared` **của kẻ thắng** (ví
-  dụ 0xAAA) — địa chỉ *khác hẳn*, vì mỗi thread `Box::new` một lần → hai vùng heap.
-
-Nên ta phải (a) vứt `shared` của mình — và vứt *đúng cách*: `Box::from_raw(shared)`
-chỉ giải phóng cái *vỏ điều khiển*, **không** đụng `buf` (vì `Shared` không có `Drop`
-impl; `buf` giờ thuộc về `Shared` của kẻ thắng); rồi (b) `shallow_clone_arc(actual)`
-để tăng counter của kẻ thắng. Dùng nhầm `shared` (đã free) ở bước (b) là use-after-free
-tức thì, *và* bỏ rơi luôn `Shared` thật → counter lệch → double-free.
-
-Kiểm counter trong cuộc đua 3 thread: kẻ thắng A tạo `Shared` với `ref=2` (gốc + A);
-B và C thua, mỗi đứa `shallow_clone_arc(actual)` +1 → về `4`? Không — chỉ một trong B/C
-"thua trước", nhưng cả hai đều +1, thành **4**... khoan. Đếm lại cho đúng: chỉ có *một*
-handle gốc và *một* cú promote thắng (A). Mỗi thread clone tạo *một* handle mới. 3
-thread clone → 3 handle mới + 1 gốc = 4 handle. A đặt ref=2 (gốc + handle của A), B +1
-= 3 (thêm handle B), C +1 = 4 (thêm handle C). Đúng 4 handle sống → 4 lần drop → free
-một lần. Cân.
-
-### Vì sao số học `cap = (ptr - buf) + len` an toàn
-
-`promote_vec` không được cho `cap` sẵn — nó khôi phục bằng số học. `(ptr - buf)` là
-khoảng cách từ đáy buffer tới đầu view; cộng `len` ra khoảng cách tới *cuối* view.
-Điều này chỉ đúng bằng kích thước allocation **nếu view luôn chạm cuối allocation** —
-tức buffer chưa bao giờ bị cắt ngắn ở đuôi.
-
-Và đúng là vậy, nhờ một invariant: **một handle VEC không bao giờ bị slice.** Vì
-`slice` (mục sau) đi qua `clone`, mà clone một VEC thì *promote* nó thành ARC. Nên bạn
-không bao giờ cầm một VEC đã-cắt — một VEC luôn là buffer nguyên vẹn, `ptr == buf`,
-`cap == len`. Đó là lý do `free_boxed_slice` cũng khôi phục `cap` bằng đúng số học ấy,
-thay vì phải lưu `cap`:
-
-```rust
-unsafe fn free_boxed_slice(buf: *mut u8, ptr: *const u8, len: usize) {
-    let cap = (ptr as usize - buf as usize) + len;
-    drop(Vec::from_raw_parts(buf, cap, cap));
-}
-```
-
-(Trái lại, repr `shared` *có* lưu `cap` trong `Shared`, vì *sau khi* promote bạn được
-cắt tự do cả hai đầu, nên không khôi phục `cap` từ view được nữa. Một cái khôi phục
-bằng số học, một cái lưu tường minh — sự bất đối xứng đó chính là hệ quả của invariant.)
-
-## `slice`: O(1), và nó *thực thi* invariant
-
-Cả `Bytes` sinh ra là để `slice` rẻ. Bí quyết: **clone, rồi thu hẹp view** — không
-copy gì.
-
-```rust
-pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
-    // ... tính start, end, assert trong biên ...
-    if start == end {
-        return Bytes::from_static(&[]); // rỗng → khỏi giữ refcount
-    }
-    let mut sub = self.clone(); // chia sẻ backing (tăng counter / promote nếu đang VEC)
-    sub.ptr = unsafe { NonNull::new_unchecked(sub.ptr.as_ptr().add(start)) };
-    sub.len = end - start;
-    sub
-}
-```
-
-Cái hay là bạn viết *một lần* mà đúng cho *cả ba* repr, vì `clone` đã lo phần
-repr-riêng:
-
-- **static**: clone tầm thường (không counter). Thu hẹp vào slice `'static` → vẫn
-  static, drop vẫn no-op. Không cấp phát.
-- **shared**: clone tăng counter atomic. Thu hẹp view; `Shared.buf`/`cap` không đổi
-  nên drop vẫn free từ đáy. *Đây* là lý do `Shared` lưu `buf`/`cap` tách khỏi view.
-- **promotable**: clone **promote** thành shared, rồi thu hẹp cái đó.
-
-Chính điểm cuối là chỗ đẹp nhất: **`slice` một `Bytes` promotable sẽ promote nó** —
-đúng cái invariant "VEC không bao giờ bị slice" mà cả `promote_vec` lẫn
-`free_boxed_slice` dựa vào để khôi phục `cap` bằng số học. `slice` không chỉ *tuân*
-invariant, nó *thực thi* invariant, bằng cấu trúc: đường duy nhất để cắt là qua clone,
-và clone promote. Một vòng khép kín.
-
-Hai điểm an toàn nhỏ: `ptr.add(start)` nằm trong biên vì đã assert `start <= end <=
-len`; và cộng một offset nhỏ vào con trỏ non-null không thể ra null, nên
-`new_unchecked` vẫn đúng.
-
-## Xong. Nhìn lại toàn cảnh code
-
-Ba repr, bốn-cộng hàm, một invariant:
+Rồi tới pointer tagging — vì `ctx` giờ chứa *con trỏ*, cần một bit phân biệt OWNED với
+ARC. Con trỏ buffer `u8` (align 1) *không* có bit thấp trống đảm bảo:
 
 ```
-static     clone: copy struct         drop: no-op            (free 0 lần)
-shared     clone: fetch_add Relaxed    drop: fetch_sub Release + fence(Acquire)  (free 1 lần)
-promotable clone: chưa promote → promote_vec (CAS);  đã rồi → shallow_clone_arc
-           drop:  chưa promote → free_boxed_slice;   đã rồi → release_shared
-
-invariant:  slice ⇒ clone ⇒ (VEC thì promote) ⇒ VEC không bao giờ bị cắt
-            ⇒ VEC luôn ptr==buf, cap==len ⇒ khôi phục cap bằng số học là an toàn
+Case chẵn (buf 0x1000): bật bit → ctx = 0x1001 → recover cần XOÁ bit → 0x1000
+Case lẻ   (buf 0x1001): để nguyên → ctx = 0x1001 → recover phải GIỮ  → 0x1001
 ```
 
-Và đường đọc — `deref`, `len`, so sánh, hash — vẫn chỉ chạm `ptr` + `len`, không bao
-giờ đụng `ctx`/`vtable`, nên rẻ y như `Arc<[u8]>`. Toàn bộ cỗ máy `ctx`/`vtable`/tag/
-CAS/ordering *chỉ* vào cuộc khi `clone` hoặc `drop`.
+**Hai case `ctx` giống hệt (0x1001) nhưng `buf` khác nhau** → gắn tag vào bit thấp là
+*lossy*. Bạn cần **1 bit thừa** cất "gốc chẵn hay lẻ" — và *con trỏ vtable* là chỗ cất
+nó: **`EVEN`** ("recover thì mask") vs **`ODD`** ("giữ nguyên"). Đây là lúc **hai
+vtable EVEN/ODD ra đời — như *cái giá của việc cất con trỏ*, tức cái giá của `advance`.**
 
-## Kiểm chứng: đừng tin, hãy đo
+Đây chính là đường "từ Vec" của `bytes` thật. **Tradeoff: được `advance` + giữ
+lazy-promote, nhưng mất zero-copy-từ-Vec (shrink) + gánh EVEN/ODD.**
 
-Loại bug ở bài này — KIND đảo ngược, `shared` vs `actual`, ordering sai — *compile
-sạch* và thường *chạy có vẻ đúng* trên một thread. Chúng chỉ lộ ra khi có đua hoặc khi
-một công cụ soi vào mô hình bộ nhớ. Nên hai thứ bắt buộc:
+## Lối 2 cho `advance`: refcount ngay từ đầu
 
-- **`miri`**: `cargo +nightly miri test` — bắt use-after-free, double-free, đọc bộ
-  nhớ chưa khởi tạo, và data race. Ba trong bốn bug ở trên bị `miri` tóm ngay.
-- **Test đua promotion**: cho N thread cùng `clone` *một* handle gốc, ép nhiều cú
-  `promote_vec` chạy song song để chọc vào nhánh `Err(actual)`; chạy lặp lại nhiều
-  lần. `loom` (nếu bạn muốn đi xa hơn) sẽ vét cạn các thứ tự sắp-xếp-lại có thể.
+Cất **cả `buf` lẫn `cap`** trong một khối `Shared` trên heap, có refcount *từ lúc sinh*.
+`ctx` *luôn* là `*mut Shared`. `self.ptr` là view (advance thoải mái), `Shared.buf` là
+base, `Shared.cap` là kích thước. Mọi thao tác chạy qua `Shared`:
 
-Nhắc lại câu thứ ba trong ba câu chốt của Phần 5: con bug đáng sợ trong unsafe không
-phải con làm sập chương trình, mà là con *chạy đúng* — trực giác Rust an toàn bị đảo,
-mặc định của cái sai là im lặng. Ở promotable, cái im lặng đó dày nhất. Luôn mang theo
-`miri`.
+- `advance`: `self.ptr += n`. `slice`: clone (ref++) + thu hẹp. Cả hai đơn giản.
+- `freeze`: *tái dùng* `Shared` sẵn có → **0 alloc** — nhưng chỉ nếu `Shared` *đã tồn
+  tại trước freeze* → **`BytesMut` phải refcount ngay từ `new()`**.
 
-## Hết loạt bài
+**Tradeoff: được `advance` + zero-alloc-freeze, nhưng mất lazy-promote** — mọi buffer
+trên heap trả tiền một `Shared` + atomic *từ lúc sinh*, kể cả khi không bao giờ clone.
 
-Từ "một byte đi vào từ dây mạng" (Phần 1) tới `promote_vec` với nhánh thua cuộc của nó
-(bài này), mỗi mảnh đều bị *ép* bởi mảnh trước: `Arc<[u8]>` không cho `freeze` O(1) →
-hạ sở hữu xuống vtable → tách đọc khỏi sở hữu → clone-độc-quyền là double-free →
-promotion sửa-ngược → `AtomicPtr` giải ba đòi hỏi → và cuối cùng, code hoá tất cả với
-tagged pointer, CAS, và một invariant tự-thực-thi. Không mảnh nào từ trên trời rơi
-xuống.
+## Yêu cầu B: lazy-promote như một ràng buộc cứng
 
-Giờ bạn không chỉ *đọc* được `bytes`, bạn *viết lại* được nó — và biện luận được cho
-từng dòng.
+**Là gì.** Một buffer một-chủ chưa từng clone thì **không** trả một atomic nào, **không**
+cấp một `Shared` nào. **Khi nào quan trọng.** RLP decode đúc *hàng triệu* blob dùng một
+lần; một atomic + một alloc *mỗi blob* là chi phí tránh-được lớn nhất trên hot path.
+cap-in-ctx (Phần 7) và EVEN/ODD *có* lazy-promote. Refcount-từ-đầu *không*.
+
+## Mọi cách mã hoá `ctx`, đặt cạnh nhau
+
+| cách | `ctx` chưa-promote chứa | `buf` từ | `cap` từ | `advance` | zero-copy freeze | lazy-promote | độ phức tạp |
+|---|---|---|---|---|---|---|---|
+| **cap-in-ctx** (Phần 7) | `cap` | `self.ptr` | `ctx` | ❌ | ✅ | ✅ | 1 vtable |
+| **buf-in-ctx EVEN/ODD** (`bytes`) | con trỏ buf (tagged) | `ctx` (mask) | số học (`cap==len`) | ✅ | ❌ (shrink) | ✅ | 2 vtable |
+| **refcount-từ-đầu** | *luôn* `*mut Shared` | `Shared` | `Shared` | ✅ | ✅¹ | ❌ | 2 repr, đơn giản nhất về logic |
+
+¹ zero-copy freeze cần `BytesMut` refcount-từ-đầu.
+
+## Trilemma: vì sao "hỗ trợ tất cả" là bất khả
+
+Nhìn ba cột `advance` / zero-copy-freeze / lazy-promote: **không hàng nào được cả ba.**
+Đây không phải giới hạn cài đặt — nó là một định lý:
+
+> Trong struct 4-từ, bạn chỉ được **2 trong 3** {lazy-promote, `advance`, zero-alloc-freeze
+> với `cap>len`}.
+
+Chứng minh cụ thể: `advance` dời view khỏi base → *phải* lưu `buf`. freeze-`cap>len` →
+*phải* lưu `cap` thật. Đó là **hai giá trị độc lập**, mà ô `ctx` chỉ chứa *một*. Giữ cả
+hai → cần khối `Shared` trên heap → để freeze *không* cấp phát, `Shared` phải tồn tại
+*trước* freeze → `BytesMut` refcount-từ-đầu → **mất lazy-promote.**
+
+Cả trilemma quy về **một câu hỏi**: *view có dời khỏi base của buffer khi **chưa** promote
+không (tức có `advance` không)?*
+- **Có** → phải lưu `buf` → con trỏ trong `ctx` → EVEN/ODD, và `cap` phải suy số học
+  (mất zero-copy-từ-Vec) *hoặc* refcount (mất lazy-promote).
+- **Không** → `ctx` rảnh → pack `cap` → một vtable, giữ cả lazy-promote lẫn zero-alloc-freeze.
+
+## Kết luận: thiết kế "đúng" = yêu cầu của *bạn*
+
+Không có bản tốt nhất tuyệt đối. Chọn điểm hợp với yêu cầu thật:
+
+- **`Bytes` cho Ethereum/RLP** (bài này): slice + clone + freeze, *không* advance owned
+  handle → **cap-in-ctx** (Phần 7). Giữ lazy-promote (hot path rẻ) + zero-alloc-freeze,
+  đổi lấy `advance` mà kiểu này không dùng. Đây là lựa chọn đúng.
+- **`bytes` như một `Buf`** (mạng): cần `advance` → **EVEN/ODD** (chịu shrink-từ-Vec) +
+  `BytesMut` refcount-từ-đầu cho zero-copy freeze. *Đó* là vì sao `bytes` thật phức tạp
+  — nó trả giá cho một feature set rộng hơn.
+- **Tổng quát nhất / dễ suy luận nhất**: **refcount mọi thứ** (bỏ lazy-promote) — hai
+  repr STATIC + SHARED, không tag, không promotion.
+
+Bài học mang đi: "viết lại `bytes`" *không* phải chép nó dòng-đối-dòng. Nó là hiểu cả
+**không gian thiết kế** và chọn đúng điểm cho yêu cầu của mình — rồi biện luận được vì
+sao. `bytes` chọn EVEN/ODD vì nó là một `Buf`; ta chọn cap-in-ctx vì `Bytes` này slice
+chứ không advance. Cả hai *đúng* — với bài toán của mình.
+
+## Kiểm chứng, và hết loạt bài
+
+Bug ở cả ba thiết kế — nhánh KIND đảo, `shared` vs `actual`, ordering sai, dealloc sai
+`cap`/`buf` — *compile sạch* và *chạy có vẻ đúng* một thread. Bắt buộc: **`miri`**
+(`cargo +nightly miri test`, thêm `-Zmiri-strict-provenance` cho cap-in-ctx), và **test
+đua promotion** (N thread cùng `clone` một handle → chọc `Err(actual)`; `loom` để vét
+cạn interleaving).
+
+Từ "một byte đi vào từ dây mạng" (Phần 1) tới trilemma (bài này), mỗi mảnh bị *ép* bởi
+mảnh trước, và mảnh cuối cho thấy: ngay cả "cách mã hoá một ô 8 byte" cũng không có đáp
+án tuyệt đối — chỉ có những đánh đổi *có tên*, chọn theo yêu cầu. Giờ bạn không chỉ đọc
+được `bytes`, mà *thiết kế lại* được nó ở bất kỳ điểm nào trên không gian đánh đổi, và
+biện luận được cho lựa chọn của mình.
 
 ---
 

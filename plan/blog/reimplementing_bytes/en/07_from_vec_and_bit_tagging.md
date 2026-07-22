@@ -1,208 +1,201 @@
-# Part 7 — `from_vec` and the bit-packing trick: one 8-byte slot, two meanings
+# Part 7 — The simplest design: zero-copy, zero-alloc `freeze`
 
-Part 6 finished `share_*` but there was no way to *create* a `Bytes` that goes down
-that path. The entry point is `from_vec` — it takes a `Vec<u8>` *without* copying. And
-right when we write `from_vec`, we hit the thing Part 5 parked in an aside: the `data`
-of a `promotable` `Bytes` has to hold *two different kinds* of pointer — a buffer
-pointer (not yet promoted) *or* a `Shared` pointer (already promoted) — in the same 8
-bytes, and every later function has to be able to tell which kind it holds.
+Part 6 gave us two reprs — `static` and `shared` — but nothing yet that *creates* a
+`Bytes` owning a heap buffer, and the headline requirement of the whole series is still
+unmet: **`freeze` must be O(1) — zero-copy, zero-allocation.** This post builds the
+**simplest design** that meets that requirement, and *only* that requirement.
 
-This post dissects exactly that trick, to the bottom. It's the fiddliest corner of the
-whole design, so we go very slowly, and at the end give one sentence to remember that
-makes it all collapse into place.
+This is a deliberate choice: we do *not* build ahead for needs that don't exist yet
+(in-place advance, advanced lazy-promote tricks). We start from the minimum that works.
+Part 8 is the one that asks "what if we need more?" — and shows that each extra need
+*forces* a trade-off.
 
-## `from_vec`: normalize, then park it
+## The one-owner problem
+
+A `Bytes` fresh out of `from_vec` or `BytesMut::freeze` **owns a buffer, all by
+itself**. It has to be able to do two things:
+
+- **drop** → release the buffer. `dealloc` needs the *allocation base* + the *`cap`* (to
+  rebuild the exact `Layout::array::<u8>(cap)`).
+- **clone** → promote to shared (Part 4): allocate a `Shared` with a refcount.
+
+Both of those need information, and we have only *one* slot to stash it in: `ctx`. And
+`ctx` has to be distinguishable from a `Shared` pointer (the already-promoted state). So
+what do we put into `ctx`?
+
+## The key simplification: `self.ptr` is already the buffer's base
+
+This is where everything collapses. For an owning handle whose *view never moves off the
+base*, **`self.ptr` is exactly the buffer's base (`buf`)**. So `ctx` **doesn't need** to
+hold a pointer — it holds the one thing `drop` *can't* recover from `ptr`/`len`:
+**`cap`**.
+
+(The "view never moves off the base" condition holds because the only way to move `ptr`
+is `slice`, and `slice` will *promote* — see the end of this post. So an OWNED handle
+*always* has `self.ptr == buf`. This is the foundational invariant of the whole design.)
+
+## Encoding: `cap` in `ctx`
+
+```rust
+const OWNED_TAG: usize = 1;
+//   ctx ODD  (bit 0 = 1)  → OWNED: ctx = (cap << 1) | 1;  buf = self.ptr
+//   ctx EVEN (bit 0 = 0)  → ARC:   ctx = *mut Shared  (Shared aligned ≥ 8 → always even)
+```
+
+One low bit distinguishes the two states. A `Shared` on the heap is always even
+(aligned), so we *force* OWNED to always be odd with `(cap << 1) | 1` — `cap` is a
+number we control ourselves, shift it left then set the bit and you're done. **A single
+`OWNED_VTABLE`.** (No "even/odd buffer", no EVEN/ODD — that's Part 8's story, once we're
+forced to store a *pointer* instead of a *cap*.)
+
+## `from_vec` and `from_owned_parts`
 
 ```rust
 pub fn from_vec(bytes: Vec<u8>) -> Self {
     if bytes.is_empty() {
-        return Self::from_static(&[]); // empty → go straight to the static repr, no allocation
+        return Self::from_static(&[]); // empty → static, 0 allocations (empty Vec drops normally)
     }
-    let boxed: Box<[u8]> = bytes.into_boxed_slice(); // normalize: cap == len
-    let len = boxed.len();
-    let buf = Box::into_raw(boxed) as *mut u8;       // TAKE ownership — now we're responsible for freeing
-    // ... bit-pack, then build the Bytes (below) ...
+    // Keep the Vec's cap AS-IS — NO into_boxed_slice, NO realloc.
+    let mut bytes = core::mem::ManuallyDrop::new(bytes);
+    let (buf, len, cap) = (bytes.as_mut_ptr(), bytes.len(), bytes.capacity());
+    unsafe { Self::from_owned_parts(NonNull::new_unchecked(buf), len, cap) }
+}
+
+pub(crate) unsafe fn from_owned_parts(ptr: NonNull<u8>, len: usize, cap: usize) -> Self {
+    if cap == 0 { return Bytes::from_static(&[]); } // e.g. BytesMut::new(0) → dangling ptr
+    Bytes {
+        ptr, len,                                    // self.ptr = buf
+        // cap packed into ctx as a provenance-free address (we only ever read .addr() back, never deref)
+        ctx: AtomicPtr::new(ptr::without_provenance_mut((cap << 1) | OWNED_TAG)),
+        vtable: &OWNED_VTABLE,
+    }
 }
 ```
 
-Three things, each with a reason:
+Two points are the whole beauty of this design:
 
-**`is_empty` → `from_static(&[])`.** `into_boxed_slice` on an empty `Vec` gives a
-*dangling* pointer that we don't want to bit-pack or free. Sending empty straight to
-the `static` repr (an empty live-forever buffer) is the cleanest — no allocation for 0
-bytes.
+- **No `into_boxed_slice`.** That would shrink the Vec to `cap == len` (a realloc +
+  memcpy if the Vec has spare room). We *don't* — we keep the buffer as-is, `cap` may be
+  > `len`. Thanks to that, `BytesMut::freeze` on a `cap 1024 / len 7` buffer is
+  **zero-copy** (the pointer doesn't change) *and* `from_owned_parts` **allocates
+  nothing** (not even a control block) → **zero allocation**. This is the headline
+  requirement, met.
+- **`without_provenance_mut` + `.addr()`**: we store an *integer* in the `AtomicPtr`
+  slot. Because we never deref it as a pointer, this is the correct strict-provenance
+  API — clean under Miri `-Zmiri-strict-provenance`.
 
-**`into_boxed_slice()` — normalize `cap == len`.** This is the pivotal detail we will
-later *rely on to avoid having to store `cap`*. A `Vec` can have `cap > len` (spare
-room); `into_boxed_slice` shrinks it to `cap == len`. The cost: if the `Vec` has spare
-room, this operation *reallocates and memcpies*. True, and the real `bytes` does
-exactly the same — so just remember that realloc can happen for a `Vec` with leftover
-capacity.
-
-**`Box::into_raw` — take ownership.** Before this line, the `Box` would free the buffer
-on its own when it leaves scope. After `into_raw`, the `Box` is gone and *nothing*
-frees it automatically anymore — **you** have signed up for the free (later via
-`free_boxed_slice`/`release_shared`). `buf` is now the heap address of the first byte.
-Dropping `buf` on the floor here is a leak.
-
-## The problem: one slot, two meanings
-
-A `promotable` `Bytes` needs `data` (we call this field `ctx`) to hold:
-
-- when **not yet** promoted: a pointer to the raw **buffer**,
-- when **already** promoted: a pointer to the **`Shared`** block.
-
-And Part 5 already concluded why this discriminating label *has* to live in `ctx`:
-promotion changes the state *mid-lifetime* via a one-word CAS on `ctx` — but `vtable`
-freezes at birth, it can't be CAS'd along in the same shot. So we need a way, reading
-*`ctx` alone*, to know which kind it currently is.
-
-The way: borrow the **lowest bit** of the pointer as a KIND flag.
+## `owned_clone` / `owned_drop` — just dispatch
 
 ```rust
-const KIND_ARC: usize = 0b0; // low bit = 0 → ctx is a *mut Shared
-const KIND_VEC: usize = 0b1; // low bit = 1 → ctx is a buffer pointer
-const KIND_MASK: usize = 0b1;
-```
-
-Why is the low bit *free space to borrow*? Because of **alignment**. A value of type
-`T` with alignment `A` always sits at an address divisible by `A` — a multiple of 8 in
-binary always ends in `000`. The `Shared` block holds a pointer + a `usize` + an
-`AtomicUsize`, so its alignment is ≥ 8 → its address **always ends in bit 0**. So
-`Shared` is *naturally* `KIND_ARC`, for free.
-
-## The sentence to remember: **VEC is always ODD, ARC is always EVEN**
-
-Everything follows from that one line. When any function **looks at `ctx`** to decode
-the state:
-
-- **`ctx` odd (bit = 1) → VEC** (still a buffer, not yet promoted),
-- **`ctx` even (bit = 0) → ARC** (already a `Shared`).
-
-- *ARC is always even*: `Shared` is 8-aligned → naturally bit 0. Free.
-- *VEC must be odd*: so it **doesn't collide with ARC**. If an even buffer pointer were
-  stored straight into `ctx`, a later `clone`/`drop` would see bit 0 → think "already
-  promoted, this is a `Shared`" → cast the buffer to `*mut Shared` and read
-  `ref_count`... i.e. read some of your data bytes as if they were the counter →
-  disaster. So we *force* the VEC state to always read out odd.
-
-## The wrinkle: a `u8` buffer can be even *or* odd
-
-This is what makes this post different from a textbook tagged pointer. The buffer is
-`u8`, **alignment = 1**, so its address is **not** guaranteed to have bit 0 = 0 — it
-can be even or odd. But we *want* it to always read out odd (KIND_VEC). So:
-
-- **even buffer** (bit 0): we must *set* the bit (`buf | 1`) to mark VEC. To recover
-  the real address, we must *clear* that bit (`& !1`). → use
-  **`PROMOTABLE_EVEN_VTABLE`**.
-- **odd buffer** (bit 1 already): it already reads out VEC, so we do NOT set anything.
-  But this bit 1 *is a real part of the address*, so when recovering we absolutely must
-  NOT clear it. Store it as-is. → use **`PROMOTABLE_ODD_VTABLE`**.
-
-The rest of `from_vec`'s code is exactly that branch:
-
-```rust
-    if buf as usize & KIND_MASK == 0 {
-        // EVEN: set the bit to mark VEC; recover later by MASKing the bit off.
-        let ctx = (buf as usize | KIND_VEC) as *mut ();
-        Bytes { ptr: NonNull::new_unchecked(buf), len,
-                ctx: AtomicPtr::new(ctx), vtable: &PROMOTABLE_EVEN_VTABLE }
+fn owned_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
+    let raw = ctx.load(Ordering::Acquire); // Acquire: someone may have just promoted & published a Shared
+    if raw.addr() & OWNED_TAG == 0 {
+        unsafe { shallow_clone_arc(raw as *mut Shared, ptr, len) } // already promoted → like share_clone
     } else {
-        // ODD: low bit is already 1 == VEC; store the pointer VERBATIM, do NOT mask later.
-        Bytes { ptr: NonNull::new_unchecked(buf), len,
-                ctx: AtomicPtr::new(buf as *mut ()), vtable: &PROMOTABLE_ODD_VTABLE }
+        let cap = raw.addr() >> 1;                                 // cap READ STRAIGHT, no arithmetic
+        unsafe { promote_owned(ctx, raw, ptr, cap, len) }          // first clone → promote
     }
+}
+
+fn owned_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, _len: usize) {
+    let raw = *ctx.get_mut(); // &mut = exclusive → plain read, no atomics (Part 5)
+    if raw.addr() & OWNED_TAG == 0 {
+        unsafe { release_shared(raw as *mut Shared) }
+    } else {
+        let cap = raw.addr() >> 1;
+        unsafe { dealloc(ptr as *mut u8, Layout::array::<u8>(cap).unwrap()) } // buf = self.ptr
+    }
+}
 ```
 
-Notice `ptr` stores the **clean pointer** (`buf`, not bit-packed); only `ctx` carries
-the tag. That way `deref` (reading through `ptr`) never sees the bit — the read path
-always uses the real address.
+`buf` is `self.ptr` (no masking), `cap` is `ctx.addr() >> 1` (read straight). Compared
+with Part 8's EVEN/ODD — mask the pointer + recover `cap` by arithmetic — this is far
+tighter.
 
-## Why *two* vtables, not one?
+> **Trap:** the KIND branch is inverted. Cling to: `ctx` **even = ARC**, `ctx` **odd =
+> OWNED**. Get it wrong and you cast a cap-number to `*mut Shared` then deref it → silent
+> UB. `miri` catches exactly this kind.
 
-This is the best question, and the answer touches a truth about information. Imagine
-you had only one vtable and only `ctx`:
+## `promote_owned` — allocate `Shared`, CAS, handle the loser
 
-```
-Case 1 (even buffer 0x1000): set bit → ctx = 0x1001 → recover needs to clear the bit → 0x1000
-Case 2 (odd buffer  0x1001): leave it → ctx = 0x1001 → recover must keep the bit    → 0x1001
-```
+The heart of the post: implementing "mutate back into the original" (Part 4) + the CAS
+(Part 5).
 
-**The two cases have identical `ctx` (0x1001), but different real buffer addresses
-(0x1000 vs 0x1001).** Looking at `ctx` alone, you *cannot* tell which the real buf is —
-1 bit of information is gone. Packing the tag into the low bit is **lossy for odd
-addresses**.
-
-So you need **1 spare bit** stored somewhere to remember "was the original buffer even
-or odd" — i.e. "does recovery mask or not". And **the vtable pointer is exactly where
-that bit goes**, for free, because you're already carrying it. `EVEN` = "recovery
-masks", `ODD` = "recovery keeps as-is". One vtable + `ctx` alone is *missing
-information*, full stop.
-
-(It's not 4 different branches: the two ARC cases — whether EVEN or ODD — are
-*identical*, both read `ctx` straight into a `*mut Shared` without masking, because
-`Shared` is always bit 0. EVEN/ODD differ *only* in the VEC branch.)
-
-The full table, at two different moments — *encode* (`from_vec` looking at `buf`) and
-*decode* (`clone`/`drop` looking at `ctx`):
-
-| original buffer | encode (looking at `buf`) | decode (looking at `ctx`) | vtable |
-|---|---|---|---|
-| even | set bit `\| 1` | `ctx` even → **ARC**, `ctx` odd → **VEC (mask to recover)** | EVEN |
-| odd | leave as-is | `ctx` even → **ARC**, `ctx` odd → **VEC (keep as-is)** | ODD |
-
-## A practical note: `ODD` almost never runs
-
-In practice, the system allocator *over-aligns* — Rust's `malloc`/allocator typically
-returns pointers aligned to ≥ 16 even for a `u8` buffer (which only needs alignment 1).
-So `buf` is almost always even, and `PROMOTABLE_ODD_VTABLE` is nearly dead code on a
-normal allocator. But `u8`'s alignment *doesn't guarantee* even (a custom allocator, an
-arena, or a sub-allocation could return an odd address), so the ODD branch exists
-purely as a *correctness safety net*. To actually run through `promotable_odd_*`, you'd
-have to deliberately build a `Bytes` on an odd-address buffer — the normal `from_vec`
-path might never reach it.
-
-## An escape hatch: if bit-packing feels like overkill
-
-The "fiddly" feeling is *correct*. And it points at something: bit-packing is a tool
-for *generality*, not a requirement for a minimal `Bytes`. The real `bytes` stuffs
-`buf` into `ctx` because it supports `advance`/`split` — operations that move `ptr`
-away from `buf` *without* promoting, so it's forced to remember the original `buf`
-somewhere else → hence the tag + EVEN/ODD.
-
-But if your `Bytes` has the invariant "VEC is never sliced" (Part 8 builds it — `slice`
-always promotes), then a VEC handle *always* has `ptr == buf` and `cap == len`. Meaning
-`buf`/`cap` already live inside `ptr`/`len` — stuffing them into `ctx` again is
-*redundant*. In that case you can collapse to **a single vtable**, distinguishing
-VEC/ARC by null:
-
-```
-ctx == null  → VEC (get buf from self.ptr, cap from self.len)
-ctx != null  → ARC (ctx is a *mut Shared)
+```rust
+unsafe fn promote_owned(
+    ctx: &AtomicPtr<()>, tagged: *mut (), ptr: *const u8, cap: usize, len: usize,
+) -> Bytes {
+    let shared = Box::into_raw(Box::new(Shared {
+        buf: ptr as *mut u8, cap, ref_count: AtomicUsize::new(2), // original handle + the clone
+    }));
+    match ctx.compare_exchange(tagged, shared as *mut (), Ordering::AcqRel, Ordering::Acquire) {
+        Ok(_) => Bytes {
+            ptr: NonNull::new_unchecked(ptr as *mut u8), len,
+            ctx: AtomicPtr::new(shared as *mut ()), vtable: &SHARE_VTABLE,
+        },
+        Err(actual) => {
+            drop(Box::from_raw(shared));                        // free the shell, do NOT free buf
+            shallow_clone_arc(actual as *mut Shared, ptr, len)  // use `actual`, NOT `shared`
+        }
+    }
+}
 ```
 
-`null` never collides with a `Shared` pointer, so it's an absolutely safe sentinel, and
-the whole EVEN/ODD apparatus vanishes. This is a real design decision: keep the tag to
-mirror `bytes` 1:1 and be ready for `advance` later, or drop the tag to stay compact
-for the current feature set. Both are correct — knowing what you're paying for is what
-matters.
+- **`ref_count = 2`**: the CAS publishes the `Shared` to *two* handles — the original
+  `b1` (whose `ctx` we just CAS'd) + the clone we return. Two drops → down to 0 → freed
+  once. Balanced.
+- **`Ok` — the beauty**: the CAS writes into the *original handle's* `ctx`, so `b1`
+  becomes shared *in place*, even though `b1.vtable` is still `OWNED_VTABLE`; next time it
+  reads `ctx` it sees the even bit → takes the Shared branch on its own.
+- **`Err(actual)` — the classic bug**: `actual` is the **winner's** `Shared` (different
+  from our own `shared`, because each thread `Box::new`s its own heap region). We must
+  throw away our own `shared` (`Box::from_raw` frees only the *shell*, it doesn't touch
+  `buf` because `Shared` has no `Drop`) then latch onto `actual`. Mistakenly using
+  `shared` (already freed) is an immediate use-after-free.
 
-## What we have, and what Part 8 does
+## `slice` — O(1), and it *enforces* the invariant
 
-`from_vec` done: normalize to a boxed slice (`cap == len`), take on the free
-responsibility, then bit-pack by even/odd to pick `EVEN`/`ODD`. The take-away
-sentence: **VEC odd, ARC even** — and the buffer's even/odd-ness *only* decides how to
-*recover* (mask or not), remembered by which vtable is chosen.
+```rust
+pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
+    // ... compute start, end, assert in-bounds ...
+    if start == end { return Bytes::from_static(&[]); }
+    let mut sub = self.clone();  // share the backing (bump the counter / promote if currently OWNED)
+    sub.ptr = unsafe { NonNull::new_unchecked(sub.ptr.as_ptr().add(start)) };
+    sub.len = end - start;
+    sub
+}
+```
 
-We can now create a `promotable` `Bytes`, but the four `promotable_*` functions are
-still empty, and the first `clone` — the *promotion* that Parts 4 and 5 built the whole
-model to explain — is still unwritten. Part 8 finishes it: the four dispatch functions,
-the CAS race with its losing branch, and O(1) `slice` — which both uses promotion and
-*enforces* the "VEC is never sliced" invariant promised above.
+Written *once*, correct for all three reprs because `clone` already handles the
+repr-specific part. The crux: **slicing an OWNED `Bytes` clones it → cloning an OWNED
+*promotes* it to SHARED.** So a slice result is always SHARED (it uses `Shared.buf` as
+the base, cuts freely), while the original OWNED handle *never* has its `ptr` moved. That
+is how the `self.ptr == buf` invariant is *enforced structurally*: the only path to move
+`ptr` is `slice`, and `slice` promotes. Thanks to that, `owned_drop`'s
+`dealloc(self.ptr, cap)` always hits the base.
+
+## Done with the simplest design
+
+We have a complete, correct `Bytes` that **meets the headline requirement**: zero-copy +
+zero-alloc `freeze`, O(1) `slice`, lazy-promote `clone`, reads as cheap as `Arc<[u8]>`.
+Clean under Miri `-Zmiri-strict-provenance`, and a `freeze` test asserts 0 alloc / 0
+dealloc.
+
+```
+static  ctx = null                 clone: copy      drop: no-op                (free 0)
+shared  ctx = *mut Shared          clone: +refcount drop: -refcount+fence      (free 1)
+OWNED   ctx = (cap<<1|1) OR Shared;  buf = self.ptr;  clone: promote/arc  drop: dealloc/arc
+```
+
+**But** — this is the design for the *current* requirements. Real life breeds new ones:
+*in-place advance* (when, tradeoff, how) and *lazy-promote as a hard
+constraint*. Part 8 dissects each: every new requirement *forces* a different encoding,
+dragging in EVEN/ODD or refcount-from-birth — and finally the **trilemma** that shows why
+"support everything" is impossible in a 4-word struct.
 
 ---
 
-*Next: [Part 8 — full promotable and `slice`](08_promotable_and_slice.md) ·
+*Next: [Part 8 — When requirements grow: advance, lazy-promote, and the trilemma](08_promotable_and_slice.md) ·
 [Index](00_index.md)*
 
 *Tiếng Việt: [`../vi/07_from_vec_and_bit_tagging.md`](../vi/07_from_vec_and_bit_tagging.md)*
