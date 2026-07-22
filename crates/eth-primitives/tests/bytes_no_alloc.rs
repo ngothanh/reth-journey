@@ -42,3 +42,46 @@ fn bytes_clone_static_is_bitwise() {
     let (da, dd) = (allocs() - a0, deallocs() - d0);
     assert_eq!((da, dd), (0, 0), "from_static + drop must not touch the heap (R5)");
 }
+
+#[test]
+fn bytes_mut_freeze_no_copy_no_alloc() {
+    use eth_primitives::BytesMut;
+    let mut bm = BytesMut::new(1024); // cap 1024 >> len
+    bm.extend_from_slice(b"payload"); // len 7
+    let ptr_before = bm.as_ptr();
+
+    let (a0, d0) = (allocs(), deallocs());
+    let b = black_box(bm.freeze()); // zero-copy AND zero-alloc handoff
+    let (da, dd) = (allocs() - a0, deallocs() - d0);
+
+    assert_eq!(b.as_ptr(), ptr_before, "freeze must reuse the buffer (zero-copy, R3)");
+    assert_eq!((da, dd), (0, 0), "freeze must not allocate or free (zero-alloc, R3)");
+    assert_eq!(&*b, b"payload");
+    // dropping `b` DOES free the buffer (one dealloc) — outside the measured window.
+}
+
+#[test]
+fn cloning_static_never_allocates() {
+    let b = Bytes::from_static(b"genesis");
+    let (a0, d0) = (allocs(), deallocs());
+    for _ in 0..1000 {
+        let c = black_box(b.clone());
+        black_box(&c);
+        drop(c);
+    }
+    let (da, dd) = (allocs() - a0, deallocs() - d0);
+    assert_eq!((da, dd), (0, 0), "cloning a static Bytes 1000x must not touch the heap (R2 STATIC)");
+}
+
+#[test]
+fn default_is_empty_static_no_alloc() {
+    let (a0, d0) = (allocs(), deallocs());
+    let b = black_box(Bytes::default());
+    black_box(&b);
+    let empty = b.is_empty();
+    drop(b);
+    let (da, dd) = (allocs() - a0, deallocs() - d0);
+    assert!(empty);
+    assert_eq!((da, dd), (0, 0), "Bytes::default() must be empty-static, no heap (R6)");
+    assert_eq!(Bytes::default(), Bytes::from_static(b""));
+}

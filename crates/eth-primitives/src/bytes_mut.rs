@@ -29,7 +29,9 @@ impl BytesMut {
         let cap = self.cap;
 
         mem::forget(self);
-        unsafe { Bytes::from_raw_parts(ptr.as_ptr(), len, cap) }
+        // Zero-copy: hand the exact buffer (ptr, len, cap) to Bytes without shrinking.
+        // (from_raw_parts → from_vec → into_boxed_slice would REALLOC when cap > len.)
+        unsafe { Bytes::from_owned_parts(ptr, len, cap) }
     }
 
     pub fn reserve(&mut self, additional: usize) {

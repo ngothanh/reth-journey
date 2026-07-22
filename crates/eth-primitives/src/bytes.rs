@@ -7,6 +7,7 @@ use core::ptr::NonNull;
 use core::str::FromStr;
 use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use std::alloc::{dealloc, Layout};
 
 pub struct Bytes {
     ptr: NonNull<u8>,
@@ -67,9 +68,12 @@ struct Shared {
     ref_count: AtomicUsize,
 }
 
-const KIND_ARC: usize = 0b0;
-const KIND_VEC: usize = 0b1;
-const KIND_MASK: usize = 0b1;
+// A single "owned" representation with the capacity packed into `ctx`:
+//   ctx odd  → OWNED: ctx = (cap << 1) | 1; the buffer base is `self.ptr` (owned is never sliced).
+//   ctx even → promoted to a heap `Shared` (aligned pointer, low bit 0).
+// This makes `freeze` zero-ALLOCATION (no control block until the first clone) and removes the
+// old EVEN/ODD tagged-buffer-pointer scheme entirely — `cap` lives in the word, not the pointer.
+const OWNED_TAG: usize = 1;
 
 impl Clone for Bytes {
     fn clone(&self) -> Self {
@@ -88,14 +92,9 @@ static STATIC_VTABLE: Vtable = Vtable {
     drop: static_drop,
 };
 
-static PROMOTABLE_EVEN_VTABLE: Vtable = Vtable {
-    clone: promotable_even_clone,
-    drop: promotable_even_drop,
-};
-
-static PROMOTABLE_ODD_VTABLE: Vtable = Vtable {
-    clone: promotable_odd_clone,
-    drop: promotable_odd_drop,
+static OWNED_VTABLE: Vtable = Vtable {
+    clone: owned_clone,
+    drop: owned_drop,
 };
 
 static SHARE_VTABLE: Vtable = Vtable {
@@ -103,7 +102,7 @@ static SHARE_VTABLE: Vtable = Vtable {
     drop: share_drop,
 };
 
-fn static_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
+fn static_clone(_ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
     unsafe {
         Bytes {
             ptr: NonNull::new_unchecked(ptr as *mut u8),
@@ -114,7 +113,8 @@ fn static_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
     }
 }
 
-fn static_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, len: usize) {}
+// No-op: static bytes live forever; nothing to free. All params unused by design.
+fn static_drop(_ctx: &mut AtomicPtr<()>, _ptr: *const u8, _len: usize) {}
 
 fn share_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
     let shared = ctx.load(Ordering::Relaxed) as *mut Shared;
@@ -136,7 +136,7 @@ unsafe fn shallow_clone_arc(shared: *mut Shared, ptr: *const u8, len: usize) -> 
     }
 }
 
-fn share_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, len: usize) {
+fn share_drop(ctx: &mut AtomicPtr<()>, _ptr: *const u8, _len: usize) {
     let shared = ctx.load(Ordering::Relaxed) as *mut Shared;
     unsafe { release_shared(shared) }
 }
@@ -147,72 +147,56 @@ unsafe fn release_shared(shared: *mut Shared) {
             return;
         }
         core::sync::atomic::fence(Ordering::Acquire);
-        let cap = (*shared).cap;
-        drop(Vec::from_raw_parts((*shared).buf, cap, cap));
+        // free the buffer with its exact original Layout (cap may exceed len for a frozen buffer),
+        // then free the control block.
+        dealloc((*shared).buf, Layout::array::<u8>((*shared).cap).unwrap());
         drop(Box::from_raw(shared));
     }
 }
 
-fn promotable_even_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
-    let tagged = ctx.load(Ordering::Acquire);
-    if tagged as usize & KIND_MASK == KIND_ARC {
-        unsafe { shallow_clone_arc(tagged as *mut Shared, ptr, len) }
+// ── OWNED: sole owner of a heap buffer, `cap` packed into `ctx`, promotes on first clone. ──
+// `ctx` is (cap << 1) | 1 while owned; after promotion it holds a `*mut Shared` (low bit 0).
+// The buffer base is `self.ptr` (an owned Bytes is never sliced — slicing goes through clone,
+// which promotes), so drop/promote read the base from `ptr`, not from `ctx`.
+
+fn owned_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
+    // Acquire: another thread may have just promoted and published a Shared we must see whole.
+    let raw = ctx.load(Ordering::Acquire);
+    if raw.addr() & OWNED_TAG == 0 {
+        // already promoted → `raw` is a real Shared pointer (provenance preserved through AtomicPtr).
+        unsafe { shallow_clone_arc(raw as *mut Shared, ptr, len) }
     } else {
-        let buf = (tagged as usize & !KIND_MASK) as *mut u8;
-        unsafe { promote_vec(ctx, tagged, buf, ptr, len) }
+        // first clone → promote. buffer base = self.ptr, cap unpacked from ctx's address bits.
+        let cap = raw.addr() >> 1;
+        unsafe { promote_owned(ctx, raw, ptr, cap, len) }
     }
 }
 
-fn promotable_odd_clone(ctx: &AtomicPtr<()>, ptr: *const u8, len: usize) -> Bytes {
-    let tagged = ctx.load(Ordering::Acquire);
-    if tagged as usize & KIND_MASK == KIND_ARC {
-        unsafe { shallow_clone_arc(tagged as *mut Shared, ptr, len) }
+fn owned_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, _len: usize) {
+    // &mut = exclusive: non-atomic read is fine (no other thread holds this handle).
+    let raw = *ctx.get_mut();
+    if raw.addr() & OWNED_TAG == 0 {
+        unsafe { release_shared(raw as *mut Shared) }
     } else {
-        let buf = tagged as *mut u8;
-        unsafe { promote_vec(ctx, tagged, buf, ptr, len) }
+        // still sole owner, never promoted: free the buffer at self.ptr with the original cap.
+        let cap = raw.addr() >> 1;
+        unsafe { dealloc(ptr as *mut u8, Layout::array::<u8>(cap).unwrap()) }
     }
 }
 
-fn promotable_even_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, len: usize) {
-    let tagged = *ctx.get_mut();
-    if tagged as usize & KIND_MASK == KIND_ARC {
-        unsafe {
-            release_shared(tagged as *mut Shared);
-        }
-    } else {
-        let buf = (tagged as usize & !KIND_MASK) as *mut u8;
-        unsafe {
-            free_boxed_slice(buf, ptr, len);
-        }
-    }
-}
-
-fn promotable_odd_drop(ctx: &mut AtomicPtr<()>, ptr: *const u8, len: usize) {
-    let tagged = *ctx.get_mut();
-    if tagged as usize & KIND_MASK == KIND_ARC {
-        unsafe {
-            release_shared(tagged as *mut Shared);
-        }
-    } else {
-        let buf = tagged as *mut u8;
-        unsafe {
-            free_boxed_slice(buf, ptr, len);
-        }
-    }
-}
-
-unsafe fn promote_vec(
+// First clone of an OWNED Bytes: allocate the Shared control block and publish it via a
+// single-winner CAS. `ptr` is the buffer base (== self.ptr), `cap` is the real capacity.
+unsafe fn promote_owned(
     ctx: &AtomicPtr<()>,
     tagged: *mut (),
-    buf: *mut u8,
     ptr: *const u8,
+    cap: usize,
     len: usize,
 ) -> Bytes {
-    let cap = (ptr as usize - buf as usize) + len;
     let shared = Box::into_raw(Box::new(Shared {
-        buf,
+        buf: ptr as *mut u8,
         cap,
-        ref_count: AtomicUsize::new(2),
+        ref_count: AtomicUsize::new(2), // the existing (now-promoted) handle + this clone
     }));
     unsafe {
         match ctx.compare_exchange(
@@ -228,17 +212,12 @@ unsafe fn promote_vec(
                 vtable: &SHARE_VTABLE,
             },
             Err(actual) => {
+                // lost the race: reclaim our Shared (control block only; Shared has no Drop,
+                // so `buf` is untouched), then attach to the winner's Shared.
                 drop(Box::from_raw(shared));
                 shallow_clone_arc(actual as *mut Shared, ptr, len)
             }
         }
-    }
-}
-
-unsafe fn free_boxed_slice(buf: *mut u8, ptr: *const u8, len: usize) {
-    let cap = (ptr as usize - buf as usize) + len;
-    unsafe {
-        drop(Vec::from_raw_parts(buf, cap, cap));
     }
 }
 
@@ -248,33 +227,37 @@ impl Bytes {
         Self::from_vec(vec)
     }
 
+    /// Take ownership of an existing `(ptr, len, cap)` heap buffer as an OWNED `Bytes` —
+    /// **zero copy AND zero allocation**: the buffer pointer is preserved and `cap` is packed
+    /// into `ctx`, so no control block is allocated until the first clone.
+    ///
+    /// SAFETY: `ptr` must point to a single live allocation made for `Layout::array::<u8>(cap)`,
+    /// with the first `len` bytes initialized, and the caller must relinquish ownership.
+    pub(crate) unsafe fn from_owned_parts(ptr: NonNull<u8>, len: usize, cap: usize) -> Self {
+        if cap == 0 {
+            // No real allocation (e.g. BytesMut::new(0) → dangling ptr) — hand back empty.
+            return Bytes::from_static(&[]);
+        }
+        debug_assert!(cap <= usize::MAX >> 1, "capacity too large to tag");
+        Bytes {
+            ptr, // SAME buffer — zero copy, and no Shared alloc — zero allocation
+            len,
+            // Pack cap into the ctx word as a provenance-free address (we never deref it as a
+            // pointer — only read `.addr()` back — so `without_provenance_mut` is the honest API).
+            ctx: AtomicPtr::new(ptr::without_provenance_mut((cap << 1) | OWNED_TAG)),
+            vtable: &OWNED_VTABLE,
+        }
+    }
+
     pub fn from_vec(bytes: Vec<u8>) -> Self {
         if bytes.is_empty() {
+            // `bytes` drops here, freeing any spare capacity it held — no leak.
             return Self::from_static(&[]);
         }
-        let boxed: Box<[u8]> = bytes.into_boxed_slice();
-        let len = boxed.len();
-        let buf = Box::into_raw(boxed) as *mut u8;
-        if buf as usize & KIND_MASK == 0 {
-            let ctx = (buf as usize | KIND_VEC) as *mut ();
-            unsafe {
-                Bytes {
-                    ptr: NonNull::new_unchecked(buf),
-                    len,
-                    ctx: AtomicPtr::new(ctx),
-                    vtable: &PROMOTABLE_EVEN_VTABLE,
-                }
-            }
-        } else {
-            unsafe {
-                Bytes {
-                    ptr: NonNull::new_unchecked(buf),
-                    len,
-                    ctx: AtomicPtr::new(buf as *mut ()),
-                    vtable: &PROMOTABLE_ODD_VTABLE,
-                }
-            }
-        }
+        // Keep the Vec's real capacity (no `into_boxed_slice` shrink-realloc); `cap` rides in ctx.
+        let mut bytes = core::mem::ManuallyDrop::new(bytes);
+        let (buf, len, cap) = (bytes.as_mut_ptr(), bytes.len(), bytes.capacity());
+        unsafe { Self::from_owned_parts(NonNull::new_unchecked(buf), len, cap) }
     }
 
     pub fn concat(parts: impl IntoIterator<Item = impl AsRef<[u8]>>) -> Self {
@@ -621,6 +604,43 @@ mod tests {
         assert_eq!(format!("{b:?}"), "Bytes(0x0aff)");
     }
 
+    #[test]
+    fn clone_owned_promotes_and_shares_buffer() {
+        // from_vec => OWNED; first clone promotes to SHARED without copying the buffer.
+        let b1 = Bytes::from_vec(vec![1, 2, 3, 4]);
+        let p = b1.as_ptr();
+        let b2 = b1.clone(); // promotes b1 OWNED → SHARED
+        let b3 = b1.clone();
+        // all three view the SAME original buffer (zero-copy promotion)
+        assert_eq!(b2.as_ptr(), p);
+        assert_eq!(b3.as_ptr(), p);
+        assert_eq!(&*b2, &[1, 2, 3, 4]);
+        // siblings drop; b3 must stay valid (refcount holds the buffer)
+        drop(b1);
+        drop(b2);
+        assert_eq!(&*b3, &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn downstream_derives_still_compile() {
+        // R6: hand-written Default/PartialEq/Eq/Hash let downstream #[derive] work.
+        #[derive(Default, PartialEq, Eq, Hash, Debug, Clone)]
+        struct Log {
+            data: Bytes,
+            topic: u8,
+        }
+        let a = Log {
+            data: Bytes::from_static(b"x"),
+            topic: 1,
+        };
+        let b = a.clone();
+        assert_eq!(a, b);
+        let mut set = std::collections::HashSet::new();
+        set.insert(a);
+        assert!(set.contains(&b));
+        assert_eq!(Log::default().data, Bytes::default());
+    }
+
     // ── concurrency: exercises the promotion CAS race + refcount ordering ──
     // Run repeatedly and under Miri/loom to shake out ordering bugs:
     //   cargo +nightly miri test concurrent
@@ -631,7 +651,7 @@ mod tests {
             let handles: Vec<_> = (0..16)
                 .map(|_| {
                     s.spawn(|| {
-                        // all threads clone the SAME handle → concurrent promote_vec
+                        // all threads clone the SAME handle → concurrent promote_owned
                         let c = original.clone();
                         assert_eq!(c.len(), 64);
                         c
