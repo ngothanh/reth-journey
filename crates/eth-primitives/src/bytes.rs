@@ -599,6 +599,52 @@ mod tests {
     }
 
     #[test]
+    fn bytes_default_is_empty_static() {
+        // R6: Default routes to the empty STATIC repr — equal to from_static(b"") and
+        // allocation-free. (The zero-heap half is asserted in tests/bytes_no_alloc.rs::
+        // default_is_empty_static_no_alloc, where a counting allocator is in scope.)
+        assert_eq!(Bytes::default(), Bytes::from_static(b""));
+        assert!(Bytes::default().is_empty());
+    }
+
+    #[test]
+    fn bytes_eq_hash_delegates_to_slice() {
+        // R6: Eq and Hash go through the deref'd slice, so equal bytes over different
+        // representations (OWNED vec vs STATIC) compare equal AND hash identically —
+        // the invariant that lets Bytes be a HashMap key across backings.
+        use core::hash::{Hash, Hasher};
+        fn hash_of<T: Hash>(t: &T) -> u64 {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            t.hash(&mut h);
+            h.finish()
+        }
+        let owned = Bytes::from(vec![1, 2, 3]);
+        let stat = Bytes::from_static(&[1, 2, 3]);
+        assert_eq!(owned, stat);
+        assert_eq!(hash_of(&owned), hash_of(&stat));
+    }
+
+    #[test]
+    fn bytes_miri_clean_freeze_clone_drop() {
+        // R7: run under `cargo +nightly miri test` — the freeze → clone(promote) →
+        // slice(clone) → interleaved-drop path must be UB-free: no leak, no double-free,
+        // and the final dealloc must use the buffer's ORIGINAL Layout (cap, not len).
+        let mut bm = BytesMut::new(4);
+        bm.extend_from_slice(&[1, 2, 3, 4, 5, 6]); // forces a realloc-grow first
+        let b1 = bm.freeze(); // OWNED, zero-copy handoff
+        let b2 = b1.clone(); // promotes OWNED → SHARED (allocates the control block)
+        let b3 = b2.clone(); // SHARED refcount bump
+        let s = b1.slice(1..4); // slice goes through clone → another refcount bump
+        assert_eq!(&*s, &[2, 3, 4]);
+        // Drop out of creation order so no single ordering is privileged.
+        drop(b1);
+        drop(b3);
+        assert_eq!(&*b2, &[1, 2, 3, 4, 5, 6]); // buffer still alive via refcount
+        drop(b2);
+        drop(s); // last handle: frees buffer + control block exactly once
+    }
+
+    #[test]
     fn debug_shows_hex() {
         let b = Bytes::from_static(&[0x0a, 0xff]);
         assert_eq!(format!("{b:?}"), "Bytes(0x0aff)");
@@ -622,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn downstream_derives_still_compile() {
+    fn bytes_downstream_derives_still_compile() {
         // R6: hand-written Default/PartialEq/Eq/Hash let downstream #[derive] work.
         #[derive(Default, PartialEq, Eq, Hash, Debug, Clone)]
         struct Log {

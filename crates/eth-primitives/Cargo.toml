@@ -20,3 +20,7 @@ eth-primitives-derive.workspace = true
 
 [dev-dependencies]
 trybuild.workspace = true
+
+[[bench]]
+name = "freeze"
+harness = false
