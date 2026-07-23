@@ -1,0 +1,109 @@
+Drill #3 — Dekker two-flag mutual exclusion: aarch64 disassembly of `enter`
+==========================================================================
+
+Target : aarch64-apple-darwin (Apple M-series, ARMv8.4+ — has FEAT_LRCPC)
+Build  : cargo build --release -p concurrent
+Source : crates/concurrent/src/dekker.rs
+
+The three variants differ by ONE instruction and ONE letter:
+
+  variant        store      between      load       correct?
+  ------------------------------------------------------------
+  DekkerAcqRel   stlrb      --           ldaprb     NO
+  DekkerFence    stlrb      dmb ish      ldaprb     yes
+  DekkerSeqCst   stlrb      --           ldarb      yes
+
+  LDAR   = load-acquire, RCsc. ARM orders an earlier STLR before it. StoreLoad covered.
+  LDAPR  = load-acquire, RCpc. Cheaper; explicitly NOT ordered against an earlier STLR.
+
+`Ordering::Acquire` only requires RCpc, so LLVM emits the cheaper LDAPR — and that is
+precisely the reordering Dekker's forbids. `Ordering::SeqCst` requires RCsc, forcing LDAR.
+
+The `isb` in every loop is `core::hint::spin_loop()` (the backoff), not the protocol.
+
+------------------------------------------------------------------
+DekkerAcqRel::enter
+------------------------------------------------------------------
+     270: a9bf7bfd     	stp	x29, x30, [sp, #-0x10]!
+     274: 910003fd     	mov	x29, sp
+     278: f100043f     	cmp	x1, #0x1
+     27c: 54000208     	b.hi	0x2bc 
+     280: 8b01000a     	add	x10, x0, x1
+     284: 52800028     	mov	w8, #0x1                ; =1
+     288: cb010109     	sub	x9, x8, x1
+     28c: 8b090009     	add	x9, x0, x9
+     290: 089ffd48     	stlrb	w8, [x10]
+     294: 38bfc12a     	ldaprb	w10, [x9]
+     298: 340000ea     	cbz	w10, 0x2b4 
+     29c: 8b01000a     	add	x10, x0, x1
+     2a0: 089ffd5f     	stlrb	wzr, [x10]
+     2a4: d5033fdf     	isb
+     2a8: 089ffd48     	stlrb	w8, [x10]
+     2ac: 38bfc12a     	ldaprb	w10, [x9]
+     2b0: 35ffff6a     	cbnz	w10, 0x29c 
+     2b4: a8c17bfd     	ldp	x29, x30, [sp], #0x10
+     2b8: d65f03c0     	ret
+     2bc: 90000002     	adrp	x2, 0x0 
+     2c0: 91000042     	add	x2, x2, #0x0
+     2c4: aa0103e0     	mov	x0, x1
+     2c8: 52800041     	mov	w1, #0x2                ; =2
+     2cc: 94000000     	bl	0x2cc 
+
+------------------------------------------------------------------
+DekkerFence::enter
+------------------------------------------------------------------
+     1d8: a9bf7bfd     	stp	x29, x30, [sp, #-0x10]!
+     1dc: 910003fd     	mov	x29, sp
+     1e0: f100043f     	cmp	x1, #0x1
+     1e4: 54000248     	b.hi	0x22c 
+     1e8: 8b01000a     	add	x10, x0, x1
+     1ec: 52800028     	mov	w8, #0x1                ; =1
+     1f0: cb010109     	sub	x9, x8, x1
+     1f4: 8b090009     	add	x9, x0, x9
+     1f8: 089ffd48     	stlrb	w8, [x10]
+     1fc: d5033bbf     	dmb	ish
+     200: 38bfc12a     	ldaprb	w10, [x9]
+     204: 3400010a     	cbz	w10, 0x224 
+     208: 8b01000a     	add	x10, x0, x1
+     20c: 089ffd5f     	stlrb	wzr, [x10]
+     210: d5033fdf     	isb
+     214: 089ffd48     	stlrb	w8, [x10]
+     218: d5033bbf     	dmb	ish
+     21c: 38bfc12a     	ldaprb	w10, [x9]
+     220: 35ffff4a     	cbnz	w10, 0x208 
+     224: a8c17bfd     	ldp	x29, x30, [sp], #0x10
+     228: d65f03c0     	ret
+     22c: 90000002     	adrp	x2, 0x0 
+     230: 91000042     	add	x2, x2, #0x0
+     234: aa0103e0     	mov	x0, x1
+     238: 52800041     	mov	w1, #0x2                ; =2
+     23c: 94000000     	bl	0x23c 
+
+------------------------------------------------------------------
+DekkerSeqCst::enter
+------------------------------------------------------------------
+     300: a9bf7bfd     	stp	x29, x30, [sp, #-0x10]!
+     304: 910003fd     	mov	x29, sp
+     308: f100043f     	cmp	x1, #0x1
+     30c: 54000208     	b.hi	0x34c 
+     310: 8b01000a     	add	x10, x0, x1
+     314: 52800028     	mov	w8, #0x1                ; =1
+     318: cb010109     	sub	x9, x8, x1
+     31c: 8b090009     	add	x9, x0, x9
+     320: 089ffd48     	stlrb	w8, [x10]
+     324: 08dffd2a     	ldarb	w10, [x9]
+     328: 340000ea     	cbz	w10, 0x344 
+     32c: 8b01000a     	add	x10, x0, x1
+     330: 089ffd5f     	stlrb	wzr, [x10]
+     334: d5033fdf     	isb
+     338: 089ffd48     	stlrb	w8, [x10]
+     33c: 08dffd2a     	ldarb	w10, [x9]
+     340: 35ffff6a     	cbnz	w10, 0x32c 
+     344: a8c17bfd     	ldp	x29, x30, [sp], #0x10
+     348: d65f03c0     	ret
+     34c: 90000002     	adrp	x2, 0x0 
+     350: 91000042     	add	x2, x2, #0x0
+     354: aa0103e0     	mov	x0, x1
+     358: 52800041     	mov	w1, #0x2                ; =2
+     35c: 94000000     	bl	0x35c 
+
