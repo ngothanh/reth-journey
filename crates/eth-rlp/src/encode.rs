@@ -16,7 +16,7 @@ impl<T: Encodable + ?Sized> Encodable for &T {
     }
 }
 
-fn encode_header(payload_len: usize, is_list: bool, out: &mut dyn BufMut) {
+pub fn encode_header(payload_len: usize, is_list: bool, out: &mut dyn BufMut) {
     let (short, long): (u8, u8) = if is_list { (0xc0, 0xf7) } else { (0x80, 0xb7) };
     if payload_len <= 55 {
         out.put_u8(short + payload_len as u8);

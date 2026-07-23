@@ -12,6 +12,7 @@ bytes = "1.11.1"
 
 [dev-dependencies]
 bytes = "1.11.1"
+eth-primitives-derive = { workspace = true }
 # alloy-rlp = "0.3"   # add on Wednesday for `signatures_match_alloy_rlp` + Option-mirror tests
 
 [lints]

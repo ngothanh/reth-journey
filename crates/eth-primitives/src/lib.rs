@@ -14,6 +14,8 @@ mod sealed;
 mod uint;
 #[macro_use]
 mod macros;
+#[cfg(feature = "rlp")]
+mod rlp;
 mod simple_encode;
 
 pub use address::{parse_address, Address};

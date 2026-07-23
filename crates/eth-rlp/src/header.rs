@@ -24,6 +24,16 @@ impl Header {
             out.put_slice(len_bytes);
         }
     }
+    pub fn length(&self) -> usize {
+        if self.payload_length <= 55 {
+            1
+        } else {
+            let be = self.payload_length.to_be_bytes();
+            let start = be.iter().position(|&b| b != 0).unwrap_or(be.len());
+            1 + (be.len() - start)
+        }
+    }
+
     pub fn decode(buf: &mut &[u8]) -> Result<Header, Error> {
         let &first = buf.first().ok_or(Error::InputTooShort)?;
 

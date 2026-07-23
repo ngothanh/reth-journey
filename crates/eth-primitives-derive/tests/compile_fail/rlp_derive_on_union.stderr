@@ -1,0 +1,8 @@
+error: RlpEncodable cannot be derived on unions — RLP structs must be structs with named fields
+ --> tests/compile_fail/rlp_derive_on_union.rs:4:1
+  |
+4 | / union U {
+5 | |     a: u64,
+6 | |     b: u64,
+7 | | }
+  | |_^

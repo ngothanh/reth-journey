@@ -32,8 +32,20 @@ version = "0.3.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc90b1e703d3c03f4ff7f48e82dd0bc1c8211ab7d079cd836a06fcfeb06651cb"
 dependencies = [
+ "alloy-rlp-derive",
  "arrayvec",
  "bytes",
+]
+
+[[package]]
+name = "alloy-rlp-derive"
+version = "0.3.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f36834a5c0a2fa56e171bf256c34d70fca07d0c0031583edea1c4946b7889c9e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -593,6 +605,7 @@ name = "eth-primitives"
 version = "0.0.1"
 dependencies = [
  "eth-primitives-derive",
+ "eth-rlp",
  "hex",
  "ruint",
  "thiserror",
@@ -604,9 +617,13 @@ dependencies = [
 name = "eth-primitives-derive"
 version = "0.1.0"
 dependencies = [
+ "alloy-rlp",
+ "eth-primitives",
+ "eth-rlp",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+ "trybuild",
 ]
 
 [[package]]
@@ -614,6 +631,7 @@ name = "eth-rlp"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "eth-primitives-derive",
 ]
 
 [[package]]

@@ -1,0 +1,8 @@
+error: RlpDecodable cannot be derived on enums — RLP structs must be structs with named fields
+ --> tests/compile_fail/rlp_decodable_on_enum.rs:4:1
+  |
+4 | / enum E {
+5 | |     A,
+6 | |     B,
+7 | | }
+  | |_^

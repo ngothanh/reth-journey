@@ -12,6 +12,13 @@ syn = { workspace = true }
 quote = { workspace = true }
 proc-macro2 = { workspace = true }
 
+[dev-dependencies]
+# Dev-only, so the `eth-primitives -> eth-primitives-derive` edge is not a real cycle.
+eth-rlp = { workspace = true }
+eth-primitives = { workspace = true, features = ["rlp"] }
+alloy-rlp = { workspace = true }
+trybuild = { workspace = true }
+
 [lib]
 proc-macro = true
 

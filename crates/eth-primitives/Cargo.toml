@@ -11,7 +11,14 @@ description = "Mirrors alloy-primitives — Address, B256, U256, Bytes, FixedByt
 [lints]
 workspace = true
 
+[features]
+default = []
+# Implements `eth_rlp::{Encodable, Decodable}` for the primitive types. Optional so
+# `eth-primitives` stays usable without pulling in the codec, mirroring `alloy-primitives`.
+rlp = ["dep:eth-rlp"]
+
 [dependencies]
+eth-rlp = { workspace = true, optional = true }
 tiny-keccak = { version = "2.0", features = ["keccak"] }
 hex = "0.4.3"
 thiserror = "2.0.18"

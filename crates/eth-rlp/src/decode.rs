@@ -13,7 +13,26 @@ pub enum Error {
     Overflow,
     InputTooShort,
     NonCanonical,
+    /// A header's `payload_length` did not match the fixed width the type requires
+    /// (e.g. a 31-byte string decoded as `B256`).
+    UnexpectedLength,
+    /// Bytes remained after a structural decode consumed everything it expected.
+    TrailingBytes,
     Custom(&'static str),
+}
+
+/// Decode a `T` that must account for **every** byte of `buf`.
+///
+/// `Decodable::decode` deliberately consumes one item and leaves the rest — that is
+/// what makes it composable inside a list. At the outermost layer nothing else is
+/// coming, so leftover bytes are malformed input rather than the next item.
+/// `alloy-rlp` splits the same two cases as `decode` / `decode_exact`.
+pub fn decode_exact<T: Decodable>(mut buf: &[u8]) -> Result<T, Error> {
+    let value = T::decode(&mut buf)?;
+    if !buf.is_empty() {
+        return Err(Error::TrailingBytes);
+    }
+    Ok(value)
 }
 
 impl Decodable for u64 {
