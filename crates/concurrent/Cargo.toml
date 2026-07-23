@@ -9,7 +9,6 @@ repository.workspace = true
 
 [dependencies]
 atomic-wait = "1.1.0"
-loom = "0.7.2"
 
 [dev-dependencies]
 criterion.workspace = true
@@ -29,6 +28,10 @@ harness = false
 
 [[bench]]
 name = "false_sharing"
+harness = false
+
+[[bench]]
+name = "dekker"
 harness = false
 
 [lints]
