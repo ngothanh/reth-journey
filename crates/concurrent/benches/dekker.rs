@@ -59,7 +59,32 @@ fn contend<L: TwoFlagLock>(iters: u64) -> Duration {
     elapsed
 }
 
+/// One thread, `iters` uncontended enter/exit pairs.
+///
+/// The contended benchmark measures barrier cost *plus* retry-loop dynamics, and the
+/// retry dynamics dominate — the confidence intervals for the two correct variants
+/// overlap almost entirely. This isolates the instruction cost: the other flag is always
+/// false, so `enter` is exactly store + (fence?) + load + break, with no backoff.
+fn uncontended<L: TwoFlagLock>(iters: u64) -> Duration {
+    let lock = L::new();
+    let start = Instant::now();
+    for _ in 0..iters {
+        lock.enter(0);
+        black_box(&lock);
+        lock.exit(0);
+    }
+    start.elapsed()
+}
+
 fn bench(c: &mut Criterion) {
+    let mut uncontended_group = c.benchmark_group("dekker_uncontended");
+    uncontended_group.bench_function("acq_rel", |b| b.iter_custom(uncontended::<DekkerAcqRel>));
+    uncontended_group.bench_function("fence_seqcst", |b| b.iter_custom(uncontended::<DekkerFence>));
+    uncontended_group.bench_function("seqcst_store_load", |b| {
+        b.iter_custom(uncontended::<DekkerSeqCst>)
+    });
+    uncontended_group.finish();
+
     let mut group = c.benchmark_group("dekker");
 
     // Thread spawn is ~50 µs; at ~50 ns per enter, 100k iterations puts spawn overhead
