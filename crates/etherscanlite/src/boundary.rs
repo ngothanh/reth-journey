@@ -1,5 +1,25 @@
 use eth_primitives::{Address, Bytes, FixedBytes, B256, U256};
 
+/// Infallible conversion from an alloy type into the local mirror.
+///
+/// # Why this exists instead of `From`
+///
+/// `impl From<alloy_primitives::B256> for eth_primitives::B256` cannot be written in this
+/// crate. `From` belongs to `core`, and both `B256`s belong to other crates, so nothing in
+/// the impl is local and the orphan rule rejects it:
+///
+/// ```compile_fail,E0117
+/// # use eth_primitives::B256;
+/// impl From<alloy_primitives::B256> for B256 {
+///     fn from(value: alloy_primitives::B256) -> Self {
+///         eth_primitives::FixedBytes(value.0)
+///     }
+/// }
+/// ```
+///
+/// Declaring the trait *here* makes it local, which is what makes every impl below legal.
+/// Do not "simplify" these back into `From` — the compiler will stop you, but only after
+/// you have rewritten them all.
 pub(crate) trait FromAlloy<T> {
     fn from(alloy: T) -> Self;
 }
