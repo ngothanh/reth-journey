@@ -27,6 +27,17 @@ eth-chain-state = { path = "crates/eth-chain-state" }
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 trybuild = "1.0"
 alloy-rlp = { version = "0.3", features = ["derive"] }
+# Narrow, per-crate alloy deps rather than the `alloy` umbrella: keeps the R4 isolation
+# grep honest (`alloy_primitives::` is the real path) and keeps the boundary's blast
+# radius visible in one place when alloy ships a major.
+alloy-primitives = { version = "1.6.1" }
+alloy-provider = { version = "2.2.0" }
+alloy-rpc-types-eth = { version = "2.2.0" }
+alloy-consensus = { version = "2.2.0" }
+eth-network-codec = { path = "crates/eth-network-codec" }
+tokio = { version = "1.52.3" }
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
 syn = { version = "2.0", features = ["derive"] }
 quote = "1.0.45"
 proc-macro2 = "1.0.106"

@@ -1,0 +1,23 @@
+[package]
+name = "etherscanlite"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+eth-primitives = { workspace = true }
+# W3's RetryFuture, reused for R6 rate-limit backoff.
+eth-network-codec = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-rpc-types-eth = { workspace = true }
+alloy-consensus = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+anyhow = { workspace = true }
+clap = { workspace = true }
+
+[lints]
+workspace = true
