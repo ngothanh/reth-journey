@@ -1,8 +1,21 @@
 use atomic_wait::{wait, wake_all, wake_one};
-use std::cell::UnsafeCell;
-use std::ops::{Deref, DerefMut};
-use std::sync::atomic::Ordering::Acquire;
-use std::sync::atomic::{AtomicU32, Ordering};
+use core::ops::{Deref, DerefMut};
+
+mod sync {
+    #[cfg(loom)]
+    pub(super) use loom::cell::UnsafeCell;
+    #[cfg(loom)]
+    pub(super) use loom::sync::atomic::{AtomicU32, Ordering};
+
+    #[cfg(not(loom))]
+    pub(super) use core::sync::atomic::{AtomicU32, Ordering};
+
+    #[cfg(not(loom))]
+    pub(super) use core::cell::UnsafeCell;
+}
+
+use sync::{AtomicU32, Ordering, UnsafeCell};
+use Ordering::Acquire;
 use Ordering::Relaxed;
 
 pub struct RwLock<T> {
@@ -63,7 +76,7 @@ impl<T> RwLock<T> {
                 assert!(state < u32::MAX - 2, "too many readers");
                 if self
                     .state
-                    .compare_exchange_weak(state, state + 2, Ordering::Acquire, Relaxed)
+                    .compare_exchange_weak(state, state + 2, Acquire, Relaxed)
                     .is_ok()
                 {
                     return ReadGuard { lock: self };
@@ -79,10 +92,7 @@ impl<T> RwLock<T> {
         let mut state = self.state.load(Relaxed);
         loop {
             if state <= 1 {
-                match self
-                    .state
-                    .compare_exchange(state, WRITER, Acquire, Relaxed)
-                {
+                match self.state.compare_exchange(state, WRITER, Acquire, Relaxed) {
                     Ok(_) => {
                         return WriteGuard { lock: self };
                     }

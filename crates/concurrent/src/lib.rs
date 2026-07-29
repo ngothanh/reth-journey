@@ -4,11 +4,11 @@ mod backoff;
 mod cache_padded;
 mod cell_sender;
 mod condvar;
+mod dekker;
 mod mutex;
 mod once_flag;
 mod parker;
 mod pod;
-mod dekker;
 mod rw_lock;
 
 pub use atomic_cell::AtomicCell;
@@ -20,3 +20,4 @@ pub use mutex::{Mutex, MutexGuard};
 pub use once_flag::{AlreadySet, OnceFlag};
 pub use parker::{Parker, Unparker};
 pub use pod::Pod;
+pub use rw_lock::{ReadGuard, RwLock, WriteGuard};
