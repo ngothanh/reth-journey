@@ -1,22 +1,42 @@
-use atomic_wait::{wait, wake_all, wake_one};
 use core::ops::{Deref, DerefMut};
 
 mod sync {
     #[cfg(loom)]
-    pub(super) use loom::cell::UnsafeCell;
-    #[cfg(loom)]
     pub(super) use loom::sync::atomic::{AtomicU32, Ordering};
-
     #[cfg(not(loom))]
     pub(super) use core::sync::atomic::{AtomicU32, Ordering};
 
-    #[cfg(not(loom))]
+    // std `UnsafeCell` (NOT `loom::cell::UnsafeCell`) even under loom: loom's cell
+    // exposes data only through `with`/`with_mut` closures so it can bound the
+    // access, which is incompatible with our `Deref`/`DerefMut` guards (they hand
+    // back a `&T` that outlives any closure). So loom verifies the atomic locking
+    // *protocol*; data-race checking on `T` is Miri's job.
     pub(super) use core::cell::UnsafeCell;
 }
 
 use sync::{AtomicU32, Ordering, UnsafeCell};
 use Ordering::Acquire;
 use Ordering::Relaxed;
+
+// Futex shim: real `atomic_wait` syscalls in production, a loom-friendly model
+// under `cfg(loom)`.
+#[cfg(not(loom))]
+use atomic_wait::{wait as futex_wait, wake_all as futex_wake_all, wake_one as futex_wake_one};
+
+// loom can neither type-check against nor schedule a kernel futex, so model the
+// block as a yield: the surrounding acquire loop re-checks the atomic, and loom
+// explores the schedule where another thread changes it. The wakes become no-ops —
+// a yielding thread is already runnable in loom's scheduler.
+#[cfg(loom)]
+fn futex_wait(atomic: &AtomicU32, expected: u32) {
+    if atomic.load(Relaxed) == expected {
+        loom::thread::yield_now();
+    }
+}
+#[cfg(loom)]
+fn futex_wake_one(_atomic: &AtomicU32) {}
+#[cfg(loom)]
+fn futex_wake_all(_atomic: &AtomicU32) {}
 
 pub struct RwLock<T> {
     state: AtomicU32,
@@ -82,7 +102,7 @@ impl<T> RwLock<T> {
                     return ReadGuard { lock: self };
                 }
             } else if state % 2 == 1 {
-                wait(&self.state, state);
+                futex_wait(&self.state, state);
             }
             state = self.state.load(Relaxed);
         }
@@ -116,7 +136,7 @@ impl<T> RwLock<T> {
             let w = self.writer_wake_count.load(Acquire);
             state = self.state.load(Relaxed);
             if state >= 2 {
-                wait(&self.writer_wake_count, w);
+                futex_wait(&self.writer_wake_count, w);
                 state = self.state.load(Relaxed);
             }
         }
@@ -127,7 +147,7 @@ impl<T> Drop for ReadGuard<'_, T> {
     fn drop(&mut self) {
         if self.lock.state.fetch_sub(2, Ordering::Release) == 3 {
             self.lock.writer_wake_count.fetch_add(1, Ordering::Release);
-            wake_one(&self.lock.writer_wake_count)
+            futex_wake_one(&self.lock.writer_wake_count)
         };
     }
 }
@@ -136,7 +156,7 @@ impl<T> Drop for WriteGuard<'_, T> {
     fn drop(&mut self) {
         self.lock.state.store(UNLOCKED, Ordering::Release);
         self.lock.writer_wake_count.fetch_add(1, Ordering::Release);
-        wake_one(&self.lock.writer_wake_count);
-        wake_all(&self.lock.state);
+        futex_wake_one(&self.lock.writer_wake_count);
+        futex_wake_all(&self.lock.state);
     }
 }

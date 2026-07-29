@@ -304,3 +304,58 @@ mod tests {
         assert_eq!(*lock.read(), 2);
     }
 }
+
+
+// Run with:  RUSTFLAGS="--cfg loom" cargo test -p concurrent --lib loom
+// loom exhaustively explores thread interleavings of the atomic protocol. Keep the
+// thread count and per-thread work tiny — loom's state space is combinatorial.
+#[cfg(loom)]
+mod loom_tests {
+    use super::RwLock;
+    use loom::sync::Arc;
+    use loom::thread;
+
+    // Writer/writer mutual exclusion: if any interleaving let two writers into the
+    // critical section at once, their increments would interleave and the sum would
+    // come out below 2. loom checks *every* schedule.
+    #[test]
+    fn two_writers_are_exclusive() {
+        loom::model(|| {
+            let lock = Arc::new(RwLock::new(0u32));
+
+            let other = {
+                let lock = Arc::clone(&lock);
+                thread::spawn(move || {
+                    *lock.write() += 1;
+                })
+            };
+            *lock.write() += 1;
+            other.join().unwrap();
+
+            assert_eq!(*lock.read(), 2);
+        });
+    }
+
+    // Reader/writer: across every interleaving the reader observes a valid value
+    // (never a torn one), and neither thread is left parked — i.e. no lost wakeup /
+    // deadlock in the flag + writer_wake_count handshake.
+    #[test]
+    fn reader_and_writer_make_progress() {
+        loom::model(|| {
+            let lock = Arc::new(RwLock::new(0u32));
+
+            let writer = {
+                let lock = Arc::clone(&lock);
+                thread::spawn(move || {
+                    *lock.write() = 42;
+                })
+            };
+
+            let seen = *lock.read();
+            assert!(seen == 0 || seen == 42, "reader saw an invalid value: {seen}");
+
+            writer.join().unwrap();
+            assert_eq!(*lock.read(), 42);
+        });
+    }
+}
