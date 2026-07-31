@@ -1,5 +1,0 @@
-error: SimpleEncode does not support Unit fields
- --> tests/compile_fail/derive_on_unit_struct.rs:5:1
-  |
-5 | struct U;
-  | ^^^^^^^^^

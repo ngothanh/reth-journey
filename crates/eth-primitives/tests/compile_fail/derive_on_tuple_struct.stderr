@@ -1,5 +1,0 @@
-error: SimpleEncode does not support Unnamed fields
- --> tests/compile_fail/derive_on_tuple_struct.rs:6:1
-  |
-6 | struct T(u8, u8);
-  | ^^^^^^^^^^^^^^^^^

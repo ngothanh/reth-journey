@@ -23,7 +23,6 @@ tiny-keccak = { version = "2.0", features = ["keccak"] }
 hex = "0.4.3"
 thiserror = "2.0.18"
 ruint = "1.12"
-eth-primitives-derive.workspace = true
 
 [dev-dependencies]
 trybuild.workspace = true

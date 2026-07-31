@@ -30,10 +30,6 @@ harness = false
 name = "false_sharing"
 harness = false
 
-[[bench]]
-name = "dekker"
-harness = false
-
 [lints]
 workspace = true
 

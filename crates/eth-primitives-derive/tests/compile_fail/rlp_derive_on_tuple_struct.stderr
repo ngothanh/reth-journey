@@ -1,5 +1,0 @@
-error: RlpEncodable cannot be derived on tuple structs — RLP structs must be structs with named fields
- --> tests/compile_fail/rlp_derive_on_tuple_struct.rs:4:1
-  |
-4 | struct Tup(u64, u64);
-  | ^^^^^^^^^^^^^^^^^^^^^

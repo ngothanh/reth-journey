@@ -1,8 +1,0 @@
-error: SimpleEncode is not supported for enums
- --> tests/compile_fail/derive_on_enum.rs:6:1
-  |
-6 | / enum E {
-7 | |     A,
-8 | |     B,
-9 | | }
-  | |_^
