@@ -1,10 +1,10 @@
 use core::ops::{Deref, DerefMut};
 
 mod sync {
-    #[cfg(loom)]
-    pub(super) use loom::sync::atomic::{AtomicU32, Ordering};
     #[cfg(not(loom))]
     pub(super) use core::sync::atomic::{AtomicU32, Ordering};
+    #[cfg(loom)]
+    pub(super) use loom::sync::atomic::{AtomicU32, Ordering};
 
     // std `UnsafeCell` (NOT `loom::cell::UnsafeCell`) even under loom: loom's cell
     // exposes data only through `with`/`with_mut` closures so it can bound the
@@ -89,7 +89,7 @@ impl<T> RwLock<T> {
         }
     }
 
-    pub fn read(&self) -> ReadGuard<T> {
+    pub fn read(&self) -> ReadGuard<'_, T> {
         let mut state = self.state.load(Relaxed);
         loop {
             if state % 2 == 0 {
@@ -108,7 +108,7 @@ impl<T> RwLock<T> {
         }
     }
 
-    pub fn write(&self) -> WriteGuard<T> {
+    pub fn write(&self) -> WriteGuard<'_, T> {
         let mut state = self.state.load(Relaxed);
         loop {
             if state <= 1 {

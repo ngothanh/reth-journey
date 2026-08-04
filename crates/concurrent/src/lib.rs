@@ -20,3 +20,4 @@ pub use once_flag::{AlreadySet, OnceFlag};
 pub use parker::{Parker, Unparker};
 pub use pod::Pod;
 pub use rw_lock::{ReadGuard, RwLock, WriteGuard};
+pub use semaphore::{Semaphore, SemaphorePermit};
