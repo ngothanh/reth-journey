@@ -77,4 +77,30 @@ mod loom {
             assert!(s.try_acquire().is_none());
         })
     }
+
+    /// A waiter that goes to sleep must always be woken by a later `add`.
+    ///
+    /// There is deliberately no `assert!` here — the property is *liveness*,
+    /// not a value. If any interleaving loses the wakeup, the waiting thread
+    /// stays parked inside `acquire`, `join()` never returns, and loom reports
+    /// the deadlock. Passing means **no** schedule leaves the waiter asleep.
+    ///
+    /// The race under test: the waiter observes `count == 0` and registers in
+    /// `waiters`, while `add` bumps `count` and then reads `waiters` to decide
+    /// whether to signal at all. Every interleaving of those four operations is
+    /// explored here.
+    #[test]
+    fn loom_no_lost_wakeup() {
+        loom::model(|| {
+            let s = Arc::new(Semaphore::new(0));
+            let s1 = s.clone();
+
+            let waiter = thread::spawn(move || {
+                let _permit = s1.acquire();
+            });
+
+            s.add(1);
+            waiter.join().unwrap();
+        })
+    }
 }
