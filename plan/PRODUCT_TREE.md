@@ -100,6 +100,10 @@ Every rung ends at a concrete, **measurable wall**. That wall is the reason the 
 | v1 | **Thread-per-core** (1 symbol = 1 shard) + SPSC/MPMC rings between stages (the Disruptor, embodied) | The kernel network stack and syscalls now dominate the budget |
 | v1.5 | io_uring + AF_XDP kernel bypass + `latency-lab` (HdrHistogram, coordinated omission, rdtsc) | — |
 
+> **P4 is built in two sittings, not one.** v0–v0.5 need only `concurrent` + `time` + `backpressure`,
+> so they run **second overall**, right after `concurrent` — that is the first public artifact (§7).
+> v1–v1.5 wait for `wal`/`recovery` from P1 and for `runtime-thread-per-core`.
+
 ### P5 — `perp-dex-core`
 
 | Rung | What you build | The wall |
@@ -286,23 +290,77 @@ The "From old plan" column points at `reference/WNNN.md` — that is where the d
 (mental model, contract, named pitfalls, paper drill, back-of-envelope cost model). Look it up when you
 reach the component; do not schedule from it.
 
-**The three spaced-repetition systems from the old plan stay** (`concept_cadence.md`,
-`rebuild_ladder.md`, `reference/.rework/PAPER_DRILLS.md`) — they are orthogonal to the product axis,
-not in conflict with it. The Rebuild Ladder is especially worth keeping: rebuilding `concurrent` from a
-blank file is exactly what the semaphore work is.
+### The rung ritual — what replaces the calendar
+
+The three spaced-repetition systems (`concept_cadence.md`, `rebuild_ladder.md`,
+`reference/.rework/PAPER_DRILLS.md`) stay, but they were **triggered by the calendar** — Sunday Rebuild
+Day, per-week cadence slots, per-Build drills. Removing weeks removed the trigger, and spaced
+repetition with no trigger is just a list of good intentions.
+
+**New trigger: the rung boundary.** Every rung in §2 opens and closes with a fixed ritual. Rungs arrive
+irregularly, which is fine — spacing needs to be *reliable*, not *uniform*.
+
+**Opening a rung:**
+1. List the components the rung needs (the named files).
+2. 🧮 **Paper drill per component, before writing it** — by hand, on paper: the byte/memory layout, the
+   happens-before diagram, the failure interleaving. Same drills as `PAPER_DRILLS.md`, now keyed to
+   components instead of weeks.
+3. **Back-of-envelope prediction** for the rung's wall (Law 4): what should this cost, per the hardware
+   cost model?
+4. Open `concept_cadence.md`, mark which concepts this rung exercises. **This is the rep.**
+
+**Closing a rung:**
+5. Measure. Reconcile prediction vs reality in `notes/`. The gap *is* the finding.
+6. 🔁 **One Rebuild Day.** Pick the artifact from `rebuild_ladder.md` with the **oldest last-rebuild
+   date whose rep count is still under target** (APEX 4, CORE 3) and rebuild it from a blank file. One
+   artifact, one session — not a whole day of ceremony.
+7. **Drought check.** Scan `concept_cadence.md` for any concept untouched across the last **three**
+   rungs. If one has gone cold, the next rung's Rebuild Day picks an artifact that exercises it.
+
+Rung count across the plan is ~22, so this fires roughly every 3–6 weeks at 30 h/wk — close to the old
+weekly-to-monthly spacing, and now driven by something that actually happens.
 
 ---
 
 ## 7. Execution order and risks
 
-**Order:** finish `concurrent` → **P1** → **P2** → **P3** → **P4** → **P5**.
+**Order:** `concurrent` → **P4 v0–v0.5** → **P1** → **P2** → **P4 v1–v1.5** → **P3** → **P5**.
 
 Why this order and not another:
 - `concurrent` first because it is the only crate that appears in all five products.
+- **P4 v0.5 second, out of numeric order.** Check §4: P4 v0/v0.5 need only `concurrent`, `time`, and
+  `backpressure` — the `wal`/`recovery` dependency does not appear until P4 v1. So the constraint
+  "storage engine before venue" is real for P4 **v1** and false for P4 **v0.5**. A sub-microsecond,
+  allocation-free matching engine is the most legible artifact in this whole plan for crypto-infra and
+  HFT hiring, and it is reachable ~180 h after `concurrent` instead of ~2000 h in. Building it early
+  moves the first credible public artifact from month 21 to month 3.
 - P1 before P2 because the EVM needs a state store to write into; the reverse is not true.
-- P3 after P1+P2 because the node is mostly *assembly* of those two plus networking — it is the test of
-  whether the reuse actually holds.
-- P4 split from P5 so there is a standalone "single-node, very fast" milestone before consensus enters.
+- P4 v1–v1.5 after P1 because that is where `wal`/`recovery` and `runtime-thread-per-core` land.
+- **P3 immediately before P5, deliberately.** It is the one product nothing else depends on, so putting
+  it last-but-one makes it the natural thing to cut or defer without disturbing anything downstream.
+- P5 last: it consumes P4 whole, plus P1's storage substrate, plus consensus.
+
+### The PR track — visibility as a byproduct, not a second job
+
+The old plan carried an upstream-PR track and a job milestone gated on merged PRs. Dropping it entirely
+was an accident of removing the week files, not a decision — and it is the one thing that leaves this
+plan optimizing for *becoming* the engineer while saying nothing about *being seen as* one.
+
+It comes back, but **thin, and sourced from work already being done**:
+
+- **§5 already puts `alloy-*` in the tree as a differential-test oracle.** Differential testing produces
+  a stream of mismatches for free. Each one resolves one of three ways: your bug (fix it), a spec
+  ambiguity (**docs PR**), or their bug (**issue + fix PR**). That is the entire sourcing mechanism —
+  no PR hunting, no scanning issue trackers for good-first-issues.
+- **Quota: 2–3 merged PRs per product root**, not per week. Target repos follow the product:
+  P4 → `crossbeam`/`loom` adjacent; P1 → `alloy-trie`, `reth-trie`; P2 → `revm`; P3 → `reth`, `alloy`;
+  P5 → consensus/`stateright` ecosystem.
+- **Rule: never grow a PR beyond the mismatch that produced it.** The PR track's job is a credible public
+  trail, not a second product.
+- **First visible milestone: P4 v0.5 + its first merged PRs, ~month 3–4** at 30 h/wk. That restores the
+  external checkpoint the old plan had around W24–30, roughly six months earlier than before.
+
+Costed at ~50 h per product (~250 h total) in §8 — real hours, not free.
 
 **Three risks to watch:**
 
@@ -338,20 +396,24 @@ cost, not the typing.
 
 ### Per product
 
+Listed in execution order (§7), not numeric order.
+
 | Stage | Scope | Estimate | Range |
 |---|---|---:|---|
-| **Finish `concurrent` + `time`** | semaphore, Vyukov MPMC ring, SegQueue, channel + select, `epoch-gc`, skiplist, time substrate | **180 h** | 150–220 |
+| **Finish `concurrent` + `time`** | semaphore, `SeqLock<T>`, Vyukov MPMC ring, SegQueue, channel + select, `epoch-gc`, skiplist, time substrate | **180 h** | 150–220 |
+| **P4 v0–v0.5 `matching-engine`** | book + order types + STP + triggers · intrusive price levels + object pool + zero-alloc apply loop | **180 h** | 150–250 |
 | **P1 `ethdb`** | v0 nibbles/node/naive MPT · v0.5 HashBuilder+walker+proofs · **v1 pager+bufpool+B+tree+WAL+ARIES** · v1.5 MVCC · v2 parallel+sparse+pruning | **740 h** | 600–900 |
 | **P2 `exec-vm`** | v0.5 interpreter+gas+journal · v1 full opcodes+precompiles+mainnet conformance · v1.5 block-STM | **470 h** | 400–600 |
+| **P4 v1–v1.5** | thread-per-core runtime · `mmap-queue` + `messaging-aeron` · io_uring/AF_XDP + `latency-lab` | **560 h** | 450–700 |
 | **P3 `eth-node`** | v0.5 RLPx+ECIES+discv4+eth/68 · v1 staged sync+txpool+Engine API · v1.5 snap sync | **550 h** | 450–750 |
-| **P4 `matching-engine`** | book+order types+zero-alloc · thread-per-core runtime · `mmap-queue`+`messaging-aeron` · io_uring/AF_XDP+`latency-lab` | **740 h** | 600–900 |
 | **P5 `perp-dex-core`** | oracle+risk+liquidation+ledger · VSR+VOPR · cluster assembly · BFT apex+model-check | **1000 h** | 800–1300 |
-| | **Total** | **≈3700 h** | **3000–4700** |
+| **PR track** | 2–3 merged PRs per product, sourced from differential-test mismatches (§7) | **250 h** | 150–400 |
+| | **Total** | **≈3930 h** | **3150–5100** |
 
 ### Cross-check
 
 The archived 144-week plan budgets **≈4960 h** (30 h/wk × W1–72, 40 h/wk × W73–136, 30 h/wk × W137–144).
-This estimate is ~75% of that — which is the right shape, since the old number also carried reading,
+This estimate is ~79% of that — which is the right shape, since the old number also carried reading,
 PR hunting, writing, and job search. Two independent routes landing within 25% of each other is
 reassuring, not proof.
 
@@ -359,20 +421,23 @@ reassuring, not proof.
 
 | Pace | Elapsed | Notes |
 |---|---|---|
-| 20 h/wk (your observed rate) | **~3.6 years** | |
-| 30 h/wk | **~2.4 years** | |
-| 40 h/wk | **~1.8 years** | full-time equivalent |
+| 20 h/wk (your observed rate) | **~3.8 years** | |
+| 30 h/wk | **~2.5 years** | |
+| 40 h/wk | **~1.9 years** | full-time equivalent |
 
-### When each product lands (30 h/wk, sequential)
+### When each product lands (30 h/wk, PR hours interleaved)
 
 | Milestone | Cumulative | Elapsed |
 |---|---:|---|
 | `concurrent` + `time` done | 180 h | ~1.5 months |
-| **P1 `ethdb` v2** — mainnet state root, own storage engine | 920 h | ~7 months |
-| **P2 `exec-vm` v1.5** — self-contained block replay | 1390 h | ~11 months |
-| **P3 `eth-node` v1.5** — holds mainnet tip | 1940 h | ~15 months |
-| **P4 `matching-engine` v1.5** — sub-µs, allocation-free | 2680 h | ~21 months |
-| **P5 `perp-dex-core` v1.5** — replicated, BFT | 3680 h | ~28 months |
+| **P4 v0.5 — sub-µs allocation-free book + first merged PRs** ⭐ **first public artifact** | 400 h | **~3 months** |
+| **P1 `ethdb` v2** — mainnet state root on your own storage engine | 1190 h | ~9 months |
+| **P2 `exec-vm` v1.5** — self-contained block replay | 1710 h | ~13 months |
+| **P4 v1.5** — thread-per-core, kernel bypass, measured p99 | 2320 h | ~18 months |
+| **P3 `eth-node` v1.5** — holds mainnet tip *(cuttable)* | 2920 h | ~22.5 months |
+| **P5 `perp-dex-core` v1.5** — replicated, BFT | 3970 h | ~30.5 months |
+
+Cutting P3 (§7) removes ~600 h and pulls P5 to ~25.5 months.
 
 ### How much to trust this
 
@@ -382,8 +447,8 @@ reassuring, not proof.
   debugging distributed failures, which is not proportional to code volume. Treat the upper bound as
   the planning number for these two, not the midpoint.
 - **Systematic bias: estimates for novel systems work run 1.5–2× low**, and this one is no exception.
-  The honest read of 3700 h is "3000 if things go well, 5000+ if P3 and P5 fight back."
-- **Biggest single lever: P3.** Dropping it saves ~550 h and costs nothing structurally — no other
+  The honest read of 3930 h is "3150 if things go well, 5000+ if P3 and P5 fight back."
+- **Biggest single lever: P3.** Dropping it saves ~600 h (build + its PR quota) and costs nothing structurally — no other
   product depends on it (§4: `eth-trie` and `exec-vm` feed it, not the reverse). It is the natural cut
   if the timeline needs to come down.
 
@@ -406,7 +471,7 @@ The workspace was pruned to exactly what §3/§4 consume — learning-only artif
 `eth-chain-state`, `dekker.rs` (drill #3), the tokio framing stack, the mutex/rwlock/local/shared cache
 progression, `SimpleEncode`, and the Pin examples. `cargo test --workspace --all-features` is green.
 
-**Layer 1, still to write before P1 can start:**
+**Layer 1, still to write before anything else starts (§7 puts P4 v0.5 next):**
 
 - `SeqLock<T: Pod>` — the generic version of the SeqLock in the old `ChainHead`, which was hardcoded to
   `(B256, u64)`. `Pod` already exists in the crate for `AtomicCell`. Old fence reasoning is in git history.
