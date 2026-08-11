@@ -475,7 +475,9 @@ progression, `SimpleEncode`, and the Pin examples. `cargo test --workspace --all
 
 - `SeqLock<T: Pod>` — the generic version of the SeqLock in the old `ChainHead`, which was hardcoded to
   `(B256, u64)`. `Pod` already exists in the crate for `AtomicCell`. Old fence reasoning is in git history.
-- `semaphore` — **in flight**
+- `semaphore` — ✅ sync version done (5 loom models, 8 std tests, all negative-controlled)
+- `AsyncSemaphore` — **next up**; needs `block_on` + a loom-compatible `Waker` first (both reused by
+  the P4 runtime)
 - MPMC ring (Vyukov), `SegQueue`, channel + select, `epoch-gc`, skiplist
 - `time` — Monotonic, Lamport, HLC, rdtsc
 
