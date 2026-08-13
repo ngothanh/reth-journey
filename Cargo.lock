@@ -409,6 +409,7 @@ dependencies = [
  "atomic-wait",
  "criterion",
  "loom",
+ "slab",
  "tokio",
  "trybuild",
 ]
