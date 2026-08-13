@@ -194,7 +194,6 @@ mod tests {
 
     #[test]
     fn poll_refresh_waker() {
-        // Given
         let semaphore = Semaphore::new(0);
 
         let w1 = WatchedWaker::new();
@@ -206,10 +205,8 @@ mod tests {
         let mut ctx = Context::from_waker(&waker1);
         let mut ctx2 = Context::from_waker(&waker2);
 
-        // When
         let mut fut = pin!(semaphore.acquire());
 
-        // Then
         assert!(fut.as_mut().poll(&mut ctx).is_pending());
         assert!(fut.as_mut().poll(&mut ctx2).is_pending());
 
