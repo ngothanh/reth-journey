@@ -1,6 +1,9 @@
 mod tests {
     use concurrent::Semaphore;
+    use std::future::Future;
+    use std::pin::pin;
     use std::sync::Arc;
+    use std::task::{Context, Waker};
     use std::time::Duration;
 
     #[test]
@@ -102,6 +105,22 @@ mod tests {
             semaphore.available_permits(),
             3,
             "3 permits must be returned"
+        );
+    }
+
+    #[test]
+    fn granted_permit_is_not_stealable() {
+        let semaphore = Semaphore::new(0);
+        let mut acquire = pin!(semaphore.acquire());
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+
+        assert!(acquire.as_mut().poll(&mut context).is_pending());
+
+        semaphore.add_permits(1);
+        assert!(
+            semaphore.try_acquire().is_err(),
+            "permit was assigned to acquire, cannot be steal"
         );
     }
 }

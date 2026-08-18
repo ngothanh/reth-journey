@@ -4,6 +4,7 @@ use core::pin::Pin;
 use core::task::Waker;
 use core::task::{Context, Poll};
 use slab::Slab;
+use std::collections::VecDeque;
 
 pub struct Semaphore {
     state: Mutex<State>,
@@ -11,10 +12,12 @@ pub struct Semaphore {
 
 struct Waiter {
     waker: Waker,
+    granted: bool,
 }
 
 struct State {
     waiters: Slab<Waiter>,
+    order: VecDeque<usize>,
     permits: usize,
 }
 
@@ -37,6 +40,7 @@ impl Drop for Acquire<'_> {
     fn drop(&mut self) {
         let mut state = self.semaphore.state.lock();
         if let Some(k) = self.key {
+            state.order.retain(|&i| i != k);
             state.waiters.remove(k);
         }
     }
@@ -49,32 +53,37 @@ impl<'a> Future for Acquire<'a> {
         let this = self.get_mut();
         let mut state = this.semaphore.state.lock();
 
-        if state.permits > 0 {
-            state.permits -= 1;
-            if let Some(k) = this.key {
-                this.key = None;
-                state.waiters.remove(k);
-            }
-            return Poll::Ready(Ok(SemaphorePermit {
-                semaphore: this.semaphore,
-            }));
-        }
-
         match this.key {
-            None => {
-                let i = state.waiters.insert(Waiter {
-                    waker: cx.waker().clone(),
-                });
-                this.key = Some(i);
-            }
             Some(k) => {
-                if !state.waiters[k].waker.will_wake(cx.waker()) {
-                    state.waiters[k].waker = cx.waker().clone();
+                if state.waiters[k].granted {
+                    this.key = None;
+                    state.waiters.remove(k);
+                    Poll::Ready(Ok(SemaphorePermit {
+                        semaphore: this.semaphore,
+                    }))
+                } else {
+                    if !state.waiters[k].waker.will_wake(cx.waker()) {
+                        state.waiters[k].waker = cx.waker().clone();
+                    }
+                    Poll::Pending
                 }
             }
+            None => {
+                if state.permits > 0 {
+                    state.permits -= 1;
+                    return Poll::Ready(Ok(SemaphorePermit {
+                        semaphore: this.semaphore,
+                    }));
+                }
+                let i = state.waiters.insert(Waiter {
+                    waker: cx.waker().clone(),
+                    granted: false,
+                });
+                state.order.push_back(i);
+                this.key = Some(i);
+                Poll::Pending
+            }
         }
-
-        Poll::Pending
     }
 }
 
@@ -91,6 +100,7 @@ impl Semaphore {
         Semaphore {
             state: Mutex::new(State {
                 waiters: Slab::new(),
+                order: VecDeque::new(),
                 permits: num_permits,
             }),
         }
@@ -117,18 +127,17 @@ impl Semaphore {
         let mut to_wake = Vec::new();
         {
             let mut state = self.state.lock();
-            state.permits = state
-                .permits
-                .checked_add(num_permits)
-                .expect("semaphore overflow");
-            let mut count = 0;
-            for (_, waiter) in state.waiters.iter() {
-                if count == num_permits {
+            let mut left = num_permits;
+            while left > 0 {
+                if let Some(w) = state.order.pop_front() {
+                    left -= 1;
+                    state.waiters[w].granted = true;
+                    to_wake.push(state.waiters[w].waker.clone());
+                } else {
                     break;
                 }
-                to_wake.push(waiter.waker.clone());
-                count += 1;
             }
+            state.permits = state.permits.checked_add(left).expect("semaphore overflow");
         }
         for waker in to_wake {
             waker.wake()
