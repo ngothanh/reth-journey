@@ -1,9 +1,9 @@
 mod tests {
-    use concurrent::Semaphore;
+    use concurrent::{Semaphore, TryAcquireError};
     use std::future::Future;
     use std::pin::pin;
     use std::sync::Arc;
-    use std::task::{Context, Waker};
+    use std::task::{Context, Poll, Waker};
     use std::time::Duration;
 
     #[test]
@@ -122,5 +122,78 @@ mod tests {
             semaphore.try_acquire().is_err(),
             "permit was assigned to acquire, cannot be steal"
         );
+    }
+
+    #[test]
+    fn cancel_after_grant_return_permit() {
+        let semaphore = Semaphore::new(0);
+        let mut acquire = Box::pin(semaphore.acquire());
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+
+        assert!(acquire.as_mut().poll(&mut context).is_pending());
+
+        semaphore.add_permits(1);
+        drop(acquire);
+
+        assert_eq!(semaphore.available_permits(), 1);
+    }
+
+    #[test]
+    fn cancel_grant_flow_to_next_waiter() {
+        let semaphore = Semaphore::new(0);
+        let waker = Waker::noop();
+        let mut ctx = Context::from_waker(&waker);
+
+        let mut a1 = Box::pin(semaphore.acquire());
+        let mut a2 = pin!(semaphore.acquire());
+
+        assert!(a1.as_mut().poll(&mut ctx).is_pending());
+        assert!(a2.as_mut().poll(&mut ctx).is_pending());
+
+        semaphore.add_permits(1);
+        drop(a1);
+        assert!(a2.as_mut().poll(&mut ctx).is_ready());
+    }
+
+    #[test]
+    fn try_acquire_after_close_is_closed() {
+        // permit vẫn còn, nhưng closed thắng permits
+        let semaphore = Semaphore::new(1);
+        semaphore.close();
+        assert!(matches!(
+            semaphore.try_acquire(),
+            Err(TryAcquireError::Closed)
+        ));
+    }
+
+    #[test]
+    fn fresh_acquire_after_close_errors() {
+        let semaphore = Semaphore::new(1);
+        semaphore.close();
+
+        let waker = Waker::noop();
+        let mut ctx = Context::from_waker(&waker);
+        let mut acquire = pin!(semaphore.acquire());
+
+        assert!(matches!(
+            acquire.as_mut().poll(&mut ctx),
+            Poll::Ready(Err(_))
+        ));
+    }
+
+    #[test]
+    fn waiting_acquire_errors_on_close() {
+        let semaphore = Semaphore::new(0);
+        let waker = Waker::noop();
+        let mut ctx = Context::from_waker(&waker);
+        let mut acquire = pin!(semaphore.acquire());
+
+        assert!(acquire.as_mut().poll(&mut ctx).is_pending()); // A xếp hàng
+        semaphore.close();                                     // wake A với lỗi
+        assert!(matches!(
+            acquire.as_mut().poll(&mut ctx),
+            Poll::Ready(Err(_))
+        ));
     }
 }
