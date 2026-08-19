@@ -39,10 +39,12 @@ impl Drop for Acquire<'_> {
     fn drop(&mut self) {
         let mut to_wake = Vec::new();
         {
-            let state = self.semaphore.state.lock();
+            let mut state = self.semaphore.state.lock();
             if self.queued {
                 if self.node.granted {
                     release_lock(state, 1, &mut to_wake);
+                } else {
+                    state.waiters.unlink(NonNull::from(&self.node));
                 }
             }
         }
@@ -63,7 +65,7 @@ impl<'a> Future for Acquire<'a> {
         match this.queued {
             true => {
                 if this.node.granted {
-                    state.waiters.unlink(node);
+                    this.queued = false;
                     Poll::Ready(Ok(SemaphorePermit {
                         semaphore: this.semaphore,
                     }))
@@ -120,17 +122,11 @@ impl Semaphore {
         {
             let mut state = self.state.lock();
             state.closed = true;
-            while let Some(w) = state.waiters.pop_front() {
-                unsafe {
-                    to_wake.push((*w.as_ptr()).take_waker());
-                }
-            }
+            state.waiters.take_all_wakers(&mut to_wake);
         }
 
         for w in to_wake {
-            if let Some(x) = w {
-                x.wake();
-            }
+            w.wake();
         }
     }
 

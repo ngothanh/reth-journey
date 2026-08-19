@@ -56,6 +56,18 @@ impl WaitList {
         }
     }
 
+    pub(crate) fn take_all_wakers(&self, out: &mut Vec<Waker>) {
+        let mut cur = self.head;
+        while let Some(node) = cur {
+            unsafe {
+                if let Some(w) = (*node.as_ptr()).take_waker() {
+                    out.push(w);
+                }
+                cur = (*node.as_ptr()).next;
+            }
+        }
+    }
+
     pub(crate) fn push_back(&mut self, node: NonNull<Waiter>) {
         match self.tail {
             None => {
