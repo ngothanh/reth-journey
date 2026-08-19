@@ -10,6 +10,7 @@ mod parker;
 mod pod;
 mod rw_lock;
 mod semaphore;
+mod waitlist;
 
 pub use atomic_cell::AtomicCell;
 pub use backoff::Backoff;
@@ -21,3 +22,4 @@ pub use parker::{Parker, Unparker};
 pub use pod::Pod;
 pub use rw_lock::{ReadGuard, RwLock, WriteGuard};
 pub use semaphore::{Acquire, AcquireError, Semaphore, SemaphorePermit, TryAcquireError};
+pub use waitlist::{Waiter, WaitList};

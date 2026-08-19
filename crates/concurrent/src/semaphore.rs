@@ -1,23 +1,18 @@
-use crate::{Mutex, MutexGuard};
+use crate::{Mutex, MutexGuard, WaitList, Waiter};
 use core::future::Future;
 use core::pin::Pin;
 use core::task::Waker;
 use core::task::{Context, Poll};
-use slab::Slab;
-use std::collections::VecDeque;
+use std::ptr::NonNull;
 
 pub struct Semaphore {
     state: Mutex<State>,
 }
-
-struct Waiter {
-    waker: Waker,
-    granted: bool,
-}
+unsafe impl Send for Semaphore {}
+unsafe impl Sync for Semaphore {}
 
 struct State {
-    waiters: Slab<Waiter>,
-    order: VecDeque<usize>,
+    waiters: WaitList,
     permits: usize,
     closed: bool,
 }
@@ -34,18 +29,19 @@ impl Drop for SemaphorePermit<'_> {
 
 pub struct Acquire<'a> {
     semaphore: &'a Semaphore,
-    key: Option<usize>,
+    node: Waiter,
+    queued: bool,
 }
+
+unsafe impl Send for Acquire<'_> {}
 
 impl Drop for Acquire<'_> {
     fn drop(&mut self) {
         let mut to_wake = Vec::new();
         {
-            let mut state = self.semaphore.state.lock();
-            if let Some(k) = self.key {
-                state.order.retain(|i| *i != k);
-                let waiter = state.waiters.remove(k);
-                if waiter.granted {
+            let state = self.semaphore.state.lock();
+            if self.queued {
+                if self.node.granted {
                     release_lock(state, 1, &mut to_wake);
                 }
             }
@@ -61,30 +57,26 @@ impl<'a> Future for Acquire<'a> {
     type Output = Result<SemaphorePermit<'a>, AcquireError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
+        let this = unsafe { self.get_unchecked_mut() };
+        let node = NonNull::from(&this.node);
         let mut state = this.semaphore.state.lock();
-
-        match this.key {
-            Some(k) => {
-                if state.waiters[k].granted {
-                    this.key = None;
-                    state.waiters.remove(k);
+        match this.queued {
+            true => {
+                if this.node.granted {
+                    state.waiters.unlink(node);
                     Poll::Ready(Ok(SemaphorePermit {
                         semaphore: this.semaphore,
                     }))
                 } else if state.closed {
-                    this.key = None;
-                    state.order.retain(|i| *i != k);
-                    state.waiters.remove(k);
+                    this.queued = false;
+                    state.waiters.unlink(node);
                     Poll::Ready(Err(AcquireError {}))
                 } else {
-                    if !state.waiters[k].waker.will_wake(cx.waker()) {
-                        state.waiters[k].waker = cx.waker().clone();
-                    }
+                    this.node.update_waker(cx.waker());
                     Poll::Pending
                 }
             }
-            None => {
+            false => {
                 if state.closed {
                     Poll::Ready(Err(AcquireError {}))
                 } else {
@@ -94,12 +86,9 @@ impl<'a> Future for Acquire<'a> {
                             semaphore: this.semaphore,
                         }));
                     }
-                    let i = state.waiters.insert(Waiter {
-                        waker: cx.waker().clone(),
-                        granted: false,
-                    });
-                    state.order.push_back(i);
-                    this.key = Some(i);
+                    this.node.update_waker(cx.waker());
+                    state.waiters.push_back(node);
+                    this.queued = true;
                     Poll::Pending
                 }
             }
@@ -119,8 +108,7 @@ impl Semaphore {
     pub fn new(num_permits: usize) -> Self {
         Semaphore {
             state: Mutex::new(State {
-                waiters: Slab::new(),
-                order: VecDeque::new(),
+                waiters: WaitList::new(),
                 permits: num_permits,
                 closed: false,
             }),
@@ -132,20 +120,25 @@ impl Semaphore {
         {
             let mut state = self.state.lock();
             state.closed = true;
-            for (_, waiter) in &state.waiters {
-                to_wake.push(waiter.waker.clone());
+            while let Some(w) = state.waiters.pop_front() {
+                unsafe {
+                    to_wake.push((*w.as_ptr()).take_waker());
+                }
             }
         }
 
         for w in to_wake {
-            w.wake()
+            if let Some(x) = w {
+                x.wake();
+            }
         }
     }
 
     pub fn acquire(&self) -> Acquire<'_> {
         Acquire {
             semaphore: self,
-            key: None,
+            node: Waiter::new(),
+            queued: false,
         }
     }
 
@@ -186,10 +179,14 @@ impl Semaphore {
 fn release_lock(mut state: MutexGuard<State>, num_permits: usize, to_wake: &mut Vec<Waker>) {
     let mut left = num_permits;
     while left > 0 {
-        if let Some(w) = state.order.pop_front() {
+        if let Some(w) = state.waiters.pop_front() {
             left -= 1;
-            state.waiters[w].granted = true;
-            to_wake.push(state.waiters[w].waker.clone());
+            unsafe {
+                (*w.as_ptr()).granted = true;
+                if let Some(w) = (*w.as_ptr()).take_waker() {
+                    to_wake.push(w);
+                }
+            }
         } else {
             break;
         }
