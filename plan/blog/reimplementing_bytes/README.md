@@ -12,9 +12,7 @@ zero.
 ## Languages / Ngôn ngữ / Sprachen / 语言
 
 - 🇬🇧 **English** — [`en/00_index.md`](en/00_index.md)
-- 🇻🇳 **Tiếng Việt** — [`vi/00_index.md`](vi/00_index.md)
 - 🇩🇪 **Deutsch** — [`de/00_index.md`](de/00_index.md)
-- 🇨🇳 **简体中文** — [`zh/00_index.md`](zh/00_index.md)
 
 All versions cover the same five parts and the same ideas; each is self-contained.
 Pick one and read it top to bottom.
