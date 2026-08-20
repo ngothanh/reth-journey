@@ -486,3 +486,60 @@ progression, `SimpleEncode`, and the Pin examples. `cargo test --workspace --all
 > **On writing:** blog posts are an *output* of finished work, not an input to it. Nothing here is
 > scheduled around them. When a product reaches a rung worth writing about, the implementation
 > conversation plus the measurement notes are the raw material — the post gets designed then, not now.
+
+---
+
+## 10. Path F: AI inference infra IC (hedge, added 2026-08-20)
+
+> **Placement note:** optional path, evaluated only after the committed tree above; competes for
+> artifact hours only in the M19–24 window per the conflict rule below.
+
+- Status: official hedge alongside Path E. Does NOT replace Path E as default.
+  Evaluated at M24 gate with same rigor as Paths A–E.
+- Rationale: HFT ↔ AI infra convergence; value sits at systems layer
+  (GPU scheduling, KV-cache, serving), not modeling layer. Reuses existing
+  strengths: scheduling, latency, memory management, queue theory.
+
+**Artifact gate (analog of matching-engine v1.0):**
+- inference-engine v0.5, open-source, Rust: tokenizer + transformer forward
+  pass + KV-cache + continuous batching. Runs a real open-weights 1–3B model
+  end-to-end. CPU first, CUDA second. Follows workspace rules
+  ("no primitive twice", inheritance ratios apply).
+
+**M24 criteria (all three, mirror Path E structure):**
+1. inference-engine v0.5 shipped and public
+2. CS336 Assignment 1 + 2 completed, self-graded against official test suite
+3. ≥1 market signal: inbound from inference provider / lab / HFT ML-infra
+   team, OR significant repo engagement
+- If criterion 3 fails → Path F ranks below Path E at gate, retained as
+  optionality only (same demotion logic as Tempo three-condition gate).
+
+**Coursework (prerequisite chain, minimum viable — no scope creep):**
+- MIT 18.065 Matrix Methods (OCW) — only gaps, not full course
+- Stanford CS231n — Assignments 1–2 ONLY (manual backprop in numpy)
+- Stanford CS336 Spring 2026 (YouTube + github.com/stanford-cs336) —
+  Assignments 1 (transformer/tokenizer) + 2 (Triton kernels, FlashAttention,
+  distributed) ONLY. Skip A3–A5 (scaling laws, data, alignment).
+- PMPP (Programming Massively Parallel Processors) + CUDA MODE lectures —
+  GPU programming as 7th transferable skill (shares mental model with
+  marketdata-kernelbypass W90)
+- Explicitly SKIPPED: CS229, CS224n, CS224W (graph ML irrelevant to both
+  paths), CS336 A3–A5
+- Language rule: coursework in Python (test suites are the point);
+  port to Rust only what earns it — tokenizer, data pipeline, inference
+  engine itself. Never port kernels or training loops.
+
+**Input sources (amend):** vLLM promoted from reading input to primary
+  reference for Path F (scheduler, paged attention internals).
+
+**Budget:** consumes the cross-ecosystem reading slot (3–4 hrs/wk from M6).
+  Reth primary track untouched through M18. Zero budget from Tempo.
+
+**Conflict rule (M19–24):** Path E and Path F compete for the same artifact
+  hours. If at M20 both matching-engine and inference-engine are incomplete
+  → cut one, keep whichever has market signal first. Do not run both to
+  the gate half-finished.
+
+**Path F targets (verify landscape at M22 — fast-moving):** inference
+  providers (Together/Fireworks/Baseten-class), HFT firms' ML infra teams,
+  labs. All open-source-friendly → post-Reth OSS non-negotiable holds.

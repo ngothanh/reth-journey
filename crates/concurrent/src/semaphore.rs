@@ -111,6 +111,7 @@ impl<'a> Future for Acquire<'a> {
     }
 }
 
+#[derive(Debug)]
 pub enum TryAcquireError {
     NoPermits,
     Closed,
