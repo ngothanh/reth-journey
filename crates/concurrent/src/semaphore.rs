@@ -41,7 +41,7 @@ impl Drop for Acquire<'_> {
         match self.node.state() {
             Waiting => {
                 let mut state = self.semaphore.state.lock();
-                state.waiters.unlink(NonNull::from(&self.node))
+                state.waiters.unlink(NonNull::from(&mut self.node))
             }
             Granted => {
                 let mut wakers = WakeList::new();
@@ -69,7 +69,7 @@ impl<'a> Future for Acquire<'a> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
-        let node = NonNull::from(&this.node);
+        let node = NonNull::from(&mut this.node);
         let mut state = this.semaphore.state.lock();
 
         match this.node.state() {
@@ -91,7 +91,7 @@ impl<'a> Future for Acquire<'a> {
                     }))
                 } else {
                     this.node.update_waker(cx.waker());
-                    unsafe { this.node.set_state(Waiting) };
+                    this.node.set_state(Waiting);
                     state.waiters.push_back(node);
                     Poll::Pending
                 }
