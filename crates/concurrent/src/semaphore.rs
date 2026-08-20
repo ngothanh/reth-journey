@@ -131,15 +131,14 @@ impl Semaphore {
     }
 
     pub fn close(&self) {
-        let mut to_wake = Vec::new();
-        {
-            let mut state = self.state.lock();
-            state.closed = true;
-            state.waiters.take_all_wakers(&mut to_wake);
-        }
-
-        for w in to_wake {
-            w.wake();
+        let mut wakers = WakeList::new();
+        self.state.lock().closed = true;
+        loop {
+            let more = self.state.lock().waiters.take_wakers_into(&mut wakers);
+            wakers.wake_all();
+            if !more {
+                break;
+            }
         }
     }
 

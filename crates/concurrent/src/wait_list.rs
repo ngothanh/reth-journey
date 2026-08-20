@@ -1,4 +1,5 @@
 use crate::wait_list::WaiterState::Idle;
+use crate::wake_list::WakeList;
 use core::cell::UnsafeCell;
 use core::marker::PhantomPinned;
 use core::ptr::NonNull;
@@ -77,16 +78,20 @@ impl WaitList {
         }
     }
 
-    pub(crate) fn take_all_wakers(&self, out: &mut Vec<Waker>) {
+    pub(crate) fn take_wakers_into(&self, out: &mut WakeList) -> bool {
         let mut cur = self.head;
         while let Some(node) = cur {
             unsafe {
                 if let Some(w) = (*node.as_ptr()).take_waker() {
                     out.push(w);
+                    if !out.can_push() {
+                        return (*node.as_ptr()).next.is_some();
+                    }
                 }
                 cur = (*node.as_ptr()).next;
             }
         }
+        false
     }
 
     pub(crate) fn push_back(&mut self, node: NonNull<Waiter>) {
