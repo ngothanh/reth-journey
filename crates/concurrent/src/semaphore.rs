@@ -1,9 +1,11 @@
-use crate::{Mutex, MutexGuard, WaitList, Waiter};
+use crate::wait_list::WaiterState;
+use crate::wake_list::WakeList;
+use crate::{Mutex, WaitList, Waiter};
 use core::future::Future;
 use core::pin::Pin;
-use core::task::Waker;
 use core::task::{Context, Poll};
 use std::ptr::NonNull;
+use WaiterState::{Done, Granted, Idle, Waiting};
 
 pub struct Semaphore {
     state: Mutex<State>,
@@ -30,27 +32,34 @@ impl Drop for SemaphorePermit<'_> {
 pub struct Acquire<'a> {
     semaphore: &'a Semaphore,
     node: Waiter,
-    queued: bool,
 }
 
 unsafe impl Send for Acquire<'_> {}
 
 impl Drop for Acquire<'_> {
     fn drop(&mut self) {
-        let mut to_wake = Vec::new();
-        {
-            let mut state = self.semaphore.state.lock();
-            if self.queued {
-                if self.node.granted {
-                    release_lock(state, 1, &mut to_wake);
-                } else {
-                    state.waiters.unlink(NonNull::from(&self.node));
-                }
+        match self.node.state() {
+            Waiting => {
+                let mut state = self.semaphore.state.lock();
+                state.waiters.unlink(NonNull::from(&self.node))
             }
-        }
-
-        for w in to_wake {
-            w.wake()
+            Granted => {
+                let mut wakers = WakeList::new();
+                {
+                    let mut state = self.semaphore.state.lock();
+                    match state.waiters.pop_front() {
+                        Some(w) => unsafe {
+                            (*w.as_ptr()).set_state(Granted);
+                            if let Some(x) = (*w.as_ptr()).take_waker() {
+                                wakers.push(x);
+                            }
+                        },
+                        None => state.permits = state.permits.checked_add(1).expect("overflow"),
+                    }
+                }
+                wakers.wake_all();
+            }
+            _ => {}
         }
     }
 }
@@ -62,15 +71,34 @@ impl<'a> Future for Acquire<'a> {
         let this = unsafe { self.get_unchecked_mut() };
         let node = NonNull::from(&this.node);
         let mut state = this.semaphore.state.lock();
-        match this.queued {
-            true => {
-                if this.node.granted {
-                    this.queued = false;
+
+        match this.node.state() {
+            Granted => {
+                this.node.set_state(Done);
+                Poll::Ready(Ok(SemaphorePermit {
+                    semaphore: this.semaphore,
+                }))
+            }
+            Idle => {
+                if state.closed {
+                    this.node.set_state(Done);
+                    Poll::Ready(Err(AcquireError {}))
+                } else if state.permits > 0 {
+                    state.permits -= 1;
+                    this.node.set_state(Done);
                     Poll::Ready(Ok(SemaphorePermit {
                         semaphore: this.semaphore,
                     }))
-                } else if state.closed {
-                    this.queued = false;
+                } else {
+                    this.node.update_waker(cx.waker());
+                    unsafe { this.node.set_state(Waiting) };
+                    state.waiters.push_back(node);
+                    Poll::Pending
+                }
+            }
+            Waiting => {
+                if state.closed {
+                    this.node.set_state(Done);
                     state.waiters.unlink(node);
                     Poll::Ready(Err(AcquireError {}))
                 } else {
@@ -78,22 +106,7 @@ impl<'a> Future for Acquire<'a> {
                     Poll::Pending
                 }
             }
-            false => {
-                if state.closed {
-                    Poll::Ready(Err(AcquireError {}))
-                } else {
-                    if state.permits > 0 {
-                        state.permits -= 1;
-                        return Poll::Ready(Ok(SemaphorePermit {
-                            semaphore: this.semaphore,
-                        }));
-                    }
-                    this.node.update_waker(cx.waker());
-                    state.waiters.push_back(node);
-                    this.queued = true;
-                    Poll::Pending
-                }
-            }
+            Done => unreachable!("polled after completion"),
         }
     }
 }
@@ -134,7 +147,6 @@ impl Semaphore {
         Acquire {
             semaphore: self,
             node: Waiter::new(),
-            queued: false,
         }
     }
 
@@ -152,13 +164,31 @@ impl Semaphore {
     }
 
     pub fn add_permits(&self, num_permits: usize) {
-        let mut to_wake = Vec::new();
-        {
-            let state = self.state.lock();
-            release_lock(state, num_permits, &mut to_wake);
-        }
-        for waker in to_wake {
-            waker.wake()
+        let mut to_wake = WakeList::new();
+        let mut left = num_permits;
+        loop {
+            {
+                let mut state = self.state.lock();
+                while left > 0 && to_wake.can_push() {
+                    if let Some(w) = state.waiters.pop_front() {
+                        left -= 1;
+                        unsafe {
+                            (*w.as_ptr()).set_state(Granted);
+                            if let Some(w) = (*w.as_ptr()).take_waker() {
+                                to_wake.push(w);
+                            }
+                        }
+                    } else {
+                        state.permits = state.permits.checked_add(left).expect("semaphore overflow");
+                        left = 0;
+                        break;
+                    }
+                }
+            }
+            to_wake.wake_all();
+            if left == 0 {
+                break;
+            }
         }
     }
 
@@ -170,24 +200,6 @@ impl Semaphore {
     pub fn waiter_count(&self) -> usize {
         self.state.lock().waiters.len()
     }
-}
-
-fn release_lock(mut state: MutexGuard<State>, num_permits: usize, to_wake: &mut Vec<Waker>) {
-    let mut left = num_permits;
-    while left > 0 {
-        if let Some(w) = state.waiters.pop_front() {
-            left -= 1;
-            unsafe {
-                (*w.as_ptr()).granted = true;
-                if let Some(w) = (*w.as_ptr()).take_waker() {
-                    to_wake.push(w);
-                }
-            }
-        } else {
-            break;
-        }
-    }
-    state.permits = state.permits.checked_add(left).expect("semaphore overflow");
 }
 
 #[cfg(test)]

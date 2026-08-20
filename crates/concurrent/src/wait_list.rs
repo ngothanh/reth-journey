@@ -1,3 +1,4 @@
+use crate::wait_list::WaiterState::Idle;
 use core::cell::UnsafeCell;
 use core::marker::PhantomPinned;
 use core::ptr::NonNull;
@@ -5,17 +6,25 @@ use core::task::Waker;
 
 pub struct Waiter {
     waker: UnsafeCell<Option<Waker>>,
-    pub granted: bool,
+    state: UnsafeCell<WaiterState>,
     prev: Option<NonNull<Waiter>>,
     next: Option<NonNull<Waiter>>,
     _pin: PhantomPinned,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum WaiterState {
+    Idle,
+    Waiting,
+    Granted,
+    Done,
 }
 
 impl Waiter {
     pub fn new() -> Self {
         Waiter {
             waker: UnsafeCell::new(None),
-            granted: false,
+            state: UnsafeCell::new(Idle),
             prev: None,
             next: None,
             _pin: PhantomPinned,
@@ -40,6 +49,18 @@ impl Waiter {
     pub(crate) fn take_waker(&self) -> Option<Waker> {
         //SAFETY: Waiter can only be retrieved under mutex lock
         unsafe { (*self.waker.get()).take() }
+    }
+
+    /// SAFETY: Lock already
+    pub(crate) fn state(&self) -> WaiterState {
+        unsafe { *self.state.get() }
+    }
+
+    /// SAFETY: Lock already
+    pub(crate) fn set_state(&self, s: WaiterState) {
+        unsafe {
+            *self.state.get() = s;
+        }
     }
 }
 
