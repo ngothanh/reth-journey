@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>:root{--ink:#E3E9EF;--muted:#8C9BAA;--line:#2B353F;--writer:#E8A44E;--reader:#4FBCC7;--tear:#EC7A70}
+html,body{margin:0;background:#0b0f14}.fig{display:inline-block;padding:40px 48px;background:radial-gradient(130% 130% at 15% 0%,#141c26 0%,#0b0f14 72%)}
+svg{display:block;width:920px;height:auto}
+.s-line{stroke:var(--line)}.s-muted{stroke:var(--muted)}.f-muted{fill:var(--muted)}.f-ink{fill:var(--ink)}
+.s-w{stroke:var(--writer)}.f-w{fill:var(--writer)}.s-r{stroke:var(--reader)}.f-r{fill:var(--reader)}.f-t{fill:var(--tear)}.none{fill:none}
+.lbl{font-family:"JetBrains Mono",monospace;font-size:13px}.lbl-sm{font-family:"JetBrains Mono",monospace;font-size:11px}
+.lbl-lg{font-family:Archivo,sans-serif;font-size:15px;font-weight:700}</style></head><body><div class="fig"><svg viewBox="0 0 920 560" role="img">
+<text x="96" y="34" class="lbl-lg f-ink">read latency, log scale</text>
+<line x1="96" y1="442.6" x2="770" y2="442.6" class="s-line" stroke-width="1" stroke-dasharray="2 5"/><text x="82" y="446.6" text-anchor="end" class="lbl-sm f-muted">1 ns</text><line x1="96" y1="318.4" x2="770" y2="318.4" class="s-line" stroke-width="1" stroke-dasharray="2 5"/><text x="82" y="322.4" text-anchor="end" class="lbl-sm f-muted">10 ns</text><line x1="96" y1="194.2" x2="770" y2="194.2" class="s-line" stroke-width="1" stroke-dasharray="2 5"/><text x="82" y="198.2" text-anchor="end" class="lbl-sm f-muted">100 ns</text><line x1="96" y1="70.0" x2="770" y2="70.0" class="s-line" stroke-width="1" stroke-dasharray="2 5"/><text x="82" y="74.0" text-anchor="end" class="lbl-sm f-muted">1000 ns</text>
+<polyline points="96.0,353.7 320.7,216.6 545.3,161.9 770.0,90.8" class="none s-w" stroke-width="3"/>
+<polyline points="96.0,458.1 320.7,456.0 545.3,455.3 770.0,420.7" class="none s-r" stroke-width="3"/>
+<circle cx="96.0" cy="353.7" r="4.5" class="f-w"/><circle cx="320.7" cy="216.6" r="4.5" class="f-w"/><circle cx="545.3" cy="161.9" r="4.5" class="f-w"/><circle cx="770.0" cy="90.8" r="4.5" class="f-w"/><circle cx="96.0" cy="458.1" r="4.5" class="f-r"/><circle cx="320.7" cy="456.0" r="4.5" class="f-r"/><circle cx="545.3" cy="455.3" r="4.5" class="f-r"/><circle cx="770.0" cy="420.7" r="4.5" class="f-r"/>
+<text x="782.0" y="94.8" class="lbl f-w">RwLock — climbs</text>
+<text x="782.0" y="424.7" class="lbl f-r">SeqLock — flat</text>
+<line x1="96" y1="480" x2="770" y2="480" class="s-muted" stroke-width="1.5"/>
+<text x="96.0" y="508" text-anchor="middle" class="lbl f-ink">1</text><text x="320.7" y="508" text-anchor="middle" class="lbl f-ink">2</text><text x="545.3" y="508" text-anchor="middle" class="lbl f-ink">4</text><text x="770.0" y="508" text-anchor="middle" class="lbl f-ink">8</text>
+<text x="433.0" y="536" text-anchor="middle" class="lbl f-muted">reader threads</text>
+<text x="770.0" y="70.8" text-anchor="middle" class="lbl-lg f-t">450× at 8 readers</text>
+</svg></div></body></html>

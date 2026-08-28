@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,700&display=swap">
+<style>html,body{margin:0;background:#0d1117}
+.fig{display:inline-block;padding:44px;background:radial-gradient(120% 120% at 20% 0%,#1b2330 0%,#0d1117 70%)}
+.card{width:max-content;min-width:620px;max-width:1040px;background:#1b2027;border-radius:12px;box-shadow:0 22px 60px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.04);overflow:hidden;font-family:'JetBrains Mono',monospace}
+.bar{display:flex;align-items:center;gap:8px;padding:14px 18px;background:#141920}
+.dot{width:12px;height:12px;border-radius:50%}.r{background:#ec6a5e}.y{background:#f4bf4f}.g{background:#61c554}
+.file{margin-left:12px;color:#7f8896;font-size:13px}
+pre{margin:0;padding:22px 26px 26px;font-size:14.5px;line-height:1.75;color:#c7d0d9;white-space:pre}
+.pr{color:#61c554}.dim{color:#7f848e}.err{color:#ec6a5e;font-weight:700}.warn{color:#e5a04e}.pt{color:#56b6c2}</style></head><body>
+<div class="fig"><div class="card">
+<div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="file">cargo +nightly miri — the data race</span></div>
+<pre><span class="pr">$</span> cargo +nightly miri test -p concurrent
+
+<span class="err">error: Undefined Behavior:</span> Data race detected between
+  (1) non-atomic read on thread <span class="pt">`unnamed-3`</span> and
+  (2) non-atomic write on thread <span class="pt">`unnamed-6`</span>
+   <span class="dim">--&gt;</span> src/seq_lock.rs:34
+    <span class="dim">= help: this indicates UB — not a wrong value,</span>
+    <span class="dim">        but a program the compiler may miscompile.</span></pre></div></div></body></html>

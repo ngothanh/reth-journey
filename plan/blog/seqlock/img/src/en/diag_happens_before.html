@@ -1,0 +1,60 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{--bg:#0F141A;--surface:#161D25;--sunk:#1C242D;--ink:#E3E9EF;--muted:#8C9BAA;--line:#2B353F;--writer:#E8A44E;--reader:#4FBCC7;--tear:#EC7A70;--w-tint:rgba(232,164,78,.16);--r-tint:rgba(79,188,199,.16);--t-tint:rgba(236,122,112,.14);}
+html,body{margin:0;background:#0b0f14}
+.fig{display:inline-block;padding:40px 48px;background:radial-gradient(130% 130% at 15% 0%,#141c26 0%,#0b0f14 72%)}
+svg{display:block;width:940px;height:auto}
+.s-ink{stroke:var(--ink)}.f-ink{fill:var(--ink)}.s-line{stroke:var(--line)}.f-muted{fill:var(--muted)}.s-muted{stroke:var(--muted)}
+.s-w{stroke:var(--writer)}.f-w{fill:var(--writer)}.f-wt{fill:var(--w-tint)}.s-r{stroke:var(--reader)}.f-r{fill:var(--reader)}.f-rt{fill:var(--r-tint)}
+.s-t{stroke:var(--tear)}.f-t{fill:var(--tear)}.f-tt{fill:var(--t-tint)}.f-surf{fill:var(--surface)}.f-sunk{fill:var(--sunk)}.none{fill:none}
+.lbl{font-family:"JetBrains Mono",monospace;font-size:12px}.lbl-sm{font-family:"JetBrains Mono",monospace;font-size:10.5px}
+.lbl-lg{font-family:Archivo,sans-serif;font-size:13px;font-weight:600;letter-spacing:.06em}
+</style></head><body><div class="fig"><svg viewBox="0 0 880 300" role="img" aria-label="Chuỗi happens-before: bump lẻ đứng trước fence Release của writer, payload store được reader đọc lại, fence Acquire của reader đứng trước s2, suy ra s2 phải nhìn thấy bump lẻ.">
+        <defs>
+          <marker id="ah-i4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-ink"/>
+          </marker>
+          <marker id="ah-r4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-r"/>
+          </marker>
+        </defs>
+
+        <text x="60" y="24" class="lbl-lg f-w">WRITER</text>
+        <text x="560" y="24" class="lbl-lg f-r">READER</text>
+
+        <!-- writer column -->
+        <rect x="46" y="44" width="230" height="38" rx="4" class="f-surf s-w" stroke-width="1.5"/>
+        <text x="161" y="68" text-anchor="middle" class="lbl f-ink">bump seq → odd</text>
+
+        <rect x="46" y="116" width="230" height="38" rx="4" class="f-wt s-w" stroke-width="1.5"/>
+        <text x="161" y="140" text-anchor="middle" class="lbl f-w">fence(Release)</text>
+
+        <rect x="46" y="188" width="230" height="38" rx="4" class="f-surf s-w" stroke-width="1.5"/>
+        <text x="161" y="212" text-anchor="middle" class="lbl f-ink">write payload</text>
+
+        <line x1="161" y1="82" x2="161" y2="110" class="s-ink" stroke-width="1.6" marker-end="url(#ah-i4)"/>
+        <line x1="161" y1="154" x2="161" y2="182" class="s-ink" stroke-width="1.6" marker-end="url(#ah-i4)"/>
+
+        <!-- reader column -->
+        <rect x="604" y="188" width="230" height="38" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="719" y="212" text-anchor="middle" class="lbl f-ink">read payload</text>
+
+        <rect x="604" y="116" width="230" height="38" rx="4" class="f-rt s-r" stroke-width="1.5"/>
+        <text x="719" y="140" text-anchor="middle" class="lbl f-r">fence(Acquire)</text>
+
+        <rect x="604" y="44" width="230" height="38" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="719" y="68" text-anchor="middle" class="lbl f-ink">read s2</text>
+
+        <line x1="719" y1="182" x2="719" y2="158" class="s-ink" stroke-width="1.6" marker-end="url(#ah-i4)"/>
+        <line x1="719" y1="110" x2="719" y2="86" class="s-ink" stroke-width="1.6" marker-end="url(#ah-i4)"/>
+
+        <!-- reads-from edge -->
+        <line x1="282" y1="207" x2="596" y2="207" class="none s-r" stroke-width="2.2" marker-end="url(#ah-r4)"/>
+        <text x="439" y="199" text-anchor="middle" class="lbl-sm f-r">reader reads a byte the writer just wrote</text>
+
+        <!-- derived edge -->
+        <path d="M 282 63 C 400 -6 600 -6 596 57" class="none s-w" stroke-width="2.2" stroke-dasharray="6 4" marker-end="url(#ah-r4)"/>
+        <text x="439" y="264" text-anchor="middle" class="lbl f-ink">⟹ s2 must observe the odd bump ⟹ s1 ≠ s2 ⟹ retry</text>
+        <text x="439" y="284" text-anchor="middle" class="lbl-sm f-muted">two fences shake hands: everything before fence(Release) happens-before everything after fence(Acquire)</text>
+      </svg></div></body></html>

@@ -1,0 +1,63 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{--bg:#0F141A;--surface:#161D25;--sunk:#1C242D;--ink:#E3E9EF;--muted:#8C9BAA;--line:#2B353F;--writer:#E8A44E;--reader:#4FBCC7;--tear:#EC7A70;--w-tint:rgba(232,164,78,.16);--r-tint:rgba(79,188,199,.16);--t-tint:rgba(236,122,112,.14);}
+html,body{margin:0;background:#0b0f14}
+.fig{display:inline-block;padding:40px 48px;background:radial-gradient(130% 130% at 15% 0%,#141c26 0%,#0b0f14 72%)}
+svg{display:block;width:940px;height:auto}
+.s-ink{stroke:var(--ink)}.f-ink{fill:var(--ink)}.s-line{stroke:var(--line)}.f-muted{fill:var(--muted)}.s-muted{stroke:var(--muted)}
+.s-w{stroke:var(--writer)}.f-w{fill:var(--writer)}.f-wt{fill:var(--w-tint)}.s-r{stroke:var(--reader)}.f-r{fill:var(--reader)}.f-rt{fill:var(--r-tint)}
+.s-t{stroke:var(--tear)}.f-t{fill:var(--tear)}.f-tt{fill:var(--t-tint)}.f-surf{fill:var(--surface)}.f-sunk{fill:var(--sunk)}.none{fill:none}
+.lbl{font-family:"JetBrains Mono",monospace;font-size:12px}.lbl-sm{font-family:"JetBrains Mono",monospace;font-size:10.5px}
+.lbl-lg{font-family:Archivo,sans-serif;font-size:13px;font-weight:600;letter-spacing:.06em}
+</style></head><body><div class="fig"><svg viewBox="0 0 880 250" role="img" aria-label="So sánh hai cách khoá mép dưới của reader: Acquire đặt trên s2 khoá nhầm phía, còn fence Acquire đặt trước s2 khoá đúng phía.">
+        <defs>
+          <marker id="ah-t3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-t"/>
+          </marker>
+          <marker id="ah-i3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-ink"/>
+          </marker>
+        </defs>
+
+        <!-- LEFT: wrong -->
+        <text x="16" y="22" class="lbl-lg f-t">✗ s2 = load(Acquire)</text>
+
+        <rect x="16" y="46" width="150" height="42" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="91" y="72" text-anchor="middle" class="lbl f-ink">copy payload</text>
+
+        <line x1="236" y1="34" x2="236" y2="176" class="s-ink" stroke-width="3"/>
+        <text x="236" y="196" text-anchor="middle" class="lbl f-ink">s2 = load(Acq)</text>
+
+        <rect x="272" y="46" width="130" height="42" rx="4" class="f-sunk s-line" stroke-width="1.2"/>
+        <text x="337" y="72" text-anchor="middle" class="lbl-sm f-muted">later code</text>
+
+        <!-- payload sinks through: allowed -->
+        <line x1="172" y1="122" x2="224" y2="122" class="none s-t" stroke-width="2" marker-end="url(#ah-t3)"/>
+        <text x="164" y="126" text-anchor="end" class="lbl-sm f-t">payload moves later</text>
+        <text x="250" y="126" class="lbl-sm f-t">passes</text>
+
+        <!-- what it actually guards -->
+        <line x1="330" y1="152" x2="252" y2="152" class="none s-ink" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ah-i3)"/>
+        <text x="338" y="156" class="lbl-sm f-muted">it guards this side</text>
+
+        <!-- RIGHT: correct -->
+        <line x1="452" y1="10" x2="452" y2="232" class="s-line" stroke-width="1"/>
+        <text x="486" y="22" class="lbl-lg f-r">✓ fence(Acquire); s2 = load(Relaxed)</text>
+
+        <rect x="486" y="46" width="150" height="42" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="561" y="72" text-anchor="middle" class="lbl f-ink">copy payload</text>
+
+        <line x1="682" y1="34" x2="682" y2="176" class="s-r" stroke-width="3"/>
+        <text x="682" y="196" text-anchor="middle" class="lbl f-r">fence(Acquire)</text>
+
+        <rect x="718" y="46" width="130" height="42" rx="4" class="f-sunk s-line" stroke-width="1.2"/>
+        <text x="783" y="72" text-anchor="middle" class="lbl-sm f-muted">s2 = seq</text>
+
+        <!-- payload blocked -->
+        <line x1="642" y1="122" x2="670" y2="122" class="none s-ink" stroke-width="2" marker-end="url(#ah-i3)"/>
+        <text x="634" y="126" text-anchor="end" class="lbl-sm f-ink">payload moves later</text>
+        <line x1="674" y1="112" x2="690" y2="132" class="s-ink" stroke-width="2.5"/>
+        <line x1="690" y1="112" x2="674" y2="132" class="s-ink" stroke-width="2.5"/>
+        <text x="706" y="126" class="lbl-sm f-ink">blocked</text>
+      </svg></div></body></html>
