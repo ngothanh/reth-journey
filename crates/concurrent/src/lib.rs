@@ -10,6 +10,7 @@ mod parker;
 mod pod;
 mod rw_lock;
 mod semaphore;
+mod seq_lock;
 mod wait_list;
 mod wake_list;
 
@@ -22,5 +23,6 @@ pub use once_flag::{AlreadySet, OnceFlag};
 pub use parker::{Parker, Unparker};
 pub use pod::Pod;
 pub use rw_lock::{ReadGuard, RwLock, WriteGuard};
+pub use seq_lock::SeqLock;
 pub use semaphore::{Acquire, AcquireError, Semaphore, SemaphorePermit, TryAcquireError};
 pub use wait_list::{Waiter, WaitList};
