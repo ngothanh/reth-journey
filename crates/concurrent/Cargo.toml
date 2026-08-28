@@ -36,6 +36,10 @@ harness = false
 name = "semaphore"
 harness = false
 
+[[bench]]
+name = "seq_lock"
+harness = false
+
 [lints]
 workspace = true
 
