@@ -71,12 +71,7 @@ Ask one question at each edge: *is the thing I need to hold on the side this ope
 gate already covers, or the opposite side?* Same-side, an ordering on the atomic itself
 suffices. Opposite-side, you need a standalone `fence` dropped exactly at the boundary.
 
-| Edge | What to hold | Which side | Tool |
-|---|---|---|---|
-| ① writer, opening | payload stores must not float above the odd-bump | **after** | `fence(Release)` *after* the bump |
-| ② writer, closing | payload stores must not sink below the even-bump | **before** | `Release` on the bump itself |
-| ③ reader, opening | payload copy must not float above `s1` | **after** | `Acquire` on `s1` itself |
-| ④ reader, closing | payload copy must not sink below `s2` | **before** | `fence(Acquire)` *before* `s2` |
+![Four edges, four decisions: which side each thing-to-hold sits on, and the tool it forces](../img/en/tbl_four_edges.png)
 
 Notice the symmetry: the two edges that *open* a window need to hold what comes after;
 the two that *close* it need to hold what comes before. And exactly two of the four —
@@ -107,6 +102,11 @@ Here is the whole thing, correct, every gate in place:
 The two `Relaxed`s left in the code aren't laziness — they're the edges where an
 ordering would guard a side with nothing on it, so the fence beside them does the job
 instead.
+
+That whole split — when the ordering on the atomic is enough and when you must reach
+for a fence — comes down to one distinction, worth keeping:
+
+![One-way gate versus two-way wall: an ordering on the op guards one side; a fence guards both and can bridge two variables](../img/en/tbl_gate_vs_fence.png)
 
 ## What the fences actually buy: a handshake
 

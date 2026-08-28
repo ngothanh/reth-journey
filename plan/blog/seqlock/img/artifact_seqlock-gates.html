@@ -1,0 +1,717 @@
+<title>Bốn cổng của SeqLock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+  :root {
+    --bg:      #EDF0F3;
+    --surface: #FFFFFF;
+    --sunk:    #E3E8ED;
+    --ink:     #141A21;
+    --muted:   #5B6976;
+    --line:    #D2D9E0;
+    --writer:  #A66104;
+    --reader:  #0B6570;
+    --tear:    #A02A24;
+    --w-tint:  rgba(166, 97, 4, 0.09);
+    --r-tint:  rgba(11, 101, 112, 0.09);
+    --t-tint:  rgba(160, 42, 36, 0.08);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:      #0F141A;
+      --surface: #161D25;
+      --sunk:    #1C242D;
+      --ink:     #E3E9EF;
+      --muted:   #8C9BAA;
+      --line:    #2B353F;
+      --writer:  #E8A44E;
+      --reader:  #4FBCC7;
+      --tear:    #EC7A70;
+      --w-tint:  rgba(232, 164, 78, 0.13);
+      --r-tint:  rgba(79, 188, 199, 0.13);
+      --t-tint:  rgba(236, 122, 112, 0.11);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg:      #0F141A;
+    --surface: #161D25;
+    --sunk:    #1C242D;
+    --ink:     #E3E9EF;
+    --muted:   #8C9BAA;
+    --line:    #2B353F;
+    --writer:  #E8A44E;
+    --reader:  #4FBCC7;
+    --tear:    #EC7A70;
+    --w-tint:  rgba(232, 164, 78, 0.13);
+    --r-tint:  rgba(79, 188, 199, 0.13);
+    --t-tint:  rgba(236, 122, 112, 0.11);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  .prose { max-width: 68ch; }
+
+  header { display: flex; flex-direction: column; gap: 14px; max-width: 68ch; }
+
+  .eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1 {
+    font-family: Archivo, system-ui, sans-serif;
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5vw, 3.1rem);
+    line-height: 1.04;
+    letter-spacing: -0.022em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst { font-size: 1.14rem; color: var(--muted); margin: 0; text-wrap: pretty; }
+
+  h2 {
+    font-family: Archivo, system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 1.42rem;
+    letter-spacing: -0.012em;
+    margin: 0 0 2px;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: Archivo, system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 1.02rem;
+    letter-spacing: -0.004em;
+    margin: 0 0 4px;
+  }
+
+  section { display: flex; flex-direction: column; gap: 18px; }
+
+  p { margin: 0; }
+  .prose p + p { margin-top: 14px; }
+
+  code {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.86em;
+    background: var(--sunk);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  pre {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 13px;
+    line-height: 1.72;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 20px 22px;
+    margin: 0;
+    overflow-x: auto;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  .cm { color: var(--muted); }
+  .w  { color: var(--writer); font-weight: 600; }
+  .r  { color: var(--reader); font-weight: 600; }
+  .t  { color: var(--tear);   font-weight: 600; }
+
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 22px 22px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-x: auto;
+  }
+
+  figure svg { display: block; width: 100%; max-width: 100%; height: auto; min-width: 560px; }
+
+  figcaption {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--muted);
+    max-width: 66ch;
+  }
+
+  /* SVG semantic classes */
+  .s-ink    { stroke: var(--ink); }
+  .f-ink    { fill: var(--ink); }
+  .s-line   { stroke: var(--line); }
+  .f-muted  { fill: var(--muted); }
+  .s-muted  { stroke: var(--muted); }
+  .s-w      { stroke: var(--writer); }
+  .f-w      { fill: var(--writer); }
+  .f-wt     { fill: var(--w-tint); }
+  .s-r      { stroke: var(--reader); }
+  .f-r      { fill: var(--reader); }
+  .f-rt     { fill: var(--r-tint); }
+  .s-t      { stroke: var(--tear); }
+  .f-t      { fill: var(--tear); }
+  .f-tt     { fill: var(--t-tint); }
+  .f-surf   { fill: var(--surface); }
+  .f-sunk   { fill: var(--sunk); }
+  .none     { fill: none; }
+
+  .lbl  { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
+  .lbl-sm { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10.5px; }
+  .lbl-lg { font-family: Archivo, system-ui, sans-serif; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14.5px;
+    font-family: "Source Serif 4", Georgia, serif;
+  }
+  th, td { text-align: left; padding: 11px 13px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th {
+    font-family: Archivo, system-ui, sans-serif;
+    font-size: 11.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  td code { font-size: 12.5px; }
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .tbl-wrap table { min-width: 620px; }
+  .tbl-wrap tr:last-child td { border-bottom: none; }
+
+  .rule {
+    border-left: 3px solid var(--reader);
+    background: var(--surface);
+    padding: 16px 20px;
+    border-radius: 0 6px 6px 0;
+    max-width: 68ch;
+  }
+  .rule p { font-size: 1.03rem; }
+
+  .key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .key span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 22px;
+    color: var(--muted);
+    font-size: 14.5px;
+    max-width: 68ch;
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">crates/concurrent · seq_lock.rs</div>
+    <h1>Bốn cổng của SeqLock</h1>
+    <p class="standfirst">Protocol chẵn/lẻ đúng trên giấy. Trên Apple M2 nó vẫn rách — vì cửa sổ dựng bằng <code>seq</code> là thật, còn payload thì không bị nhốt trong đó. Bốn mép cửa sổ, bốn quyết định, và không quyết định nào giống quyết định nào.</p>
+  </header>
+
+  <div class="key">
+    <span><i class="swatch" style="background:var(--writer)"></i> writer</span>
+    <span><i class="swatch" style="background:var(--reader)"></i> reader</span>
+    <span><i class="swatch" style="background:var(--tear)"></i> đường trốn / rách</span>
+  </div>
+
+  <section>
+    <div class="prose">
+      <h2>1. Cửa sổ mà bạn định dựng</h2>
+      <p>Cả hai phía đều làm một việc giống nhau: chạm <code>seq</code> hai lần, và đặt payload vào giữa hai lần chạm đó. Writer dùng cửa sổ để <em>khai báo</em> "tôi đang ghi"; reader dùng cửa sổ để <em>kiểm tra</em> "có ai ghi trong lúc tôi copy không".</p>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 880 296" role="img" aria-label="Hai lane thời gian: writer kẹp phép ghi payload giữa hai lần chạm seq, reader kẹp phép copy payload giữa hai lần đọc seq.">
+        <defs>
+          <marker id="ah-ink" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-ink"/>
+          </marker>
+          <marker id="ah-muted" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-muted"/>
+          </marker>
+        </defs>
+
+        <!-- writer window -->
+        <rect x="196" y="34" width="372" height="86" rx="4" class="f-wt"/>
+        <text x="382" y="27" text-anchor="middle" class="lbl-sm f-w">cửa sổ ghi — seq lẻ</text>
+
+        <text x="12" y="82" class="lbl-lg f-w">WRITER</text>
+
+        <line x1="196" y1="34" x2="196" y2="120" class="s-w" stroke-width="2.5"/>
+        <line x1="568" y1="34" x2="568" y2="120" class="s-w" stroke-width="2.5"/>
+        <text x="196" y="140" text-anchor="middle" class="lbl f-w">seq 8 → 9</text>
+        <text x="568" y="140" text-anchor="middle" class="lbl f-w">seq 9 → 10</text>
+        <text x="196" y="155" text-anchor="middle" class="lbl-sm f-muted">(chẵn → lẻ)</text>
+        <text x="568" y="155" text-anchor="middle" class="lbl-sm f-muted">(lẻ → chẵn)</text>
+
+        <rect x="252" y="57" width="260" height="40" rx="4" class="f-surf s-w" stroke-width="1.5"/>
+        <text x="382" y="82" text-anchor="middle" class="lbl f-ink">ghi payload</text>
+
+        <!-- reader window -->
+        <rect x="256" y="186" width="392" height="72" rx="4" class="f-rt"/>
+        <text x="452" y="179" text-anchor="middle" class="lbl-sm f-r">cửa sổ kiểm tra</text>
+
+        <text x="12" y="228" class="lbl-lg f-r">READER</text>
+
+        <line x1="256" y1="186" x2="256" y2="258" class="s-r" stroke-width="2.5"/>
+        <line x1="648" y1="186" x2="648" y2="258" class="s-r" stroke-width="2.5"/>
+        <text x="256" y="277" text-anchor="middle" class="lbl f-r">s1 = seq</text>
+        <text x="648" y="277" text-anchor="middle" class="lbl f-r">s2 = seq</text>
+
+        <rect x="308" y="202" width="288" height="40" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="452" y="227" text-anchor="middle" class="lbl f-ink">copy payload</text>
+
+        <!-- time axis -->
+        <line x1="86" y1="166" x2="820" y2="166" class="s-muted" stroke-width="1" stroke-dasharray="3 4" marker-end="url(#ah-muted)"/>
+        <text x="828" y="170" class="lbl-sm f-muted">thời gian</text>
+      </svg>
+      <figcaption><strong>Ý định.</strong> Payload nằm gọn giữa hai lần chạm <code>seq</code>, ở cả hai phía. Nếu điều này giữ được thì protocol đúng: reader đọc <code>s1</code> chẵn nghĩa là chưa ai vào cửa sổ ghi, và <code>s1 == s2</code> nghĩa là không ai ra vào trong lúc nó copy.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>2. Nhưng payload không bị buộc phải ở trong</h2>
+      <p>Không có gì trong code nói với CPU rằng payload phải nằm giữa hai vạch đó. <code>Ordering::Relaxed</code> nghĩa đúng như tên: atomic, nhưng <strong>không hứa gì về thứ tự</strong>. Với weak memory model của aarch64, CPU được phép đẩy payload ra khỏi cửa sổ theo bất kỳ hướng nào.</p>
+      <p>Cửa sổ vẫn còn nguyên. Chỉ có điều nó không nhốt được ai.</p>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 880 296" role="img" aria-label="Cùng hai lane, với bốn mũi tên đỏ cho thấy payload trốn ra khỏi cửa sổ qua bốn mép: trái và phải của writer, trái và phải của reader.">
+        <defs>
+          <marker id="ah-tear" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-t"/>
+          </marker>
+        </defs>
+
+        <rect x="196" y="34" width="372" height="86" rx="4" class="f-wt"/>
+        <text x="12" y="82" class="lbl-lg f-w">WRITER</text>
+        <line x1="196" y1="34" x2="196" y2="120" class="s-w" stroke-width="2.5"/>
+        <line x1="568" y1="34" x2="568" y2="120" class="s-w" stroke-width="2.5"/>
+        <text x="196" y="140" text-anchor="middle" class="lbl f-w">seq → lẻ</text>
+        <text x="568" y="140" text-anchor="middle" class="lbl f-w">seq → chẵn</text>
+        <rect x="252" y="57" width="260" height="40" rx="4" class="f-surf s-w" stroke-width="1.5"/>
+        <text x="382" y="82" text-anchor="middle" class="lbl f-ink">ghi payload</text>
+
+        <!-- escape 1: payload store floats before bump-odd -->
+        <path d="M 256 57 C 232 26 208 20 172 20" class="none s-t" stroke-width="2" marker-end="url(#ah-tear)"/>
+        <circle cx="160" cy="20" r="9" class="f-tt s-t" stroke-width="1.4"/>
+        <text x="160" y="24" text-anchor="middle" class="lbl-sm f-t">1</text>
+
+        <!-- escape 2: payload store sinks after bump-even -->
+        <path d="M 508 97 C 534 128 560 134 596 134" class="none s-t" stroke-width="2" marker-end="url(#ah-tear)"/>
+        <circle cx="610" cy="134" r="9" class="f-tt s-t" stroke-width="1.4"/>
+        <text x="610" y="138" text-anchor="middle" class="lbl-sm f-t">2</text>
+
+        <rect x="256" y="186" width="392" height="72" rx="4" class="f-rt"/>
+        <text x="12" y="228" class="lbl-lg f-r">READER</text>
+        <line x1="256" y1="186" x2="256" y2="258" class="s-r" stroke-width="2.5"/>
+        <line x1="648" y1="186" x2="648" y2="258" class="s-r" stroke-width="2.5"/>
+        <text x="256" y="277" text-anchor="middle" class="lbl f-r">s1 = seq</text>
+        <text x="648" y="277" text-anchor="middle" class="lbl f-r">s2 = seq</text>
+        <rect x="308" y="202" width="288" height="40" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="452" y="227" text-anchor="middle" class="lbl f-ink">copy payload</text>
+
+        <!-- escape 3: payload load hoisted above s1 -->
+        <path d="M 312 202 C 288 174 264 168 228 168" class="none s-t" stroke-width="2" marker-end="url(#ah-tear)"/>
+        <circle cx="216" cy="168" r="9" class="f-tt s-t" stroke-width="1.4"/>
+        <text x="216" y="172" text-anchor="middle" class="lbl-sm f-t">3</text>
+
+        <!-- escape 4: payload load sinks below s2 -->
+        <path d="M 592 242 C 618 268 644 272 680 272" class="none s-t" stroke-width="2" marker-end="url(#ah-tear)"/>
+        <circle cx="694" cy="272" r="9" class="f-tt s-t" stroke-width="1.4"/>
+        <text x="694" y="276" text-anchor="middle" class="lbl-sm f-t">4</text>
+      </svg>
+      <figcaption><strong>Bốn lối trốn.</strong> ① payload được ghi <em>trước</em> khi seq kịp thành lẻ — reader thấy seq chẵn mà data đã dở. ② payload được ghi <em>sau</em> khi seq đã về chẵn — reader thấy "ổn định" mà data chưa xong. ③ reader copy <em>trước</em> khi kịp đọc <code>s1</code>. ④ reader copy <em>sau</em> khi đã đọc <code>s2</code> — validate xong rồi mới đi lấy data. Mỗi mép là một quyết định ordering riêng.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>3. Cổng một chiều</h2>
+      <p>Đây là chỗ trực giác đánh lừa. <code>Release</code> và <code>Acquire</code> <strong>không phải</strong> hai cái tường chặn cả hai chiều. Mỗi cái là một <strong>cổng một chiều</strong>, và mỗi cái chỉ quản đúng một phía của nó.</p>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 880 240" role="img" aria-label="Hai panel. Release chặn các truy cập đứng trước trôi xuống sau, nhưng để lọt các truy cập đứng sau trôi lên trước. Acquire thì ngược lại.">
+        <defs>
+          <marker id="ah-tear2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-t"/>
+          </marker>
+          <marker id="ah-ink2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-ink"/>
+          </marker>
+        </defs>
+
+        <!-- PANEL A : Release -->
+        <text x="16" y="22" class="lbl-lg f-ink">store(Release)</text>
+
+        <rect x="16" y="42" width="112" height="48" rx="4" class="f-sunk s-line" stroke-width="1.2"/>
+        <text x="72" y="66" text-anchor="middle" class="lbl f-ink">A</text>
+        <text x="72" y="81" text-anchor="middle" class="lbl-sm f-muted">đứng trước</text>
+
+        <rect x="290" y="42" width="112" height="48" rx="4" class="f-sunk s-line" stroke-width="1.2"/>
+        <text x="346" y="66" text-anchor="middle" class="lbl f-ink">B</text>
+        <text x="346" y="81" text-anchor="middle" class="lbl-sm f-muted">đứng sau</text>
+
+        <line x1="209" y1="24" x2="209" y2="196" class="s-ink" stroke-width="3"/>
+        <text x="209" y="212" text-anchor="middle" class="lbl-sm f-muted">cổng</text>
+
+        <!-- A trying to move later: blocked -->
+        <line x1="134" y1="112" x2="196" y2="112" class="none s-ink" stroke-width="2" marker-end="url(#ah-ink2)"/>
+        <text x="120" y="116" text-anchor="end" class="lbl-sm f-ink">A trôi xuống</text>
+        <line x1="201" y1="102" x2="217" y2="122" class="s-ink" stroke-width="2.5"/>
+        <line x1="217" y1="102" x2="201" y2="122" class="s-ink" stroke-width="2.5"/>
+        <text x="232" y="116" class="lbl-sm f-ink">chặn</text>
+
+        <!-- B moving earlier: allowed -->
+        <line x1="284" y1="160" x2="222" y2="160" class="none s-t" stroke-width="2" marker-end="url(#ah-tear2)"/>
+        <text x="298" y="164" class="lbl-sm f-t">B trôi lên</text>
+        <text x="196" y="164" text-anchor="end" class="lbl-sm f-t">lọt qua</text>
+
+        <!-- PANEL B : Acquire -->
+        <line x1="452" y1="10" x2="452" y2="222" class="s-line" stroke-width="1"/>
+
+        <text x="486" y="22" class="lbl-lg f-ink">load(Acquire)</text>
+
+        <rect x="486" y="42" width="112" height="48" rx="4" class="f-sunk s-line" stroke-width="1.2"/>
+        <text x="542" y="66" text-anchor="middle" class="lbl f-ink">A</text>
+        <text x="542" y="81" text-anchor="middle" class="lbl-sm f-muted">đứng trước</text>
+
+        <rect x="760" y="42" width="112" height="48" rx="4" class="f-sunk s-line" stroke-width="1.2"/>
+        <text x="816" y="66" text-anchor="middle" class="lbl f-ink">B</text>
+        <text x="816" y="81" text-anchor="middle" class="lbl-sm f-muted">đứng sau</text>
+
+        <line x1="679" y1="24" x2="679" y2="196" class="s-ink" stroke-width="3"/>
+        <text x="679" y="212" text-anchor="middle" class="lbl-sm f-muted">cổng</text>
+
+        <!-- A moving later: allowed -->
+        <line x1="604" y1="112" x2="666" y2="112" class="none s-t" stroke-width="2" marker-end="url(#ah-tear2)"/>
+        <text x="590" y="116" text-anchor="end" class="lbl-sm f-t">A trôi xuống</text>
+        <text x="692" y="116" class="lbl-sm f-t">lọt qua</text>
+
+        <!-- B moving earlier: blocked -->
+        <line x1="754" y1="160" x2="692" y2="160" class="none s-ink" stroke-width="2" marker-end="url(#ah-ink2)"/>
+        <text x="768" y="164" class="lbl-sm f-ink">B trôi lên</text>
+        <line x1="671" y1="150" x2="687" y2="170" class="s-ink" stroke-width="2.5"/>
+        <line x1="687" y1="150" x2="671" y2="170" class="s-ink" stroke-width="2.5"/>
+        <text x="660" y="164" text-anchor="end" class="lbl-sm f-ink">chặn</text>
+      </svg>
+      <figcaption><strong>Mỗi cổng chỉ khoá một chiều.</strong> <code>Release</code> giữ những gì <em>đứng trước</em> không cho trôi xuống — nó không nói một chữ nào về những gì đứng sau. <code>Acquire</code> giữ những gì <em>đứng sau</em> không cho trôi lên. Mũi tên đỏ là chiều <em>không</em> được bảo vệ, và đó chính là chiều người ta hay quên.</figcaption>
+    </figure>
+
+    <div class="prose">
+      <p>Áp vào bug đầu tiên của bạn. Bạn từng viết:</p>
+    </div>
+
+<pre><code><span class="cm">// bản sai</span>
+compare_exchange(cur, cur + 1, <span class="t">Release</span>, Relaxed);   <span class="cm">// mở cửa sổ</span>
+*self.data.get() = value;                            <span class="cm">// payload — đứng SAU</span></code></pre>
+
+    <div class="prose">
+      <p>Cái cần giữ là payload, mà payload <strong>đứng sau</strong>. <code>Release</code> chỉ quản cái đứng trước. Bạn đặt một cái khoá ở đúng cái cửa không ai đi qua — nên lối trốn ① vẫn mở toang.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>4. Bốn vị trí, bốn quyết định</h2>
+      <p>Với mỗi mép cửa sổ, hỏi đúng một câu: <em>cái tôi cần giữ đang đứng trước hay đứng sau vạch này?</em> Trả lời xong là công cụ tự lộ ra.</p>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Mép</th>
+            <th>Cần giữ cái gì</th>
+            <th>Nó đứng đâu</th>
+            <th>Công cụ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="t">①</span> writer, mở cửa sổ</td>
+            <td>payload stores không được trôi lên trước bump-lẻ</td>
+            <td><strong>sau</strong></td>
+            <td><code>fence(Release)</code> đặt <em>sau</em> bump</td>
+          </tr>
+          <tr>
+            <td><span class="t">②</span> writer, đóng cửa sổ</td>
+            <td>payload stores không được trôi xuống sau bump-chẵn</td>
+            <td><strong>trước</strong></td>
+            <td><code>Release</code> trên chính bump</td>
+          </tr>
+          <tr>
+            <td><span class="t">③</span> reader, mở cửa sổ</td>
+            <td>payload loads không được trôi lên trước <code>s1</code></td>
+            <td><strong>sau</strong></td>
+            <td><code>Acquire</code> trên chính <code>s1</code></td>
+          </tr>
+          <tr>
+            <td><span class="t">④</span> reader, đóng cửa sổ</td>
+            <td>payload loads không được trôi xuống sau <code>s2</code></td>
+            <td><strong>trước</strong></td>
+            <td><code>fence(Acquire)</code> đặt <em>trước</em> <code>s2</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>Để ý sự đối xứng: hai mép <strong>mở</strong> cửa sổ (① và ③) cần giữ cái đứng sau; hai mép <strong>đóng</strong> cần giữ cái đứng trước. Và hai trong bốn chỗ dùng được ordering ngay trên phép atomic, hai chỗ còn lại phải dùng fence riêng — phần sau giải thích tại sao.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>5. Khi nào ordering-trên-op không đủ, phải dùng fence</h2>
+      <p>Ordering đặt trên một phép atomic chỉ ràng buộc <strong>chính phép atomic đó</strong> với những gì xung quanh nó, và chỉ theo một chiều. Nếu chiều bạn cần trùng với chiều nó khoá — dùng luôn, khỏi fence. Nếu ngược chiều — bạn cần một fence đứng riêng ở đúng vị trí.</p>
+      <p>Mép ④ là ví dụ rõ nhất.</p>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 880 250" role="img" aria-label="So sánh hai cách khoá mép dưới của reader: Acquire đặt trên s2 khoá nhầm phía, còn fence Acquire đặt trước s2 khoá đúng phía.">
+        <defs>
+          <marker id="ah-t3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-t"/>
+          </marker>
+          <marker id="ah-i3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-ink"/>
+          </marker>
+        </defs>
+
+        <!-- LEFT: wrong -->
+        <text x="16" y="22" class="lbl-lg f-t">✗ s2 = load(Acquire)</text>
+
+        <rect x="16" y="46" width="150" height="42" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="91" y="72" text-anchor="middle" class="lbl f-ink">copy payload</text>
+
+        <line x1="236" y1="34" x2="236" y2="176" class="s-ink" stroke-width="3"/>
+        <text x="236" y="196" text-anchor="middle" class="lbl f-ink">s2 = load(Acq)</text>
+
+        <rect x="272" y="46" width="130" height="42" rx="4" class="f-sunk s-line" stroke-width="1.2"/>
+        <text x="337" y="72" text-anchor="middle" class="lbl-sm f-muted">code sau đó</text>
+
+        <!-- payload sinks through: allowed -->
+        <line x1="172" y1="122" x2="224" y2="122" class="none s-t" stroke-width="2" marker-end="url(#ah-t3)"/>
+        <text x="164" y="126" text-anchor="end" class="lbl-sm f-t">payload trôi xuống</text>
+        <text x="250" y="126" class="lbl-sm f-t">lọt qua</text>
+
+        <!-- what it actually guards -->
+        <line x1="330" y1="152" x2="252" y2="152" class="none s-ink" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ah-i3)"/>
+        <text x="338" y="156" class="lbl-sm f-muted">nó khoá phía này</text>
+
+        <!-- RIGHT: correct -->
+        <line x1="452" y1="10" x2="452" y2="232" class="s-line" stroke-width="1"/>
+        <text x="486" y="22" class="lbl-lg f-r">✓ fence(Acquire); s2 = load(Relaxed)</text>
+
+        <rect x="486" y="46" width="150" height="42" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="561" y="72" text-anchor="middle" class="lbl f-ink">copy payload</text>
+
+        <line x1="682" y1="34" x2="682" y2="176" class="s-r" stroke-width="3"/>
+        <text x="682" y="196" text-anchor="middle" class="lbl f-r">fence(Acquire)</text>
+
+        <rect x="718" y="46" width="130" height="42" rx="4" class="f-sunk s-line" stroke-width="1.2"/>
+        <text x="783" y="72" text-anchor="middle" class="lbl-sm f-muted">s2 = seq</text>
+
+        <!-- payload blocked -->
+        <line x1="642" y1="122" x2="670" y2="122" class="none s-ink" stroke-width="2" marker-end="url(#ah-i3)"/>
+        <text x="634" y="126" text-anchor="end" class="lbl-sm f-ink">payload trôi xuống</text>
+        <line x1="674" y1="112" x2="690" y2="132" class="s-ink" stroke-width="2.5"/>
+        <line x1="690" y1="112" x2="674" y2="132" class="s-ink" stroke-width="2.5"/>
+        <text x="706" y="126" class="lbl-sm f-ink">chặn</text>
+      </svg>
+      <figcaption><strong>Cùng một từ khoá, hai kết quả trái ngược.</strong> <code>Acquire</code> đặt <em>trên</em> <code>s2</code> khoá phía dưới <code>s2</code> — trong khi cái cần giữ (payload) nằm phía trên, nên nó vẫn trôi xuống được. Một <code>fence(Acquire)</code> đặt <em>trước</em> <code>s2</code> dời cái cổng lên đúng chỗ: payload nằm phía trên cổng và bị ghim lại ở đó.</figcaption>
+    </figure>
+
+    <div class="prose">
+      <p>Cùng lập luận cho mép ①: cái cần giữ (payload stores) nằm sau bump-lẻ, nên phải có một <code>fence(Release)</code> chen vào giữa hai thứ đó. Không có chỗ nào trên bản thân phép bump để gắn cái ràng buộc ấy.</p>
+    </div>
+
+    <div class="prose">
+      <h3>Gom lại: cổng một chiều vs tường hai chiều</h3>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>ordering trên op<br><code>Release</code> / <code>Acquire</code></th>
+            <th><code>fence</code></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Bản chất</td>
+            <td>cổng <strong>MỘT</strong> chiều, dán chặt vào phép atomic</td>
+            <td>tường <strong>HAI</strong> chiều, đặt ở đâu là bạn quyết</td>
+          </tr>
+          <tr>
+            <td>Khoá phía nào</td>
+            <td>đúng một phía của op — <code>Release</code> = phía <em>trước</em>, <code>Acquire</code> = phía <em>sau</em></td>
+            <td>cả hai phía, cho cả một <em>nhóm</em> truy cập</td>
+          </tr>
+          <tr>
+            <td>Vị trí</td>
+            <td>gắn lên chính op đó</td>
+            <td>đứng riêng, chen giữa hai lệnh</td>
+          </tr>
+          <tr>
+            <td>Dùng khi</td>
+            <td>cái cần giữ nằm <em>đúng</em> phía nó khoá — mép <span class="t">②</span> <span class="t">③</span></td>
+            <td>cái cần giữ nằm phía <em>đối diện</em> — mép <span class="t">①</span> <span class="t">④</span></td>
+          </tr>
+          <tr>
+            <td>Nối được sang biến khác?</td>
+            <td><strong>không</strong> — chỉ nối chính atomic đó qua thread</td>
+            <td><strong>có</strong> — bắc cầu từ <code>payload</code> sang <code>seq</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rule">
+      <p><strong>Và một lý do nữa</strong> khiến <code>s2</code> không thể mang ordering: <code>load(Release)</code> <strong>không phải phép hợp lệ — nó panic lúc chạy</strong> (Rust docs: <em>"there is no such thing as a release load"</em>). <code>Release</code> là động từ <em>công bố</em>, thuộc về store; một load chẳng có gì để công bố. Đối xứng: <code>store(Acquire)</code> cũng panic. Nên <code>s2</code> chỉ còn đúng một cửa: <code>Relaxed</code> + <code>fence(Acquire)</code> đứng trước nó.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>6. Sợi dây thật sự nối hai thread</h2>
+      <p>Cách nghĩ "chặn reorder" ở trên là cách nghĩ vận hành, đủ để đặt đúng code. Nhưng lý do sâu hơn — và là lý do <em>fence</em> mới làm được việc — nằm ở chỗ khác: hai fence ở hai thread <strong>bắt tay nhau</strong> để tạo ra một quan hệ happens-before, và quan hệ đó mới là thứ bảo đảm tính đúng đắn.</p>
+      <p>Mệnh đề cần chứng minh chỉ có một:</p>
+    </div>
+
+    <div class="rule">
+      <p>Nếu bản copy của reader nhặt được <strong>dù chỉ một byte</strong> của lần ghi N, thì lần đọc <code>s2</code> của nó <strong>bắt buộc</strong> phải nhìn thấy bump-lẻ của lần ghi N.</p>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 880 300" role="img" aria-label="Chuỗi happens-before: bump lẻ đứng trước fence Release của writer, payload store được reader đọc lại, fence Acquire của reader đứng trước s2, suy ra s2 phải nhìn thấy bump lẻ.">
+        <defs>
+          <marker id="ah-i4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-ink"/>
+          </marker>
+          <marker id="ah-r4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <polygon points="0,0 8,4 0,8" class="f-r"/>
+          </marker>
+        </defs>
+
+        <text x="60" y="24" class="lbl-lg f-w">WRITER</text>
+        <text x="560" y="24" class="lbl-lg f-r">READER</text>
+
+        <!-- writer column -->
+        <rect x="46" y="44" width="230" height="38" rx="4" class="f-surf s-w" stroke-width="1.5"/>
+        <text x="161" y="68" text-anchor="middle" class="lbl f-ink">bump seq → lẻ</text>
+
+        <rect x="46" y="116" width="230" height="38" rx="4" class="f-wt s-w" stroke-width="1.5"/>
+        <text x="161" y="140" text-anchor="middle" class="lbl f-w">fence(Release)</text>
+
+        <rect x="46" y="188" width="230" height="38" rx="4" class="f-surf s-w" stroke-width="1.5"/>
+        <text x="161" y="212" text-anchor="middle" class="lbl f-ink">ghi payload</text>
+
+        <line x1="161" y1="82" x2="161" y2="110" class="s-ink" stroke-width="1.6" marker-end="url(#ah-i4)"/>
+        <line x1="161" y1="154" x2="161" y2="182" class="s-ink" stroke-width="1.6" marker-end="url(#ah-i4)"/>
+
+        <!-- reader column -->
+        <rect x="604" y="188" width="230" height="38" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="719" y="212" text-anchor="middle" class="lbl f-ink">đọc payload</text>
+
+        <rect x="604" y="116" width="230" height="38" rx="4" class="f-rt s-r" stroke-width="1.5"/>
+        <text x="719" y="140" text-anchor="middle" class="lbl f-r">fence(Acquire)</text>
+
+        <rect x="604" y="44" width="230" height="38" rx="4" class="f-surf s-r" stroke-width="1.5"/>
+        <text x="719" y="68" text-anchor="middle" class="lbl f-ink">đọc s2</text>
+
+        <line x1="719" y1="182" x2="719" y2="158" class="s-ink" stroke-width="1.6" marker-end="url(#ah-i4)"/>
+        <line x1="719" y1="110" x2="719" y2="86" class="s-ink" stroke-width="1.6" marker-end="url(#ah-i4)"/>
+
+        <!-- reads-from edge -->
+        <line x1="282" y1="207" x2="596" y2="207" class="none s-r" stroke-width="2.2" marker-end="url(#ah-r4)"/>
+        <text x="439" y="199" text-anchor="middle" class="lbl-sm f-r">reader đọc được byte writer vừa ghi</text>
+
+        <!-- derived edge -->
+        <path d="M 282 63 C 400 -6 600 -6 596 57" class="none s-w" stroke-width="2.2" stroke-dasharray="6 4" marker-end="url(#ah-r4)"/>
+        <text x="439" y="264" text-anchor="middle" class="lbl f-ink">⟹ s2 bắt buộc nhìn thấy bump-lẻ ⟹ s1 ≠ s2 ⟹ retry</text>
+        <text x="439" y="284" text-anchor="middle" class="lbl-sm f-muted">hai fence bắt tay: mọi thứ trước fence(Release) happens-before mọi thứ sau fence(Acquire)</text>
+      </svg>
+      <figcaption><strong>Cặp fence là cái nối.</strong> Riêng lẻ, mỗi fence chỉ sắp xếp lại thứ tự trong thread của nó. Nhưng khi reader đọc trúng một byte mà writer ghi sau <code>fence(Release)</code>, và reader chạy <code>fence(Acquire)</code> sau khi đọc, thì hai fence khoá vào nhau: tất cả những gì xảy ra trước fence bên writer trở thành happens-before tất cả những gì xảy ra sau fence bên reader. Bump-lẻ nằm ở vế đầu, <code>s2</code> nằm ở vế sau — nên rách là bị bắt.</figcaption>
+    </figure>
+
+    <div class="prose">
+      <p>Đây cũng là câu trả lời cho "tại sao không dùng ordering trên op cho tiện": ordering trên một atomic nối <em>chính atomic đó</em> giữa hai thread. Nhưng ở đây kênh truyền dữ liệu là <strong>payload</strong>, còn cái cần đồng bộ là <strong>seq</strong> — hai biến khác nhau. Chỉ fence mới bắc được cầu từ biến này sang biến kia.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>7. Bản đúng</h2>
+    </div>
+
+<pre><code><span class="w">// WRITER</span>
+compare_exchange(cur, cur + 1, Relaxed, Relaxed);  <span class="cm">// bump lẻ — ordering ở đây vô dụng</span>
+<span class="w">fence(Ordering::Release);</span>                          <span class="cm">// ① giữ payload không trôi lên</span>
+*self.data.get() = value;                          <span class="cm">// payload</span>
+self.state.fetch_add(1, <span class="w">Ordering::Release</span>);      <span class="cm">// ② giữ payload không trôi xuống</span>
+
+<span class="r">// READER</span>
+let first = self.state.load(<span class="r">Ordering::Acquire</span>);   <span class="cm">// ③ giữ copy không trôi lên</span>
+if first % 2 == 1 { continue; }
+let value = unsafe { *self.data.get() };           <span class="cm">// copy</span>
+<span class="r">fence(Ordering::Acquire);</span>                          <span class="cm">// ④ giữ copy không trôi xuống</span>
+let second = self.state.load(Ordering::Relaxed);   <span class="cm">// ordering ở đây vô dụng</span>
+if first == second { return value; }</code></pre>
+
+    <div class="prose">
+      <p>Hai chỗ để <code>Relaxed</code> không phải vì lười — mà vì ở đó ordering thật sự không mua được gì: chiều chúng khoá là chiều không có ai đi qua. Việc khoá đã do fence bên cạnh làm rồi.</p>
+    </div>
+
+    <div class="rule">
+      <p><strong>Câu để nhớ:</strong> đừng hỏi "chỗ này nên dùng ordering nào". Hỏi <em>"cái tôi cần giữ đang đứng trước hay đứng sau vạch này"</em> — đứng trước thì <code>Release</code>/<code>Acquire</code> gắn thẳng lên phép atomic là đủ; đứng sau thì phải là một fence đặt xen vào giữa.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>Cảnh báo cuối: test giờ xanh 6/6, nhưng ở địa hạt này <strong>test xanh không chứng minh được gì</strong> — chính bạn vừa thấy code sai chạy xanh 4/5 lần. Và bản trên vẫn còn một lỗi chưa được động tới: payload vẫn đang được đọc/ghi <em>non-atomic</em>. Cặp fence ở §6 chỉ có hiệu lực chính thức khi phép truyền dữ liệu là atomic. Đó là món đồ nghề tiếp theo.</p>
+  </footer>
+
+</div>

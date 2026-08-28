@@ -80,12 +80,7 @@ das Gate dieser Operation ohnehin abdeckt, oder auf der Gegenseite?* Gleiche Sei
 Ordering auf dem Atomic selbst genügt. Gegenseite — du brauchst eine eigenständige
 `fence`, genau an der Grenze platziert.
 
-| Kante | Was festhalten | Welche Seite | Werkzeug |
-|---|---|---|---|
-| ① Writer, öffnend | payload-Stores dürfen nicht über den Bump auf ungerade steigen | **danach** | `fence(Release)` *nach* dem Bump |
-| ② Writer, schließend | payload-Stores dürfen nicht unter den Bump auf gerade sinken | **davor** | `Release` auf dem Bump selbst |
-| ③ Reader, öffnend | payload-Kopie darf nicht über `s1` steigen | **danach** | `Acquire` auf `s1` selbst |
-| ④ Reader, schließend | payload-Kopie darf nicht unter `s2` sinken | **davor** | `fence(Acquire)` *vor* `s2` |
+![Vier Kanten, vier Entscheidungen: auf welcher Seite das Gehaltene liegt und welches Werkzeug das erzwingt](../img/de/tbl_four_edges.png)
 
 Beachte die Symmetrie: Die zwei Kanten, die ein Fenster *öffnen*, müssen halten, was
 danach kommt; die zwei, die es *schließen*, müssen halten, was davor kommt. Und genau
@@ -119,6 +114,12 @@ Hier ist das Ganze, korrekt, jedes Gate an seinem Platz:
 Die zwei `Relaxed`, die im Code übrig sind, sind keine Faulheit — sie sind die Kanten,
 an denen ein Ordering eine Seite bewachen würde, auf der nichts liegt, also erledigt
 stattdessen die fence daneben die Arbeit.
+
+Diese ganze Aufteilung — wann das Ordering auf dem Atomic genügt und wann man zu einer
+fence greifen muss — läuft auf eine einzige Unterscheidung hinaus, die es wert ist,
+sich zu merken:
+
+![Einweg-Gate versus Zweiweg-Wand: ein Ordering auf der Op sichert eine Seite; eine fence sichert beide und kann zwei Variablen verbrücken](../img/de/tbl_gate_vs_fence.png)
 
 ## Was die fences wirklich einbringen: ein Handshake
 
