@@ -132,7 +132,8 @@ Garantie.
 Die zu beweisende Behauptung ist eine einzige:
 
 > Greift die Kopie des Readers auch nur **ein einziges Byte** von Write N auf, dann
-> **muss** der `s2`-Read des Readers den Bump auf ungerade von Write N beobachten.
+> **muss** der `s2`-Read des Readers einen seq-Wert zurückliefern, der über den
+> öffnenden (ungeraden) Bump von Write N hinaus fortgeschritten ist — also `s2 ≠ s1`.
 
 ![Zwei fences im Handshake: alles vor Release happens-before alles nach Acquire](../img/de/diag_happens_before.png)
 
@@ -142,6 +143,15 @@ Read eine `fence(Acquire)` ausführt, rasten die beiden fences ineinander: Alles
 fence des Writers happens-before alles nach der fence des Readers. Der Bump auf ungerade
 liegt auf der ersten Seite; `s2` auf der zweiten. Also wird ein torn read *garantiert*
 gefangen — `s1 != s2`, retry.
+
+(„Über den ungeraden Bump hinaus" heißt nicht, dass `s2` den ungeraden Wert selbst liest —
+es heißt, dass `s2` ein seq liest, das diesen Schritt bereits *einschließt*. War der Wert
+vor Write N stabil bei 100, so macht ihn der ungerade Bump zu 101, der gerade Bump zu 102.
+Griff der Reader sein Byte, während der Write noch lief, liest `s2` 101; war der Write schon
+fertig, liest `s2` 102. In beiden Fällen ist es jenseits von 100, also `s2 ≠ s1`. Wir setzen
+am *ungeraden* Bump an, nicht am geraden, weil der ungerade Bump der früheste Marker ist, der
+garantiert jedem payload-Byte vorausgeht — wenn der Reader ein Byte greift, ist der gerade
+Bump vielleicht noch nicht passiert, der ungerade aber ganz sicher.)
 
 Das ist auch der Grund, warum ein Ordering-auf-der-Operation nicht genügen würde, selbst
 dort, wo es typecheckt: Ein Ordering auf einem Atomic verknüpft *dieses Atomic* über

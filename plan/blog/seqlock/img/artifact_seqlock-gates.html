@@ -622,7 +622,7 @@ compare_exchange(cur, cur + 1, <span class="t">Release</span>, Relaxed);   <span
     </div>
 
     <div class="rule">
-      <p>Nếu bản copy của reader nhặt được <strong>dù chỉ một byte</strong> của lần ghi N, thì lần đọc <code>s2</code> của nó <strong>bắt buộc</strong> phải nhìn thấy bump-lẻ của lần ghi N.</p>
+      <p>Nếu bản copy của reader nhặt được <strong>dù chỉ một byte</strong> của lần ghi N, thì lần đọc <code>s2</code> của nó <strong>bắt buộc</strong> đọc ra một seq đã tiến <em>qua khỏi</em> bump-lẻ của lần ghi N — nên <code>s2 ≠ s1</code>. (Không phải s2 đúng bằng giá trị lẻ: nếu writer còn ghi dở thì s2 là giá trị lẻ, nếu đã ghi xong thì s2 là giá trị chẵn kế tiếp — cả hai đều lớn hơn s1. Ta chốt ở bump-lẻ vì nó là mốc sớm nhất chắc chắn đứng trước mọi byte payload; bump-chẵn có thể chưa xảy ra khi reader nhặt byte.)</p>
     </div>
 
     <figure>
@@ -671,7 +671,7 @@ compare_exchange(cur, cur + 1, <span class="t">Release</span>, Relaxed);   <span
 
         <!-- derived edge -->
         <path d="M 282 63 C 400 -6 600 -6 596 57" class="none s-w" stroke-width="2.2" stroke-dasharray="6 4" marker-end="url(#ah-r4)"/>
-        <text x="439" y="264" text-anchor="middle" class="lbl f-ink">⟹ s2 bắt buộc nhìn thấy bump-lẻ ⟹ s1 ≠ s2 ⟹ retry</text>
+        <text x="439" y="264" text-anchor="middle" class="lbl f-ink">⟹ s2 đọc seq đã qua bump-lẻ ⟹ s1 ≠ s2 ⟹ retry</text>
         <text x="439" y="284" text-anchor="middle" class="lbl-sm f-muted">hai fence bắt tay: mọi thứ trước fence(Release) happens-before mọi thứ sau fence(Acquire)</text>
       </svg>
       <figcaption><strong>Cặp fence là cái nối.</strong> Riêng lẻ, mỗi fence chỉ sắp xếp lại thứ tự trong thread của nó. Nhưng khi reader đọc trúng một byte mà writer ghi sau <code>fence(Release)</code>, và reader chạy <code>fence(Acquire)</code> sau khi đọc, thì hai fence khoá vào nhau: tất cả những gì xảy ra trước fence bên writer trở thành happens-before tất cả những gì xảy ra sau fence bên reader. Bump-lẻ nằm ở vế đầu, <code>s2</code> nằm ở vế sau — nên rách là bị bắt.</figcaption>

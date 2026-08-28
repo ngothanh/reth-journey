@@ -118,7 +118,8 @@ relationship, and that relationship is the real guarantee.
 The claim to prove is single:
 
 > If the reader's copy picks up **even one byte** of write N, then the reader's `s2`
-> read **must** observe write N's odd-bump.
+> read **must** come back with a sequence value that has advanced past write N's
+> opening (odd) bump — so `s2 ≠ s1`.
 
 ![Two fences handshake: everything before Release happens-before everything after Acquire](../img/en/diag_happens_before.png)
 
@@ -127,6 +128,14 @@ writer stored *after* its `fence(Release)`, and the reader runs `fence(Acquire)`
 the read, the two fences lock together: everything before the writer's fence
 happens-before everything after the reader's fence. The odd-bump is on the first side;
 `s2` is on the second. So a torn read is *guaranteed* to be caught — `s1 != s2`, retry.
+
+("Past the odd bump" doesn't mean `s2` reads the odd value itself — it means `s2` reads a
+seq that has *incorporated* that increment. Say the value was stable at 100 before write N.
+The odd bump makes it 101, then the even bump 102. If the reader grabbed its byte while the
+write was still in flight, `s2` reads 101; if the write had already finished, `s2` reads 102.
+Either way it's past 100, so `s2 ≠ s1`. We key on the *odd* bump, not the even one, because
+the odd bump is the earliest marker guaranteed to precede any payload byte — when the reader
+grabs a byte, the even bump may not have happened yet, but the odd bump certainly has.)
 
 This is also why an ordering-on-the-op wouldn't be enough even where it type-checks: an
 ordering on an atomic ties *that atomic* across threads, but here the data channel is
