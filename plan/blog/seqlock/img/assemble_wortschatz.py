@@ -33,16 +33,39 @@ CATS = [
     ('loanword', 'Englische Lehnwörter', 'English loanwords and the gender German gives them'),
 ]
 
+def esc_code(s):
+    # escape, then turn `code` backtick spans into <code>
+    return re.sub(r'`([^`]+)`', lambda m: '<code>' + m.group(1) + '</code>', html.escape(s))
+
 def mark_bold(s):
-    # convert **kw** to <b> and escape the rest
+    # convert **kw** to <b>, `code` to <code>, escape the rest
     parts_ = re.split(r'(\*\*.*?\*\*)', s)
     out = ''
     for seg in parts_:
         if seg.startswith('**') and seg.endswith('**'):
-            out += '<b class="kw">' + html.escape(seg[2:-2]) + '</b>'
+            out += '<b class="kw">' + esc_code(seg[2:-2]) + '</b>'
         else:
-            out += html.escape(seg)
+            out += esc_code(seg)
     return out
+
+def mark_en(s):
+    # EN example line: bold the **keyword**, render `code`, escape rest (stays muted).
+    parts_ = re.split(r'(\*\*.*?\*\*)', s)
+    out = ''
+    for seg in parts_:
+        if seg.startswith('**') and seg.endswith('**'):
+            out += '<b class="enkw">' + esc_code(seg[2:-2]) + '</b>'
+        else:
+            out += esc_code(seg)
+    return out
+
+# Curated core vocabulary — "learn these first". Matched against headwords.
+CORE = [
+    'Payload', 'Sequenzzähler', 'Zähler', 'Schreiber', 'Leser', 'Fence', 'Fenster',
+    'Bump', 'Kante', 'zerreißen', 'torn read', 'Data Race', 'Pod', 'Marker-Trait',
+    'atomar', 'gerade', 'ungerade', 'Wort', 'Maschinenwort', 'Randbedingung',
+    'Miri', 'loom', 'Cache line', 'Core', 'stabil', 'erzwingen',
+]
 
 def split_headword(hw):
     m = re.match(r'^(der|die|das)\s+(.*)$', hw.strip())
@@ -61,11 +84,72 @@ def entry_html(e):
   <div class="r">
     <div class="mean">{html.escape(e.get("en_meaning",""))}</div>
     <div class="de">{mark_bold(e.get("de_example",""))}</div>
-    <div class="en">{html.escape(e.get("en_example",""))}</div>
+    <div class="en">{mark_en(e.get("en_example",""))}</div>
   </div>
 </div>'''
 
-sections_html = []
+def section(de_title, en_title, count, rows_html):
+    return f'''<section>
+  <div class="sec"><h2>{de_title}</h2><span class="subt">{en_title}</span><span class="cnt">{count}</span></div>
+  {rows_html}
+</section>'''
+
+# --- Kernwortschatz: curated core, matched against headwords, in CORE order ---
+core_entries, used = [], set()
+for needle in CORE:
+    for e in order:
+        hw = e['headword']
+        if needle.lower() in hw.lower() and hw.lower() not in used:
+            core_entries.append(e); used.add(hw.lower()); break
+kern_html = section('Kernwortschatz', 'the words the whole series runs on — learn these first',
+                    len(core_entries),
+                    '<p class="note">Diese Wörter kommen in jedem Teil vor. Wer sie kann, versteht die Struktur jedes Absatzes.</p>\n' +
+                    '\n'.join(entry_html(e) for e in core_entries))
+
+# --- Grammatikmuster (hand-authored, SeqLock examples) ---
+GRAMMAR = [
+ ('Nominalisierter Infinitiv — das Lesen', 'WORTBILDUNG',
+  'Jeden Infinitiv großschreiben, und er wird ein neutrales Substantiv = englisches «-ing».',
+  [('Das <b>Lesen</b> ist der Hot Path.', 'The reading is the hot path.'),
+   ('Das <b>Zerreißen</b> lassen wir geschehen und fangen es ab.', 'We let the tearing happen and catch it.'),
+   ('Das <b>Schreiben</b> klammert der Writer mit zwei Bumps.', 'The writer brackets the writing with two bumps.')]),
+ ('Erweitertes Partizipialattribut', 'SATZBAU',
+  'Englisch hängt einen Relativsatz an; Deutsch schiebt das Ganze zwischen Artikel und Substantiv. Von hinten lesen: erst das Substantiv, dann nach links auspacken.',
+  [('ein halb <b>geschriebener</b> Wert', 'a half-written value'),
+   ('die vom Writer gerade <b>geänderten</b> Bytes', 'the bytes the writer is currently changing'),
+   ('der zwischen zwei Bumps <b>geschriebene</b> payload', 'the payload written between two bumps')]),
+ ('Konditional ohne «wenn» — Verberststellung', 'SATZBAU',
+  '«wenn» weglassen und das Verb an Position eins setzen — kompakter und formeller, überall in den Regeln.',
+  [('<b>Ist</b> s1 ungerade, liest der Reader gar nicht erst.', 'If s1 is odd, the reader doesn\'t even read.'),
+   ('<b>Greift</b> die Kopie auch nur ein Byte von Write N auf, ist s2 ≠ s1.', 'If the copy grabs even one byte of write N, s2 ≠ s1.')]),
+ ('Dativ-Verben', 'FÄLLE',
+  'Einige Verben nehmen das Dativobjekt, wo Englisch ein schlichtes Objekt hat.',
+  [('Wir <b>trauen</b> dem grünen Test nicht.', 'We don\'t trust the green test.'),
+   ('Der Code <b>gehorcht</b> dem Protokoll aus geraden und ungeraden Bumps.', 'The code obeys the protocol of even and odd bumps.'),
+   ('Der Beweis <b>folgt</b> daraus.', 'The proof follows from it.')]),
+ ('Trennbare Verben im Hauptsatz', 'SATZBAU',
+  'Die Vorsilbe springt ans Ende des Satzes; im Nebensatz bleibt sie dran.',
+  [('Der Reader <b>liest</b> den Zähler zweimal <b>ab</b>.', 'The reader reads the counter off twice.'),
+   ('…, weil der Writer den Schreibvorgang <b>einklammert</b>.', '…because the writer brackets the write.')]),
+ ('Komposita — von rechts nach links lesen', 'WORTBILDUNG',
+  'Das letzte Element ist der Kopf: es trägt Genus und Kernbedeutung. Alles links davon grenzt es ein.',
+  [('der Sequenz|zähler', 'sequence + counter → sequence counter'),
+   ('das Maschinen|wort', 'machine + word'),
+   ('die Rand|bedingung', 'edge + condition → constraint'),
+   ('die Cache-|Kohärenz', 'cache + coherence')]),
+ ('«man» als allgemeines Subjekt', 'STIL',
+  'Wo Englisch «you» oder ein Passiv schreibt, schreibt Deutsch «man» — nie ein Mann, sondern «one, anybody».',
+  [('Setzt <b>man</b> alle vier Kanten nebeneinander, wählt sich das Werkzeug fast von selbst.', 'Lay the four edges side by side and the tool almost picks itself.'),
+   ('<b>Man</b> setzt am ungeraden Bump an, nicht am geraden.', 'One keys on the odd bump, not the even one.')]),
+]
+def grammar_block():
+    out = []
+    for name, tag, expl, exs in GRAMMAR:
+        rows = ''.join(f'<div class="gx"><div class="gde">{de}</div><div class="gen">{en}</div></div>' for de, en in exs)
+        out.append(f'<div class="gp"><div class="gh"><span class="gname">{name}</span><span class="gt">{tag}</span></div><p class="note">{expl}</p>{rows}</div>')
+    return section('Grammatikmuster', 'the patterns that make the text feel hard', len(GRAMMAR), '\n'.join(out))
+
+sections_html = [kern_html]
 counts = {}
 for cat, de_title, en_title in CATS:
     items = [e for e in order if e['category'] == cat]
@@ -112,6 +196,16 @@ HEAD = f'''<!doctype html><html lang="de"><head><meta charset="utf-8">
   .de{{font-style:italic;font-size:9.6pt;border-left:2px solid var(--line);padding-left:9px;color:#1f2937}}
   .de .kw{{font-style:normal;font-weight:600;color:var(--kw)}}
   .en{{font-size:8.8pt;color:var(--muted);padding-left:9px;margin-top:2px}}
+  .en .enkw{{font-weight:600;color:#4b5563}}
+  .note{{color:var(--muted);font-size:8.8pt;margin:2px 0 10px}}
+  .gp{{break-inside:avoid;padding:10px 0 6px;border-bottom:1px solid var(--line)}}
+  .gh{{display:flex;align-items:baseline;gap:10px}}
+  .gname{{font-weight:600;font-size:11.5pt}}
+  .gt{{font-family:"JetBrains Mono",monospace;font-size:7.2pt;letter-spacing:.12em;color:var(--accent);border:1px solid var(--line);border-radius:3px;padding:1px 6px}}
+  .gx{{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:3px 0}}
+  .gde{{font-style:italic;font-size:9.6pt;color:#1f2937}}
+  .gde b{{font-style:normal;font-weight:600;color:var(--kw)}}
+  .gen{{font-size:9.2pt;color:var(--muted)}}
   footer{{margin-top:24px;border-top:2px solid var(--ink);padding-top:8px;font-size:8pt;color:var(--muted)}}
 </style></head><body><div class="wrap">
 <div class="eyebrow">EIN SEQLOCK ENTWERFEN · TEIL 1–4 · DEUTSCH → ENGLISCH</div>
@@ -124,7 +218,7 @@ HEAD = f'''<!doctype html><html lang="de"><head><meta charset="utf-8">
 FOOT = '''<footer>Generiert aus der deutschen Fassung der Serie „Ein SeqLock entwerfen" · Beispielsätze wörtlich aus dem Text, englische Zeile aus der Parallelfassung.</footer>
 </div></body></html>'''
 
-open(out_html, 'w').write(HEAD + '\n'.join(sections_html) + FOOT)
+open(out_html, 'w').write(HEAD + '\n'.join(sections_html) + grammar_block() + FOOT)
 
 # --- markdown source ---
 md = [f'# SeqLock-Wortschatz — Deutsch → Englisch',
