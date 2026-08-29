@@ -1,0 +1,3 @@
+{ "name": "blog-figures", "private": true, "type": "module",
+  "description": "Renders figure HTML (code cards, diagrams, tables, charts) to PNG/PDF via headless Chrome.",
+  "dependencies": { "puppeteer": "^23" } }

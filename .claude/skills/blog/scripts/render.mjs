@@ -1,0 +1,12 @@
+import puppeteer from 'puppeteer';
+import { readFileSync } from 'fs';
+const [,, htmlPath, outPath] = process.argv;
+const browser = await puppeteer.launch({ args: ['--no-sandbox','--force-color-profile=srgb'] });
+const page = await browser.newPage();
+await page.setViewport({ width: 1400, height: 900, deviceScaleFactor: 2 });
+await page.goto('file://' + htmlPath, { waitUntil: 'networkidle0' });
+await page.evaluateHandle('document.fonts.ready');
+const el = await page.$('.fig');
+await el.screenshot({ path: outPath });
+await browser.close();
+console.log('wrote', outPath);
