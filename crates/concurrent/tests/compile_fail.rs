@@ -22,3 +22,14 @@ fn atomic_cell_padded_struct_fast_path_fails_to_compile() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/compile_fail/atomic_cell_padded_not_pod.rs");
 }
+
+#[test]
+fn seq_lock_compile_fail_not_covariant() {
+    // Asserts `SeqLock<T>` is INVARIANT in `T` at the type level. The fixture
+    // coerces `SeqLock<&'static str>` to `SeqLock<&'a str>`, which the borrow
+    // checker permits only for a covariant type. Failure to compile is the
+    // deliverable: it proves the loom `PhantomData<UnsafeCell<T>>` marker keeps
+    // the same variance as the real `UnsafeCell<T>` payload.
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/compile_fail/seq_lock_not_covariant.rs");
+}
