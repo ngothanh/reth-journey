@@ -14,7 +14,7 @@ slab = "0.4.12"
 [dev-dependencies]
 criterion.workspace = true
 trybuild.workspace = true
-tokio = { version = "1", features = ["rt", "macros", "time"] }
+tokio = { version = "1", features = ["rt", "macros", "time", "sync"] }
 
 [[bench]]
 name = "backoff"
