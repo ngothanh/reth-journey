@@ -1,7 +1,0 @@
-{
-  "name": "seqlock-blog-img",
-  "private": true,
-  "type": "module",
-  "description": "Renders figure HTML (diagrams + code cards) to PNG for the SeqLock blog.",
-  "dependencies": { "puppeteer": "^23" }
-}
