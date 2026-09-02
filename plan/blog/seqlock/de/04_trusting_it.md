@@ -106,6 +106,22 @@ Eine Ganzzahl, zwei Bedeutungen, kein zusätzlicher Zustand: Dem Leser sagt unge
 nicht"; einem anderen Schreiber sagt ungerade „warte, bis du dran bist". Schreiber
 serialisieren sich; Leser bleiben lock-free und ahnungslos.
 
+Aber die Schreiber zu serialisieren ist nur die halbe Lösung, und die fehlende Hälfte ist
+dieselbe Falle wie beim `Pod`-Bound: *notwendig, aber nicht hinreichend*. Der gegenseitige
+Ausschluss verhindert, dass sich die beiden Schreiber zeitlich überlappen; er sagt nichts
+darüber, was der zweite Schreiber *sieht*. Wenn Schreiber B den Slot gewinnt, liest sein
+CAS die gerade Sequenz, die Schreiber A mit `fetch_add(Release)` veröffentlicht hat — aber
+die *Zahl* zu lesen ist nicht dasselbe, wie A's Payload-*Writes* zu erben. Ist dieses CAS
+`Relaxed`, beansprucht B das Lock ohne happens-before-Kante zu A, und die Word-Stores der
+beiden Schreiber liefern sich ein Rennen: Der Endwert kann Wort 0 von A und Wort 1 von B
+sein — ein Riss, der nie heilt, denn es ist der bleibende Zustand, kein flüchtiger Blick
+mitten im Write. Das `Acquire` am CAS kauft die Kante. Ein compare-and-swap ist ein Read
+*und* ein Write, und hier ist es die **Read-Hälfte**, die die Übergabe trägt: `Acquire`
+paart sich mit A's freigebendem `fetch_add`, sodass alles, was A geschrieben hat,
+*happens-before* allem, was B schreibt — und B's Wert gewinnt auf jedem Wort sauber. Das
+Lock gibt dir den gegenseitigen Ausschluss; das `Acquire` ist das, was die Übergabe
+Speicher tragen lässt.
+
 ## Ihm vertrauen — weil ein grüner Test hier nichts beweist
 
 Wir haben schon zugesehen, wie dieser Code vier von fünf Malen durchläuft, während er
@@ -132,9 +148,47 @@ denen er zufällig die richtigen Bytes lieferte.
 
 **loom**, für die Ordnungen. Es spielt ein kleines Szenario — ein Schreiber, ein Leser;
 dann zwei Schreiber — unter *jeder* Thread-Verschränkung, die das Speichermodell erlaubt,
-erneut durch und prüft, dass die Invarianten in allen gelten. Wo der torn-read-Test ein
-paar Schedules abtastet, ist loom über ein beschränktes Modell erschöpfend; es ist das
-Nächste an einem Beweis, dass die fences richtig platziert sind.
+erneut durch und prüft, dass die Invariante in allen gilt. Das ist keine Formsache: Genau
+das Zwei-Schreiber-Modell hat den `Relaxed`-CAS-Riss aus dem letzten Abschnitt gefunden.
+Dieser Fehler versteckt sich doppelt. Er braucht zwei Schreiber, die sich ein Rennen
+liefern — was der Ein-Schreiber-Stresstest nie aufsetzt — und selbst dann reißt er nur auf
+einem schwachen Speichermodell: Auf x86 kompiliert ein compare-and-swap zu einer vollen
+Barriere, ganz gleich, welche Ordnung er trägt, also kann der Fehler dort gar nicht
+auftreten. loom findet ihn in etwa 50 Millisekunden, weil es sowohl den zusätzlichen
+Schreiber als auch die schwache Ordnung modelliert, die dir dein x86-Laptop nie zeigen
+wird. Wo der torn-read-Test ein paar Schedules abtastet, ist loom über ein beschränktes
+Modell erschöpfend — das Nächste an einem Beweis, dass die fences und Ordnungen richtig
+platziert sind.
+
+### Eine loom-Fehlermeldung lesen
+
+Ein roter loom-Lauf ist nur dann etwas wert, wenn du ihn in eine Korrektur verwandeln
+kannst, und die rohe Ausgabe sieht aus wie ein Firewall-Log. Die Disziplin ist kurz. loom
+druckt pro Thread jede atomare Operation mit ihrer Ordnung und dem Objekt, das sie berührt
+hat (`LOOM_LOG=trace`, plus `LOOM_LOCATION=1` für Quellzeilen). Aufgeräumt liest sich der
+scheiternde Zwei-Schreiber-Schedule so:
+
+![Der scheiternde loom-Schedule: jeder Sync-Punkt ist Release/Acquire außer dem einzelnen Relaxed-claim-CAS](../img/cards/term_loom_trace.png)
+
+Lies ihn in zwei Durchgängen. **Zuerst die Assertion.** Der Schreiber veröffentlicht nur
+identische Wörter, also ist `[2, 3]` Wort 0 vom einen und Wort 1 vom anderen Schreiber —
+und weil der Leser *nach* dem Join beider Schreiber lief, ist das kein Blick mitten im
+Write, sondern der *bleibende* Endwert. Eine bleibende Mischung heißt, die Stores der
+beiden Schreiber auf dieselben Wörter sind in der Modification Order verschränkt, und das
+kann nur passieren, wenn ihnen eine happens-before-Kante fehlt. **Dann die Ordnungen.**
+Überflieg die Spalte: Die Veröffentlichung ist `Release`, der erste Load des Lesers ist
+`Acquire`, und die eine Operation, die das Lock von einem Schreiber zum nächsten übergibt
+— das claim-CAS — ist `Relaxed`. In einem Protokoll, in dem jeder andere Sync-Punkt
+`Release`/`Acquire` ist, *ist* ein einzelnes `Relaxed` an einer Übergabe der Fehler.
+Nichts wurde Zeile für Zeile umgeordnet; eine Kante wurde schlicht nie gebaut. Gib dem CAS
+sein `Acquire`, und dasselbe Modell wird grün — kein Schedule kann die Mischung mehr
+erzeugen.
+
+Die Gewohnheit, die sich lohnt: Du brauchst die Trace selten, um die Korrektur zu
+*finden*. `[2, 3]` plus „der Leser lief nach dem Join" sagt dir schon, dass zwei
+Schreibern eine Kante fehlt — also suchst du die Operation, die zwischen ihnen übergibt,
+und prüfst ihre Ordnung. Die Trace *bestätigt* die Vermutung — und trainiert, die ersten
+Male, den Instinkt, sie zu überspringen.
 
 ## Der Lohn, in Nanosekunden
 

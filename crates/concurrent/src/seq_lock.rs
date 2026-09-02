@@ -107,7 +107,13 @@ impl<T: Pod> SeqLock<T> {
             match self.state.compare_exchange_weak(
                 cur,
                 cur + 1,
-                Ordering::Relaxed,
+                // Acquire (read half of the RMW): claiming the slot must inherit
+                // the previous writer's payload writes, published by its
+                // `fetch_add(Release)`. Relaxed here reads the seq number but not
+                // the payload, and two writers' words tear permanently (loom
+                // `two_writers_serialise`). Failure ordering stays Relaxed: a lost
+                // race inherits nothing, it just retries.
+                Ordering::Acquire,
                 Ordering::Relaxed,
             ) {
                 Ok(_) => break,

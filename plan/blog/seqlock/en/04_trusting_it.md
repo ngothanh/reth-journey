@@ -96,6 +96,20 @@ One integer, two meanings, no extra state: to the reader, odd says "don't read";
 another writer, odd says "wait your turn." Writers serialise; readers stay lock-free and
 oblivious.
 
+But serialising the writers is only half the fix, and the missing half is the same trap
+the `Pod` bound had: *necessary but not sufficient*. Mutual exclusion stops the two
+writers overlapping in time; it says nothing about what the second writer *sees*. When
+writer B wins the slot, its CAS reads the even sequence that writer A published with
+`fetch_add(Release)` — but reading the *number* is not the same as inheriting A's payload
+*writes*. If that CAS is `Relaxed`, B claims the lock with no happens-before edge to A,
+and the two writers' word stores race: the final value can be word 0 from A and word 1
+from B — a tear that never heals, because it's the permanent state, not a mid-write
+glimpse. The `Acquire` on the CAS is what buys the edge. A compare-and-swap is a read
+*and* a write, and here it is the **read half** that carries the hand-off: `Acquire`
+pairs with A's releasing `fetch_add`, so everything A wrote *happens-before* everything B
+writes, and B's value wins cleanly on every word. The lock gives you mutual exclusion;
+the `Acquire` is what makes the hand-off carry memory.
+
 ## Trusting it — because a green test proves nothing here
 
 We have already watched this code pass four times out of five while being wrong. In
@@ -120,9 +134,41 @@ illegal even on the runs where it happened to produce the right bytes.
 
 **loom**, for the orderings. It re-runs a small scenario — one writer, one reader; then
 two writers — under *every* thread interleaving the memory model permits, and checks the
-invariants hold in all of them. Where the torn-read test samples a few schedules, loom
-is exhaustive over a bounded model; it's the closest thing to a proof that the fences
-are placed correctly.
+invariant in all of them. This is not a formality: the two-writer model is exactly what
+caught the `Relaxed`-CAS tear from the last section. That bug hides twice over. It needs
+two writers racing — which the single-writer stress test never sets up — and even then it
+only tears on a weak memory model: on x86 a compare-and-swap compiles to a full barrier
+regardless of its ordering, so the bug cannot manifest there at all. loom finds it in
+about 50 milliseconds because it models both the extra writer and the weak ordering your
+x86 laptop will never show you. Where the torn-read test samples a few schedules, loom is
+exhaustive over a bounded model — the closest thing to a proof that the fences and
+orderings are placed correctly.
+
+### Reading a loom failure
+
+A red loom run is only worth something if you can turn it into a fix, and the raw output
+looks like a firewall log. The discipline is short. loom prints, per thread, every atomic
+operation with its ordering and the object it touched (`LOOM_LOG=trace`, plus
+`LOOM_LOCATION=1` for source lines). Cleaned up, the failing two-writer schedule reads:
+
+![The failing loom schedule: every sync point is Release/Acquire except the lone Relaxed claim-CAS](../img/cards/term_loom_trace.png)
+
+Read it in two passes. **First, the assertion.** The writer only ever publishes identical
+words, so `[2, 3]` is word 0 from one writer and word 1 from the other — and because the
+reader ran *after* both writers joined, this is not a glimpse mid-write, it's the
+*permanent* final value. A permanent mix means the two writers' stores to the same words
+ended up interleaved in modification order, and that can only happen if they lack a
+happens-before edge. **Second, the orderings.** Scan the column: the publish is
+`Release`, the reader's first load is `Acquire`, and the one operation that hands the lock
+from one writer to the next — the claim-CAS — is `Relaxed`. In a protocol where every
+other synchronization point is `Release`/`Acquire`, a lone `Relaxed` on a hand-off *is*
+the bug. Nothing was reordered line by line; an edge was simply never built. Give the CAS
+its `Acquire` and the same model goes green — no schedule can produce the mix any more.
+
+The habit worth building is that you rarely need the trace to *discover* the fix. `[2, 3]`
+plus "the reader ran after join" already tells you two writers lack an edge, so you go
+find the operation that hands off between them and check its ordering. The trace is what
+*confirms* the guess — and, the first few times, what trains the instinct to skip it.
 
 ## The payoff, in nanoseconds
 
