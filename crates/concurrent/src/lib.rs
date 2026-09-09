@@ -13,6 +13,7 @@ mod semaphore;
 mod seq_lock;
 mod wait_list;
 mod wake_list;
+mod mpmc;
 
 pub use atomic_cell::AtomicCell;
 pub use backoff::Backoff;
