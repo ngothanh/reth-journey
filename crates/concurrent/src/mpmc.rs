@@ -1,7 +1,17 @@
-use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use core::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering::Relaxed;
+mod sync {
+    #[cfg(not(loom))]
+    pub(super) use core::cell::UnsafeCell;
+    #[cfg(not(loom))]
+    pub(super) use core::sync::atomic::{AtomicUsize, Ordering};
+
+    #[cfg(loom)]
+    pub(super) use loom::cell::UnsafeCell;
+    #[cfg(loom)]
+    pub(super) use loom::sync::atomic::{AtomicUsize, Ordering};
+}
+
+use sync::{AtomicUsize, Ordering, UnsafeCell};
 
 pub struct MpmcRing<T> {
     data: Box<[UnsafeCell<MaybeUninit<T>>]>,
@@ -32,8 +42,8 @@ impl<T> MpmcRing<T> {
     }
 
     pub fn try_push(&self, value: T) -> Result<(), T> {
-        let writer = self.tail.load(Relaxed);
-        let reader = self.head.load(Relaxed);
+        let writer = self.tail.load(Ordering::Relaxed);
+        let reader = self.head.load(Ordering::Relaxed);
         if writer - reader == self.capacity() {
             return Err(value);
         }
@@ -41,19 +51,25 @@ impl<T> MpmcRing<T> {
         let reserved = writer & self.mask;
         match self
             .tail
-            .compare_exchange(writer, writer + 1, Relaxed, Relaxed)
+            .compare_exchange(writer, writer + 1, Ordering::Relaxed, Ordering::Relaxed)
         {
-            Ok(_) => unsafe {
-                self.data[reserved].get().write(MaybeUninit::new(value));
+            Ok(_) => {
+                #[cfg(not(loom))]
+                unsafe {
+                    self.data[reserved].get().write(MaybeUninit::new(value));
+                }
+                #[cfg(loom)]
+                self.data[reserved].with_mut(|p| unsafe { *p = MaybeUninit::new(value) });
+
                 Ok(())
-            },
+            }
             Err(_) => Err(value),
         }
     }
 
     pub fn try_pop(&self) -> Option<T> {
-        let writer = self.tail.load(Relaxed);
-        let reader = self.head.load(Relaxed);
+        let writer = self.tail.load(Ordering::Relaxed);
+        let reader = self.head.load(Ordering::Relaxed);
         if writer == reader {
             return None;
         }
@@ -61,9 +77,15 @@ impl<T> MpmcRing<T> {
         let slot = reader & self.mask;
         match self
             .head
-            .compare_exchange(reader, reader + 1, Relaxed, Relaxed)
+            .compare_exchange(reader, reader + 1, Ordering::Relaxed, Ordering::Relaxed)
         {
-            Ok(_) => unsafe { Some((*self.data[slot].get()).assume_init_read()) },
+            Ok(_) => unsafe {
+                #[cfg(not(loom))]
+                return Some((*self.data[slot].get()).assume_init_read());
+
+                #[cfg(loom)]
+                return Some(self.data[slot].with(|p| unsafe { (*p).assume_init_read() }));
+            },
             Err(_) => None,
         }
     }
@@ -74,6 +96,7 @@ impl<T> MpmcRing<T> {
 }
 
 #[cfg(test)]
+#[cfg(not(loom))]
 mod tests {
     use crate::mpmc::MpmcRing;
 

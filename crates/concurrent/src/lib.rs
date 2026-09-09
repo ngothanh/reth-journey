@@ -27,3 +27,4 @@ pub use rw_lock::{ReadGuard, RwLock, WriteGuard};
 pub use seq_lock::SeqLock;
 pub use semaphore::{Acquire, AcquireError, Semaphore, SemaphorePermit, TryAcquireError};
 pub use wait_list::{Waiter, WaitList};
+pub use mpmc::MpmcRing;
