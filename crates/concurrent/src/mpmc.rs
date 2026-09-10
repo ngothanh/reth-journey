@@ -1,4 +1,5 @@
 use core::mem::MaybeUninit;
+
 mod sync {
     #[cfg(not(loom))]
     pub(super) use core::cell::UnsafeCell;
@@ -14,10 +15,15 @@ mod sync {
 use sync::{AtomicUsize, Ordering, UnsafeCell};
 
 pub struct MpmcRing<T> {
-    data: Box<[UnsafeCell<MaybeUninit<T>>]>,
+    data: Box<[Cell<T>]>,
     head: AtomicUsize,
     tail: AtomicUsize,
     mask: usize,
+}
+
+struct Cell<T> {
+    seq: AtomicUsize,
+    payload: UnsafeCell<MaybeUninit<T>>,
 }
 
 unsafe impl<T: Send> Send for MpmcRing<T> {}
@@ -33,7 +39,10 @@ impl<T> MpmcRing<T> {
         );
         Self {
             data: (0..capacity)
-                .map(|_| UnsafeCell::new(MaybeUninit::uninit()))
+                .map(|i| Cell {
+                    seq: AtomicUsize::new(i),
+                    payload: UnsafeCell::new(MaybeUninit::uninit()),
+                })
                 .collect(),
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
@@ -42,51 +51,78 @@ impl<T> MpmcRing<T> {
     }
 
     pub fn try_push(&self, value: T) -> Result<(), T> {
-        let writer = self.tail.load(Ordering::Relaxed);
-        let reader = self.head.load(Ordering::Relaxed);
-        if writer - reader == self.capacity() {
-            return Err(value);
-        }
-
-        let reserved = writer & self.mask;
-        match self
-            .tail
-            .compare_exchange(writer, writer + 1, Ordering::Relaxed, Ordering::Relaxed)
-        {
-            Ok(_) => {
-                #[cfg(not(loom))]
-                unsafe {
-                    self.data[reserved].get().write(MaybeUninit::new(value));
-                }
-                #[cfg(loom)]
-                self.data[reserved].with_mut(|p| unsafe { *p = MaybeUninit::new(value) });
-
-                Ok(())
+        let mut pos = self.tail.load(Ordering::Relaxed);
+        loop {
+            let i = pos & self.mask;
+            let seq = self.data[i].seq.load(Ordering::Acquire);
+            let diff = seq.wrapping_sub(pos) as isize;
+            if diff > 0 {
+                pos = self.tail.load(Ordering::Relaxed);
+                continue;
             }
-            Err(_) => Err(value),
+            if diff < 0 {
+                return Err(value);
+            }
+
+            match self
+                .tail
+                .compare_exchange_weak(pos, pos + 1, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => {
+                    #[cfg(not(loom))]
+                    unsafe {
+                        self.data[i].payload.get().write(MaybeUninit::new(value));
+                    }
+                    #[cfg(loom)]
+                    self.data[i]
+                        .payload
+                        .with_mut(|p| unsafe { *p = MaybeUninit::new(value) });
+
+                    self.data[i].seq.store(pos + 1, Ordering::Release);
+                    return Ok(());
+                }
+                Err(cur) => pos = cur,
+            }
         }
     }
 
     pub fn try_pop(&self) -> Option<T> {
-        let writer = self.tail.load(Ordering::Relaxed);
-        let reader = self.head.load(Ordering::Relaxed);
-        if writer == reader {
-            return None;
-        }
+        let mut pos = self.head.load(Ordering::Relaxed);
 
-        let slot = reader & self.mask;
-        match self
-            .head
-            .compare_exchange(reader, reader + 1, Ordering::Relaxed, Ordering::Relaxed)
-        {
-            Ok(_) => unsafe {
-                #[cfg(not(loom))]
-                return Some((*self.data[slot].get()).assume_init_read());
+        loop {
+            let i = pos & self.mask;
+            let seq = self.data[i].seq.load(Ordering::Acquire);
+            let diff = seq.wrapping_sub(pos) as isize - 1;
+            if diff > 0 {
+                pos = self.head.load(Ordering::Relaxed);
+                continue;
+            }
+            if diff < 0 {
+                return None;
+            }
 
-                #[cfg(loom)]
-                return Some(self.data[slot].with(|p| unsafe { (*p).assume_init_read() }));
-            },
-            Err(_) => None,
+            match self
+                .head
+                .compare_exchange_weak(pos, pos + 1, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => unsafe {
+                    #[cfg(not(loom))]
+                    let res = Some((*self.data[i].payload.get()).assume_init_read());
+
+                    #[cfg(loom)]
+                    let res = Some(
+                        self.data[i]
+                            .payload
+                            .with(|p| unsafe { (*p).assume_init_read() }),
+                    );
+
+                    self.data[i]
+                        .seq
+                        .store(pos + self.capacity(), Ordering::Release);
+                    return res;
+                },
+                Err(cur) => pos = cur,
+            }
         }
     }
 
