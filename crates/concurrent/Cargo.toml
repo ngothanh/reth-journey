@@ -40,6 +40,10 @@ harness = false
 name = "seq_lock"
 harness = false
 
+[[bench]]
+name = "mpmc"
+harness = false
+
 [lints]
 workspace = true
 

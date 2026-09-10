@@ -13,11 +13,12 @@ mod sync {
 }
 
 use sync::{AtomicUsize, Ordering, UnsafeCell};
+use crate::CachePadded;
 
 pub struct MpmcRing<T> {
     data: Box<[Cell<T>]>,
-    head: AtomicUsize,
-    tail: AtomicUsize,
+    head: CachePadded<AtomicUsize>,
+    tail: CachePadded<AtomicUsize>,
     mask: usize,
 }
 
@@ -44,8 +45,8 @@ impl<T> MpmcRing<T> {
                     payload: UnsafeCell::new(MaybeUninit::uninit()),
                 })
                 .collect(),
-            head: AtomicUsize::new(0),
-            tail: AtomicUsize::new(0),
+            head: CachePadded::new(AtomicUsize::new(0)),
+            tail: CachePadded::new(AtomicUsize::new(0)),
             mask: capacity - 1,
         }
     }
@@ -64,10 +65,12 @@ impl<T> MpmcRing<T> {
                 return Err(value);
             }
 
-            match self
-                .tail
-                .compare_exchange_weak(pos, pos + 1, Ordering::Relaxed, Ordering::Relaxed)
-            {
+            match self.tail.compare_exchange_weak(
+                pos,
+                pos + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
                 Ok(_) => {
                     #[cfg(not(loom))]
                     unsafe {
@@ -101,10 +104,12 @@ impl<T> MpmcRing<T> {
                 return None;
             }
 
-            match self
-                .head
-                .compare_exchange_weak(pos, pos + 1, Ordering::Relaxed, Ordering::Relaxed)
-            {
+            match self.head.compare_exchange_weak(
+                pos,
+                pos + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
                 Ok(_) => unsafe {
                     #[cfg(not(loom))]
                     let res = Some((*self.data[i].payload.get()).assume_init_read());
@@ -128,6 +133,14 @@ impl<T> MpmcRing<T> {
 
     pub fn capacity(&self) -> usize {
         self.data.len()
+    }
+}
+
+impl<T> Drop for MpmcRing<T> {
+    fn drop(&mut self) {
+        while let Some(x) = self.try_pop() {
+            drop(x);
+        }
     }
 }
 
