@@ -14,6 +14,7 @@ mod seq_lock;
 mod wait_list;
 mod wake_list;
 mod mpmc;
+mod seg_queue;
 
 pub use atomic_cell::AtomicCell;
 pub use backoff::Backoff;
