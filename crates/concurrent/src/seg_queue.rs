@@ -1,10 +1,39 @@
-use std::cell::UnsafeCell;
-use std::hint::spin_loop;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 
+mod sync {
+    #[cfg(not(loom))]
+    pub(super) use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+
+    #[cfg(not(loom))]
+    pub(super) use core::cell::UnsafeCell;
+    #[cfg(loom)]
+    pub(super) use loom::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+    #[cfg(not(loom))]
+    use std::hint::spin_loop;
+
+    #[cfg(loom)]
+    pub(super) use loom::cell::UnsafeCell;
+
+    #[cfg(loom)]
+    pub(super) fn spin_hint() {
+        loom::thread::yield_now();
+    }
+
+    #[cfg(not(loom))]
+    pub(super) fn spin_hint() {
+        spin_loop()
+    }
+}
+
+use crate::seg_queue::sync::spin_hint;
+use sync::{AtomicPtr, AtomicUsize, Ordering, UnsafeCell};
+
+#[cfg(not(loom))]
 const SEG_LEN: usize = 32;
+
+#[cfg(loom)]
+const SEG_LEN: usize = 2;
 
 const EMPTY: usize = 0;
 const WRITTEN: usize = 1;
@@ -46,6 +75,25 @@ impl<T> Slot<T> {
             state: AtomicUsize::new(EMPTY),
         }
     }
+
+    fn write_value(&self, value: T) {
+        #[cfg(not(loom))]
+        unsafe {
+            (*self.value.get()).write(value);
+        }
+        #[cfg(loom)]
+        self.value.with_mut(|ptr| unsafe { (*ptr).write(value) });
+    }
+
+    fn read_existing_value(&self) -> T {
+        #[cfg(not(loom))]
+        unsafe {
+            (*self.value.get()).assume_init_read()
+        }
+
+        #[cfg(loom)]
+        self.value.with(|p| unsafe { (*p).assume_init_read() })
+    }
 }
 
 impl<T> SegQueue<T> {
@@ -63,7 +111,7 @@ impl<T> SegQueue<T> {
             let idx = unsafe { (*cur_seg).claimed.fetch_add(1, Ordering::Relaxed) };
             if idx < SEG_LEN {
                 unsafe {
-                    (*(*cur_seg).slots[idx].value.get()).write(value);
+                    (*cur_seg).slots[idx].write_value(value);
                     (*cur_seg).slots[idx]
                         .state
                         .store(WRITTEN, Ordering::Release);
@@ -130,9 +178,9 @@ impl<T> SegQueue<T> {
                 ) {
                     Ok(idx) => {
                         while (*cur_seg).slots[idx].state.load(Ordering::Acquire) != WRITTEN {
-                            spin_loop()
+                            spin_hint();
                         }
-                        return Some((*(*cur_seg).slots[idx].value.get()).assume_init_read());
+                        return Some((*cur_seg).slots[idx].read_existing_value());
                     }
                     Err(e) => {
                         consuming = e;
@@ -331,5 +379,140 @@ mod tests {
                 last_seq[p] = Some(seq);
             }
         }
+    }
+}
+
+#[cfg(all(test, loom))]
+mod loom_tests {
+    use crate::SegQueue;
+    use loom::sync::Arc;
+
+    #[test]
+    fn one_producer_one_consumer() {
+        loom::model(|| {
+            let queue = Arc::new(SegQueue::<usize>::new());
+
+            let producer = queue.clone();
+            let handler = loom::thread::spawn(move || {
+                producer.push(1);
+            });
+
+            let got = queue.pop();
+            handler.join().unwrap();
+            let rest = queue.pop();
+
+            match (got, rest) {
+                (Some(1), None) => {}
+                (None, Some(1)) => {}
+                other => panic!("bad outcome: {other:?}"),
+            }
+        })
+    }
+
+    /// L2 — two producers racing on the same segment's `claimed` counter. Under
+    /// loom SEG_LEN == 2, so both pushes fit in the first segment and no boundary
+    /// is crossed: the only question is whether `claimed` hands out two distinct
+    /// slots. Pops run after both joins because the axis is producer-vs-producer.
+    #[test]
+    fn two_producers_claim_distinct_slots() {
+        loom::model(|| {
+            let queue = Arc::new(SegQueue::<usize>::new());
+
+            let p1 = queue.clone();
+            let h1 = loom::thread::spawn(move || p1.push(1));
+            let p2 = queue.clone();
+            let h2 = loom::thread::spawn(move || p2.push(2));
+
+            h1.join().unwrap();
+            h2.join().unwrap();
+
+            let mut got: Vec<usize> = [queue.pop(), queue.pop()].into_iter().flatten().collect();
+            got.sort_unstable();
+            assert_eq!(got, vec![1, 2], "claimed duplicated or lost a slot");
+            assert_eq!(queue.pop(), None);
+        })
+    }
+
+    /// L3 — two consumers racing for the one available value. The push happens
+    /// before the threads start, so the only question is whether `consumed` lets
+    /// exactly one of them take the slot.
+    #[test]
+    fn two_consumers_take_one_value_once() {
+        loom::model(|| {
+            let queue = Arc::new(SegQueue::<usize>::new());
+            queue.push(1);
+
+            let c1 = queue.clone();
+            let h1 = loom::thread::spawn(move || c1.pop());
+            let c2 = queue.clone();
+            let h2 = loom::thread::spawn(move || c2.pop());
+
+            let a = h1.join().unwrap();
+            let b = h2.join().unwrap();
+
+            match (a, b) {
+                (Some(1), None) | (None, Some(1)) => {}
+                other => panic!("value delivered twice or lost: {other:?}"),
+            }
+        })
+    }
+
+    /// L4 — two producers overflowing the same full segment, so both race to
+    /// install the successor via `next.compare_exchange`: one wins, the loser must
+    /// free its spare segment and use the winner's.
+    ///
+    /// NOTE: this handoff goes through a CAS, which loom 0.7 does NOT reliably
+    /// model — a green run here is weak evidence. The real evidence for `next`'s
+    /// ordering is Miri plus the happens-before argument.
+    #[test]
+    fn two_producers_race_to_install_next_segment() {
+        loom::model(|| {
+            let queue = Arc::new(SegQueue::<usize>::new());
+            // Fill the first segment exactly (SEG_LEN == 2 under loom) so the next
+            // two pushes both overflow.
+            queue.push(10);
+            queue.push(20);
+
+            let p1 = queue.clone();
+            let h1 = loom::thread::spawn(move || p1.push(1));
+            let p2 = queue.clone();
+            let h2 = loom::thread::spawn(move || p2.push(2));
+
+            h1.join().unwrap();
+            h2.join().unwrap();
+
+            // The first segment drains in order; the two racing values land in the
+            // new segment in whichever order they claimed it.
+            assert_eq!(queue.pop(), Some(10));
+            assert_eq!(queue.pop(), Some(20));
+            let mut tail: Vec<usize> = [queue.pop(), queue.pop()].into_iter().flatten().collect();
+            tail.sort_unstable();
+            assert_eq!(tail, vec![1, 2], "a value was lost crossing the boundary");
+            assert_eq!(queue.pop(), None);
+        })
+    }
+
+    /// L5 — a pop that observes an empty queue must not consume the slot the
+    /// producer is about to fill. Two speculative pops run before the push can be
+    /// guaranteed complete; the value must still come out exactly once.
+    ///
+    /// This is the regression test for the `consumed.fetch_add`-then-bail design,
+    /// which burned a consume index on every empty pop and orphaned the value.
+    #[test]
+    fn empty_pop_does_not_burn_the_slot() {
+        loom::model(|| {
+            let queue = Arc::new(SegQueue::<usize>::new());
+
+            let p = queue.clone();
+            let h = loom::thread::spawn(move || p.push(1));
+
+            let a = queue.pop();
+            let b = queue.pop();
+            h.join().unwrap();
+            let c = queue.pop();
+
+            let got: Vec<usize> = [a, b, c].into_iter().flatten().collect();
+            assert_eq!(got, vec![1], "an empty pop swallowed the pushed value");
+        })
     }
 }
