@@ -58,7 +58,7 @@ impl<T> SegQueue<T> {
     }
 
     pub fn push(&self, value: T) {
-        let mut cur_seg = self.tail.load(Ordering::Relaxed);
+        let mut cur_seg = self.tail.load(Ordering::Acquire);
         loop {
             let idx = unsafe { (*cur_seg).claimed.fetch_add(1, Ordering::Release) };
             if idx < SEG_LEN {
