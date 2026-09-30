@@ -60,7 +60,7 @@ impl<T> SegQueue<T> {
     pub fn push(&self, value: T) {
         let mut cur_seg = self.tail.load(Ordering::Acquire);
         loop {
-            let idx = unsafe { (*cur_seg).claimed.fetch_add(1, Ordering::Release) };
+            let idx = unsafe { (*cur_seg).claimed.fetch_add(1, Ordering::Relaxed) };
             if idx < SEG_LEN {
                 unsafe {
                     (*(*cur_seg).slots[idx].value.get()).write(value);
@@ -116,7 +116,7 @@ impl<T> SegQueue<T> {
                 continue;
             }
 
-            let claimed = unsafe { (*cur_seg).claimed.load(Ordering::Acquire) };
+            let claimed = unsafe { (*cur_seg).claimed.load(Ordering::Relaxed) };
             if claimed <= consuming {
                 return None;
             }
