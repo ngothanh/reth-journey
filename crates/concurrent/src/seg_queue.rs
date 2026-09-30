@@ -257,7 +257,10 @@ mod tests {
     fn concurrent_mpmc() {
         const PRODUCERS: usize = 4;
         const CONSUMERS: usize = 4;
+        #[cfg(not(miri))]
         const PER_PRODUCER: usize = 20_000;
+        #[cfg(miri)]
+        const PER_PRODUCER: usize = 50;
         const TOTAL: usize = PRODUCERS * PER_PRODUCER;
 
         let queue = SegQueue::<usize>::new();
