@@ -53,10 +53,10 @@
 //! Capture results in `notes/seg_queue_bench_results.md` for both the unpadded
 //! and padded revisions.
 
-use concurrent::SegQueue;
+use concurrent::{Backoff, SegQueue};
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, Criterion};
 use std::collections::VecDeque;
-use std::hint::{black_box, spin_loop};
+use std::hint::black_box;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -146,13 +146,14 @@ fn spsc(c: &mut Criterion) {
             };
 
             let mut got = 0usize;
+            let backoff = Backoff::new();
             while got < n {
                 match q.pop() {
                     Some(v) => {
                         black_box(v);
                         got += 1;
                     }
-                    None => spin_loop(),
+                    None => backoff.snooze(),
                 }
             }
             prod.join().unwrap();
@@ -176,13 +177,14 @@ fn spsc(c: &mut Criterion) {
             };
 
             let mut got = 0usize;
+            let backoff = Backoff::new();
             while got < n {
                 match q.pop() {
                     Some(v) => {
                         black_box(v);
                         got += 1;
                     }
-                    None => spin_loop(),
+                    None => backoff.snooze(),
                 }
             }
             prod.join().unwrap();
@@ -231,19 +233,22 @@ fn mpmc_config(c: &mut Criterion, nprod: usize, ncon: usize) {
                 .map(|_| {
                     let q = Arc::clone(&q);
                     let done = Arc::clone(&consumed);
-                    thread::spawn(move || loop {
-                        match q.pop() {
-                            Some(v) => {
-                                black_box(v);
-                                if done.fetch_add(1, Ordering::Relaxed) + 1 >= total {
-                                    break;
+                    thread::spawn(move || {
+                        let backoff = Backoff::new();
+                        loop {
+                            match q.pop() {
+                                Some(v) => {
+                                    black_box(v);
+                                    if done.fetch_add(1, Ordering::Relaxed) + 1 >= total {
+                                        break;
+                                    }
                                 }
-                            }
-                            None => {
-                                if done.load(Ordering::Relaxed) >= total {
-                                    break;
+                                None => {
+                                    if done.load(Ordering::Relaxed) >= total {
+                                        break;
+                                    }
+                                    backoff.snooze();
                                 }
-                                spin_loop();
                             }
                         }
                     })
@@ -285,19 +290,22 @@ fn mpmc_config(c: &mut Criterion, nprod: usize, ncon: usize) {
                 .map(|_| {
                     let q = Arc::clone(&q);
                     let done = Arc::clone(&consumed);
-                    thread::spawn(move || loop {
-                        match q.pop() {
-                            Some(v) => {
-                                black_box(v);
-                                if done.fetch_add(1, Ordering::Relaxed) + 1 >= total {
-                                    break;
+                    thread::spawn(move || {
+                        let backoff = Backoff::new();
+                        loop {
+                            match q.pop() {
+                                Some(v) => {
+                                    black_box(v);
+                                    if done.fetch_add(1, Ordering::Relaxed) + 1 >= total {
+                                        break;
+                                    }
                                 }
-                            }
-                            None => {
-                                if done.load(Ordering::Relaxed) >= total {
-                                    break;
+                                None => {
+                                    if done.load(Ordering::Relaxed) >= total {
+                                        break;
+                                    }
+                                    backoff.snooze();
                                 }
-                                spin_loop();
                             }
                         }
                     })

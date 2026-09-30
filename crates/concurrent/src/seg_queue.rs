@@ -51,25 +51,41 @@ mod sync {
     pub(super) use core::cell::UnsafeCell;
     #[cfg(loom)]
     pub(super) use loom::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-    #[cfg(not(loom))]
-    use std::hint::spin_loop;
-
     #[cfg(loom)]
     pub(super) use loom::cell::UnsafeCell;
 
-    #[cfg(loom)]
-    pub(super) fn spin_hint() {
-        loom::thread::yield_now();
-    }
-
+    /// The waiter used while a consumer holds a slot whose producer has not
+    /// finished storing the value yet.
+    ///
+    /// Under normal builds this is the crate's [`Backoff`](crate::Backoff) ladder:
+    /// exponential `spin_loop` bursts, then `yield_now`. The escalation matters —
+    /// the wait is usually a few instructions long, but if the owning producer has
+    /// been descheduled a pure spin burns a core that the producer itself needs to
+    /// make progress, which is exactly how throughput collapses once the machine
+    /// is oversubscribed.
+    ///
+    /// Under loom it must be loom's own `yield_now`: loom cannot see
+    /// `std::thread::yield_now`, so without this the model deadlocks at the wait
+    /// loop instead of scheduling the producer.
     #[cfg(not(loom))]
-    pub(super) fn spin_hint() {
-        spin_loop()
+    pub(super) type SlotWaiter = crate::Backoff;
+
+    #[cfg(loom)]
+    pub(super) struct SlotWaiter;
+
+    #[cfg(loom)]
+    impl SlotWaiter {
+        pub(super) fn new() -> Self {
+            SlotWaiter
+        }
+
+        pub(super) fn snooze(&self) {
+            loom::thread::yield_now();
+        }
     }
 }
 
-use crate::seg_queue::sync::spin_hint;
-use sync::{AtomicPtr, AtomicUsize, Ordering, UnsafeCell};
+use sync::{AtomicPtr, AtomicUsize, Ordering, SlotWaiter, UnsafeCell};
 
 #[cfg(not(loom))]
 const SEG_LEN: usize = 32;
@@ -221,8 +237,13 @@ impl<T> SegQueue<T> {
                     Ordering::Relaxed,
                 ) {
                     Ok(idx) => {
+                        // The slot is ours and its producer is committed to writing
+                        // it, so this wait always terminates — but it may be long if
+                        // that producer got descheduled, hence backoff rather than a
+                        // bare spin.
+                        let waiter = SlotWaiter::new();
                         while (*cur_seg).slots[idx].state.load(Ordering::Acquire) != WRITTEN {
-                            spin_hint();
+                            waiter.snooze();
                         }
                         return Some((*cur_seg).slots[idx].read_existing_value());
                     }
