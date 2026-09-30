@@ -66,7 +66,7 @@ impl<T> SegQueue<T> {
                     (*(*cur_seg).slots[idx].value.get()).write(value);
                     (*cur_seg).slots[idx]
                         .state
-                        .store(WRITTEN, Ordering::Relaxed);
+                        .store(WRITTEN, Ordering::Release);
                 }
                 return;
             }
@@ -129,7 +129,7 @@ impl<T> SegQueue<T> {
                     Ordering::Relaxed,
                 ) {
                     Ok(idx) => {
-                        while (*cur_seg).slots[idx].state.load(Ordering::Relaxed) != WRITTEN {
+                        while (*cur_seg).slots[idx].state.load(Ordering::Acquire) != WRITTEN {
                             spin_loop()
                         }
                         return Some((*(*cur_seg).slots[idx].value.get()).assume_init_read());
@@ -146,10 +146,10 @@ impl<T> SegQueue<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::arc::Arc;
     use crate::seg_queue::{SegQueue, SEG_LEN};
     use std::hint::spin_loop;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Barrier;
     use std::thread;
 
     #[test]
@@ -255,56 +255,77 @@ mod tests {
 
     #[test]
     fn concurrent_mpmc() {
-        let num_consumers = 10;
+        const PRODUCERS: usize = 4;
+        const CONSUMERS: usize = 4;
+        const PER_PRODUCER: usize = 20_000;
+        const TOTAL: usize = PRODUCERS * PER_PRODUCER;
 
-        let queue = Arc::new(SegQueue::<i32>::new());
-        let p1 = queue.clone();
-        thread::spawn(move || {
-            for i in 0..50 {
-                p1.push(i);
+        let queue = SegQueue::<usize>::new();
+        let barrier = Barrier::new(PRODUCERS + CONSUMERS);
+        let popped = AtomicUsize::new(0);
+
+        let logs: Vec<Vec<usize>> = thread::scope(|s| {
+            let q = &queue;
+            let b = &barrier;
+            let n = &popped;
+
+            // Consumers first, so they are already spinning when producers start.
+            let consumers: Vec<_> = (0..CONSUMERS)
+                .map(|_| {
+                    s.spawn(move || {
+                        let mut seen = Vec::new();
+                        b.wait();
+                        while n.load(Ordering::Relaxed) < TOTAL {
+                            if let Some(v) = q.pop() {
+                                n.fetch_add(1, Ordering::Relaxed);
+                                seen.push(v);
+                            } else {
+                                spin_loop();
+                            }
+                        }
+                        seen
+                    })
+                })
+                .collect();
+
+            for p in 0..PRODUCERS {
+                s.spawn(move || {
+                    b.wait();
+                    for seq in 0..PER_PRODUCER {
+                        q.push(p * PER_PRODUCER + seq);
+                    }
+                });
             }
+
+            consumers.into_iter().map(|h| h.join().unwrap()).collect()
         });
 
-        let p2 = queue.clone();
-        thread::spawn(move || {
-            for i in 51..100 {
-                p2.push(i);
+        let mut seen = vec![false; TOTAL];
+        let mut count = 0usize;
+        for log in &logs {
+            for &v in log {
+                assert!(v < TOTAL, "popped out-of-range value {v}");
+                assert!(!seen[v], "value {v} popped more than once");
+                seen[v] = true;
+                count += 1;
             }
-        });
-
-        let counter = Arc::new(AtomicUsize::new(0));
-        let mut handles = Vec::with_capacity(num_consumers);
-        for _ in 0..num_consumers {
-            let c = queue.clone();
-            let counter = counter.clone();
-            let handle = thread::spawn(move || {
-                let mut vec = Vec::new();
-                loop {
-                    if counter.load(Ordering::Relaxed) == 99 {
-                        break;
-                    }
-
-                    if let Some(i) = c.pop() {
-                        counter.fetch_add(1, Ordering::Relaxed);
-                        vec.push(i);
-                    } else {
-                        spin_loop();
-                    }
-                }
-
-                vec
-            });
-            handles.push(handle);
+        }
+        assert_eq!(count, TOTAL, "wrong number of items popped");
+        if let Some(missing) = seen.iter().position(|&s| !s) {
+            panic!("value {missing} was pushed but never popped");
         }
 
-        for handle in handles {
-            let v = handle.join().unwrap();
-            if v.is_empty() || v.len() == 1 {
-                continue;
-            }
-
-            for i in 0..v.len() - 1 {
-                assert!(v[i + 1] > v[i]);
+        for (c, log) in logs.iter().enumerate() {
+            let mut last_seq = vec![None::<usize>; PRODUCERS];
+            for &v in log {
+                let (p, seq) = (v / PER_PRODUCER, v % PER_PRODUCER);
+                if let Some(prev) = last_seq[p] {
+                    assert!(
+                        seq > prev,
+                        "consumer {c} saw producer {p} out of order: seq {prev} before {seq}"
+                    );
+                }
+                last_seq[p] = Some(seq);
             }
         }
     }
