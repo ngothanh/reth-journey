@@ -143,3 +143,110 @@ impl<T> SegQueue<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::seg_queue::{SegQueue, SEG_LEN};
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn test_push_pop() {
+        let queue = SegQueue::new();
+        queue.push(1);
+        assert_eq!(queue.pop(), Some(1));
+    }
+
+    #[test]
+    fn test_auto_create_new_segment() {
+        let queue = SegQueue::new();
+        for i in 0..SEG_LEN {
+            queue.push(i);
+        }
+
+        assert_eq!(
+            queue.head.load(Ordering::Relaxed),
+            queue.tail.load(Ordering::Relaxed)
+        );
+
+        queue.push(10);
+        assert_ne!(
+            queue.head.load(Ordering::Relaxed),
+            queue.tail.load(Ordering::Relaxed)
+        );
+    }
+
+    #[test]
+    fn test_pop_empty_queue() {
+        let queue = SegQueue::<i32>::new();
+        assert!(queue.pop().is_none());
+    }
+
+    #[test]
+    fn test_push_pop_fifo() {
+        let queue = SegQueue::new();
+        queue.push(1);
+        queue.push(2);
+
+        assert_eq!(queue.pop(), Some(1));
+        assert_eq!(queue.pop(), Some(2));
+    }
+
+    #[test]
+    fn test_consumer_drain_index() {
+        let queue = SegQueue::new();
+        queue.push(1);
+        assert_eq!(queue.pop(), Some(1));
+        assert_eq!(queue.pop(), None);
+        queue.push(2);
+        assert_eq!(queue.pop(), Some(2));
+    }
+
+    #[test]
+    fn fifo_through_edge() {
+        let queue = SegQueue::new();
+
+        for i in 0..37 {
+            queue.push(i);
+        }
+
+        let mut vec = Vec::new();
+        loop {
+            match queue.pop() {
+                None => {
+                    break;
+                }
+                Some(i) => {
+                    vec.push(i);
+                }
+            }
+        }
+
+        assert_eq!(vec.len(), 37);
+        assert!((0..37).eq(vec));
+
+        assert!(queue.pop().is_none());
+    }
+
+    #[test]
+    fn interleave_push_pop() {
+        let queue = SegQueue::new();
+
+        for i in 0..100 {
+            queue.push(i);
+            assert_eq!(queue.pop(), Some(i));
+        }
+
+        assert_eq!(queue.pop(), None);
+    }
+
+    #[test]
+    fn consumer_index_drain() {
+        let queue = SegQueue::new();
+        queue.push(1);
+        assert_eq!(queue.pop(), Some(1));
+        assert_eq!(queue.pop(), None);
+
+        queue.push(2);
+        assert_eq!(queue.pop(), Some(2));
+    }
+}
