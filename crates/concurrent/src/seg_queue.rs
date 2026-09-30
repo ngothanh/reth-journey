@@ -146,8 +146,11 @@ impl<T> SegQueue<T> {
 
 #[cfg(test)]
 mod tests {
+    use crate::arc::Arc;
     use crate::seg_queue::{SegQueue, SEG_LEN};
-    use std::sync::atomic::Ordering;
+    use std::hint::spin_loop;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::thread;
 
     #[test]
     fn test_push_pop() {
@@ -248,5 +251,61 @@ mod tests {
 
         queue.push(2);
         assert_eq!(queue.pop(), Some(2));
+    }
+
+    #[test]
+    fn concurrent_mpmc() {
+        let num_consumers = 10;
+
+        let queue = Arc::new(SegQueue::<i32>::new());
+        let p1 = queue.clone();
+        thread::spawn(move || {
+            for i in 0..50 {
+                p1.push(i);
+            }
+        });
+
+        let p2 = queue.clone();
+        thread::spawn(move || {
+            for i in 51..100 {
+                p2.push(i);
+            }
+        });
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::with_capacity(num_consumers);
+        for _ in 0..num_consumers {
+            let c = queue.clone();
+            let counter = counter.clone();
+            let handle = thread::spawn(move || {
+                let mut vec = Vec::new();
+                loop {
+                    if counter.load(Ordering::Relaxed) == 99 {
+                        break;
+                    }
+
+                    if let Some(i) = c.pop() {
+                        counter.fetch_add(1, Ordering::Relaxed);
+                        vec.push(i);
+                    } else {
+                        spin_loop();
+                    }
+                }
+
+                vec
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            let v = handle.join().unwrap();
+            if v.is_empty() || v.len() == 1 {
+                continue;
+            }
+
+            for i in 0..v.len() - 1 {
+                assert!(v[i + 1] > v[i]);
+            }
+        }
     }
 }
