@@ -60,7 +60,7 @@ impl<T> SegQueue<T> {
     pub fn push(&self, value: T) {
         let mut cur_seg = self.tail.load(Ordering::Relaxed);
         loop {
-            let idx = unsafe { (*cur_seg).claimed.fetch_add(1, Ordering::Relaxed) };
+            let idx = unsafe { (*cur_seg).claimed.fetch_add(1, Ordering::Release) };
             if idx < SEG_LEN {
                 unsafe {
                     (*(*cur_seg).slots[idx].value.get()).write(value);
@@ -75,15 +75,15 @@ impl<T> SegQueue<T> {
     }
 
     fn advance_tail(&self, cur_seg: *mut Segment<T>) -> *mut Segment<T> {
-        let mut next = unsafe { (*cur_seg).next.load(Ordering::Relaxed) };
+        let mut next = unsafe { (*cur_seg).next.load(Ordering::Acquire) };
         if next.is_null() {
             let raw = Box::into_raw(Box::new(Segment::new()));
             match unsafe {
                 (*cur_seg).next.compare_exchange(
                     null_mut(),
                     raw,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
+                    Ordering::Release,
+                    Ordering::Acquire,
                 )
             } {
                 Ok(_) => next = raw,
@@ -95,28 +95,28 @@ impl<T> SegQueue<T> {
         }
         let _ = self
             .tail
-            .compare_exchange(cur_seg, next, Ordering::Relaxed, Ordering::Relaxed);
+            .compare_exchange(cur_seg, next, Ordering::Release, Ordering::Relaxed);
         next
     }
 
     pub fn pop(&self) -> Option<T> {
-        let mut cur_seg = self.head.load(Ordering::Relaxed);
+        let mut cur_seg = self.head.load(Ordering::Acquire);
         let mut consuming = unsafe { (*cur_seg).consumed.load(Ordering::Relaxed) };
         loop {
             if consuming >= SEG_LEN {
-                let next = unsafe { (*cur_seg).next.load(Ordering::Relaxed) };
+                let next = unsafe { (*cur_seg).next.load(Ordering::Acquire) };
                 if next.is_null() {
                     return None;
                 }
                 let _ =
                     self.head
-                        .compare_exchange(cur_seg, next, Ordering::Relaxed, Ordering::Relaxed);
+                        .compare_exchange(cur_seg, next, Ordering::Release, Ordering::Relaxed);
                 cur_seg = next;
                 consuming = unsafe { (*cur_seg).consumed.load(Ordering::Relaxed) };
                 continue;
             }
 
-            let claimed = unsafe { (*cur_seg).claimed.load(Ordering::Relaxed) };
+            let claimed = unsafe { (*cur_seg).claimed.load(Ordering::Acquire) };
             if claimed <= consuming {
                 return None;
             }
