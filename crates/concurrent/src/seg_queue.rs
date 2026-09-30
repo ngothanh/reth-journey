@@ -89,7 +89,7 @@ struct Segment<T> {
     slots: [Slot<T>; SEG_LEN],
     next: AtomicPtr<Segment<T>>,
     consumed: CachePadded<AtomicUsize>,
-    claimed: CachePadded<AtomicUsize>,
+    claimed: AtomicUsize,
 }
 
 #[repr(C)]
@@ -107,7 +107,7 @@ impl<T> Segment<T> {
             slots: std::array::from_fn(|_| Slot::new()),
             next: AtomicPtr::new(null_mut()),
             consumed: CachePadded::new(AtomicUsize::new(0)),
-            claimed: CachePadded::new(AtomicUsize::new(0)),
+            claimed: AtomicUsize::new(0),
         }
     }
 }

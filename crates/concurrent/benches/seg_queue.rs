@@ -11,28 +11,28 @@
 //! should WIN the single-threaded control. The lock-free structure earns its keep
 //! only when several cores push at once.
 //!
-//! **2. Does `head`/`tail` false sharing cost measurable time?** They are two
-//! independent `AtomicPtr`: producers only ever write `tail`, consumers only ever
-//! write `head`. Logically disjoint — but they are adjacent fields, so the
-//! allocator lays them 8 B apart, on the SAME 64 B cache line. (Measured: the
-//! two field addresses differ by exactly 8.) The hardware does not see
-//! "independent": every producer's `tail` store invalidates that line in the
-//! consumer's core, and every consumer's `head` store invalidates it in the
-//! producer's, so the two cores ping-pong one line (MESI) on ops that never
-//! actually conflict. Wrapping both in `CachePadded` should make that vanish.
+//! **2. Where does false sharing actually cost time?** There are TWO candidate
+//! pairs of "logically disjoint but physically adjacent" atomics, and the
+//! measurements below show the obvious one is the wrong one:
 //!
-//! ## The three scenarios, weakest-to-strongest false-sharing signal
+//! - `SegQueue::{head, tail}` — two `AtomicPtr`, laid out 8 B apart (measured:
+//!   the field addresses differ by exactly 8), so they share a cache line.
+//!   Producers only write `tail`, consumers only write `head`. BUT they are only
+//!   touched when a segment boundary is crossed — once per `SEG_LEN` (32) ops.
+//!   They are COLD. Padding them measured as free but worth ~nothing.
+//! - `Segment::{claimed, consumed}` — also 8 B apart, also same line, but touched
+//!   on EVERY push and EVERY pop. This is the HOT pair, and padding it is what
+//!   actually moves the number (SPSC 45.8 → 30.2 ns, −34%).
 //!
-//! 1. `uncontended` — one thread, push then pop. No second core, so no
-//!    inter-core traffic. This is the CONTROL: padding must NOT change it. If it
-//!    does, something else moved and the other numbers are suspect. Also gives
-//!    the raw per-op cost.
-//! 2. `spsc` — 1 producer, 1 consumer. Exactly one writer of `tail` and one of
-//!    `head`, on two cores, with nothing else in the way. CLEANEST signal;
-//!    prediction: padding visibly drops per-item cost.
-//! 3. `mpmc_2p2c` — 2 producers, 2 consumers. Adds producer↔producer contention
-//!    on `claimed` and consumer↔consumer contention on `consumed` on top of the
-//!    head/tail traffic, which partly masks the padding win.
+//! The lesson is that "adjacent + logically disjoint" is only half the test; the
+//! other half is "how often is it written". Pad the hot pair, not the obvious one.
+//!
+//! Padding is NOT free, either: separating `claimed` from `consumed` means the
+//! single-threaded path touches two cache lines per push+pop instead of one, and
+//! allocates a larger `Segment` every 32 items. The uncontended control moved
+//! 8.7 → 15.2 ns (+74%). That is the trade being bought: −34% on the cross-core
+//! handoff for +74% on the same-core path. For an MPMC queue the former is the
+//! workload that matters, but the cost should be stated, not hidden.
 //!
 //! ## Method
 //! - `iter_custom`: the closure transfers `iters` items end-to-end and returns
@@ -197,23 +197,26 @@ fn spsc(c: &mut Criterion) {
 // 3. MPMC: 2 producers, 2 consumers.
 // ---------------------------------------------------------------------------
 
-const NPROD: usize = 2;
-const NCON: usize = 2;
-
 fn mpmc(c: &mut Criterion) {
-    let mut g = c.benchmark_group("seg_queue_mpmc_2p2c");
+    for (nprod, ncon) in [(2usize, 2usize), (4, 4)] {
+        mpmc_config(c, nprod, ncon);
+    }
+}
+
+fn mpmc_config(c: &mut Criterion, nprod: usize, ncon: usize) {
+    let mut g = c.benchmark_group(format!("seg_queue_mpmc_{nprod}p{ncon}c"));
     configure(&mut g);
 
     g.bench_function("seg_queue", |b| {
         b.iter_custom(|iters| {
-            let per_prod = (iters as usize / NPROD).max(1);
-            let total = per_prod * NPROD;
+            let per_prod = (iters as usize / nprod).max(1);
+            let total = per_prod * nprod;
             let q = Arc::new(SegQueue::<usize>::new());
             let consumed = Arc::new(AtomicUsize::new(0));
 
             let start = Instant::now();
 
-            let producers: Vec<_> = (0..NPROD)
+            let producers: Vec<_> = (0..nprod)
                 .map(|_| {
                     let q = Arc::clone(&q);
                     thread::spawn(move || {
@@ -224,7 +227,7 @@ fn mpmc(c: &mut Criterion) {
                 })
                 .collect();
 
-            let consumers: Vec<_> = (0..NCON)
+            let consumers: Vec<_> = (0..ncon)
                 .map(|_| {
                     let q = Arc::clone(&q);
                     let done = Arc::clone(&consumed);
@@ -260,14 +263,14 @@ fn mpmc(c: &mut Criterion) {
 
     g.bench_function("mutex_vecdeque", |b| {
         b.iter_custom(|iters| {
-            let per_prod = (iters as usize / NPROD).max(1);
-            let total = per_prod * NPROD;
+            let per_prod = (iters as usize / nprod).max(1);
+            let total = per_prod * nprod;
             let q = Arc::new(MutexQueue::<usize>::new());
             let consumed = Arc::new(AtomicUsize::new(0));
 
             let start = Instant::now();
 
-            let producers: Vec<_> = (0..NPROD)
+            let producers: Vec<_> = (0..nprod)
                 .map(|_| {
                     let q = Arc::clone(&q);
                     thread::spawn(move || {
@@ -278,7 +281,7 @@ fn mpmc(c: &mut Criterion) {
                 })
                 .collect();
 
-            let consumers: Vec<_> = (0..NCON)
+            let consumers: Vec<_> = (0..ncon)
                 .map(|_| {
                     let q = Arc::clone(&q);
                     let done = Arc::clone(&consumed);
