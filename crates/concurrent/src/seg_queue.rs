@@ -1,4 +1,5 @@
 use std::cell::UnsafeCell;
+use std::hint::spin_loop;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
@@ -99,6 +100,46 @@ impl<T> SegQueue<T> {
     }
 
     pub fn pop(&self) -> Option<T> {
-        todo!()
+        let mut cur_seg = self.head.load(Ordering::Relaxed);
+        let mut consuming = unsafe { (*cur_seg).consumed.load(Ordering::Relaxed) };
+        loop {
+            if consuming >= SEG_LEN {
+                let next = unsafe { (*cur_seg).next.load(Ordering::Relaxed) };
+                if next.is_null() {
+                    return None;
+                }
+                let _ =
+                    self.head
+                        .compare_exchange(cur_seg, next, Ordering::Relaxed, Ordering::Relaxed);
+                cur_seg = next;
+                consuming = unsafe { (*cur_seg).consumed.load(Ordering::Relaxed) };
+                continue;
+            }
+
+            let claimed = unsafe { (*cur_seg).claimed.load(Ordering::Relaxed) };
+            if claimed <= consuming {
+                return None;
+            }
+
+            unsafe {
+                match (*cur_seg).consumed.compare_exchange(
+                    consuming,
+                    consuming + 1,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(idx) => {
+                        while (*cur_seg).slots[idx].state.load(Ordering::Relaxed) != WRITTEN {
+                            spin_loop()
+                        }
+                        return Some((*(*cur_seg).slots[idx].value.get()).assume_init_read());
+                    }
+                    Err(e) => {
+                        consuming = e;
+                        continue;
+                    }
+                };
+            }
+        }
     }
 }
