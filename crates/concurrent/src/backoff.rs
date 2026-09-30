@@ -6,13 +6,37 @@
 //!
 //! # Thresholds
 //!
-//! - `SPIN_LIMIT = 6` → burst caps at `1 << 6 = 64` PAUSE iterations (~64 ns on modern x86/aarch64).
+//! - `SPIN_LIMIT = 6` → burst caps at `1 << 6 = 64` spin-hint iterations.
 //! - `YIELD_LIMIT = 10` → past this, `is_completed()` flips and the caller should park.
 //!
 //! These were derived from the empirical "transient vs structural contention" split: a transient
-//! CAS race resolves in ~10-100 ns (well inside the 64-PAUSE budget); a structural wait (lock
+//! CAS race resolves in ~10-100 ns (well inside the burst budget on x86); a structural wait (lock
 //! held >1 ms, queue empty under producer lag) needs the scheduler's help, which yield then park
 //! deliver.
+//!
+//! ## The burst budget is NOT architecture-neutral (measured)
+//!
+//! `SPIN_LIMIT = 6` is inherited from `crossbeam-utils`, where it was tuned against x86's `pause`
+//! (~1 ns). `core::hint::spin_loop()` lowers per target, and on aarch64 it emits `isb SY` — a
+//! pipeline flush, measured at **12.2 ns** on Apple Silicon (see
+//! `notes/backoff_bench_results.md`). So the same constant buys very different budgets:
+//!
+//! | | per hint | burst at `SPIN_LIMIT` | full ladder before first yield |
+//! |---|---|---|---|
+//! | x86_64 (`pause`) | ~1 ns | ~64 ns | ~127 ns |
+//! | aarch64 (`isb`) | **12.2 ns** | **784 ns** | **~1.55 µs** |
+//!
+//! The wasted-CPU side of this is defensible: `yield_now()` measured **4.6 µs**, so spinning up to
+//! ~1.55 µs before paying for a yield is a sane ~1:3 ratio. The cost that is *not* obvious is
+//! **check granularity**: at the capped burst the caller only re-tests its condition every 784 ns
+//! on aarch64 versus every ~64 ns on x86. A wait satisfied 10 ns into the final burst goes
+//! unnoticed for the remaining ~774 ns.
+//!
+//! That is harmless for waiters whose condition resolves in tens of ns (they finish at step 0-2,
+//! ~85 ns, and never reach the large bursts). It is NOT harmless for a latency-sensitive waiter
+//! whose condition resolves somewhere in the 100 ns - 1 µs band: it can eat most of a microsecond
+//! of pure added latency. Such a waiter needs a per-target `SPIN_LIMIT` (≈2-3 on aarch64 to match
+//! x86's burst in nanoseconds, not in iteration count), not this shared constant.
 //!
 //! # 5-year failure mode
 //!
