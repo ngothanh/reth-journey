@@ -1,3 +1,45 @@
+//! Unbounded lock-free MPMC queue built from linked, write-once segments.
+//!
+//! Each segment is a fixed array of slots plus two cursors: `claimed` hands out
+//! slots to producers, `consumed` hands them out to consumers. A slot is written
+//! exactly once and read exactly once — segments are never reused — so a slot
+//! needs only a one-shot `state` flag to bridge the gap between "a producer
+//! reserved this index" and "the value is actually there", not the wrapping
+//! sequence counter a reusable ring buffer requires.
+//!
+//! The queue's single responsibility is **rate**: absorbing the backlog between
+//! producers and a momentarily slower consumer, losslessly and without a ceiling.
+//! It deliberately does NOT own ordering beyond enqueue order (application order
+//! belongs to a sequence number the caller assigns), admission control (that is a
+//! soft cap the caller enforces), or durability.
+//!
+//! # Stage R0: segments are LEAKED, on purpose
+//!
+//! There is no `Drop` impl and nothing ever calls `Box::from_raw` on a retired
+//! segment. **This is deliberate, not an oversight.** It isolates the queue
+//! mechanics from the safe-memory-reclamation problem, which is a much harder
+//! question attacked separately in the R1→R3 ladder (naive refcount, which fails;
+//! then hazard pointers; then epoch-based reclamation).
+//!
+//! Two consequences to keep in mind while this stage stands:
+//!
+//! - **Memory grows with throughput, forever.** A `Segment<usize>` is roughly
+//!   536 B (32 slots × 16 B, plus `next` and the two cursors), so a segment is
+//!   retired every 32 pushes: ~16.8 MB/s leaked at 1M push/s, ~84 MB/s at 5M.
+//! - **Values still in the queue when it is dropped are never dropped either**,
+//!   since the slots holding them are never visited again.
+//!
+//! Until reclamation lands, Miri must be run with `-Zmiri-ignore-leaks`:
+//!
+//! ```text
+//! MIRIFLAGS="-Zmiri-preemption-rate=0.5 -Zmiri-ignore-leaks" \
+//!   cargo +nightly miri test -p concurrent --lib seg_queue
+//! ```
+//!
+//! That flag is also the acceptance test for the next rungs: once R1/R2/R3 frees
+//! segments, **dropping `-Zmiri-ignore-leaks` is the proof that it works**.
+
+use crate::CachePadded;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 
@@ -42,16 +84,18 @@ struct Slot<T> {
     value: UnsafeCell<MaybeUninit<T>>,
     state: AtomicUsize,
 }
+#[repr(C)]
 struct Segment<T> {
     slots: [Slot<T>; SEG_LEN],
     next: AtomicPtr<Segment<T>>,
-    consumed: AtomicUsize,
-    claimed: AtomicUsize,
+    consumed: CachePadded<AtomicUsize>,
+    claimed: CachePadded<AtomicUsize>,
 }
 
+#[repr(C)]
 pub struct SegQueue<T> {
-    head: AtomicPtr<Segment<T>>,
-    tail: AtomicPtr<Segment<T>>,
+    head: CachePadded<AtomicPtr<Segment<T>>>,
+    tail: CachePadded<AtomicPtr<Segment<T>>>,
 }
 
 unsafe impl<T: Send> Send for SegQueue<T> {}
@@ -62,8 +106,8 @@ impl<T> Segment<T> {
         Segment {
             slots: std::array::from_fn(|_| Slot::new()),
             next: AtomicPtr::new(null_mut()),
-            consumed: AtomicUsize::new(0),
-            claimed: AtomicUsize::new(0),
+            consumed: CachePadded::new(AtomicUsize::new(0)),
+            claimed: CachePadded::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -100,8 +144,8 @@ impl<T> SegQueue<T> {
     pub fn new() -> SegQueue<T> {
         let segment = Box::into_raw(Box::new(Segment::new()));
         SegQueue {
-            head: AtomicPtr::new(segment),
-            tail: AtomicPtr::new(segment),
+            head: CachePadded::new(AtomicPtr::new(segment)),
+            tail: CachePadded::new(AtomicPtr::new(segment)),
         }
     }
 
