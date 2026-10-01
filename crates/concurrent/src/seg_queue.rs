@@ -247,7 +247,7 @@ impl<T> SegQueue<T> {
 
         loop {
             let seg = self.reclaim.load(Ordering::Relaxed);
-            if seg == self.head.load(Ordering::Acquire) {
+            if seg == self.head.load(Ordering::Relaxed) {
                 break;
             }
 
