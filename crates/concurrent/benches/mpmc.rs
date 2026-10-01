@@ -166,7 +166,9 @@ fn mpmc(c: &mut Criterion) {
             }
             let elapsed = start.elapsed();
             // Report per-item cost against the actual item count transferred.
-            elapsed.mul_f64(iters as f64 / total as f64).max(Duration::ZERO)
+            elapsed
+                .mul_f64(iters as f64 / total as f64)
+                .max(Duration::ZERO)
         });
     });
 }

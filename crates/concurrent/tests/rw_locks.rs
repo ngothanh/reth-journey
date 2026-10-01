@@ -305,7 +305,6 @@ mod tests {
     }
 }
 
-
 // Run with:  RUSTFLAGS="--cfg loom" cargo test -p concurrent --lib loom
 // loom exhaustively explores thread interleavings of the atomic protocol. Keep the
 // thread count and per-thread work tiny — loom's state space is combinatorial.
@@ -352,7 +351,10 @@ mod loom_tests {
             };
 
             let seen = *lock.read();
-            assert!(seen == 0 || seen == 42, "reader saw an invalid value: {seen}");
+            assert!(
+                seen == 0 || seen == 42,
+                "reader saw an invalid value: {seen}"
+            );
 
             writer.join().unwrap();
             assert_eq!(*lock.read(), 42);

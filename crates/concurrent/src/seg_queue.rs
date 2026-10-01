@@ -53,39 +53,9 @@ mod sync {
     pub(super) use loom::cell::UnsafeCell;
     #[cfg(loom)]
     pub(super) use loom::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-
-    /// The waiter used while a consumer holds a slot whose producer has not
-    /// finished storing the value yet.
-    ///
-    /// Under normal builds this is the crate's [`Backoff`](crate::Backoff) ladder:
-    /// exponential `spin_loop` bursts, then `yield_now`. The escalation matters —
-    /// the wait is usually a few instructions long, but if the owning producer has
-    /// been descheduled a pure spin burns a core that the producer itself needs to
-    /// make progress, which is exactly how throughput collapses once the machine
-    /// is oversubscribed.
-    ///
-    /// Under loom it must be loom's own `yield_now`: loom cannot see
-    /// `std::thread::yield_now`, so without this the model deadlocks at the wait
-    /// loop instead of scheduling the producer.
-    #[cfg(not(loom))]
-    pub(super) type SlotWaiter = crate::Backoff;
-
-    #[cfg(loom)]
-    pub(super) struct SlotWaiter;
-
-    #[cfg(loom)]
-    impl SlotWaiter {
-        pub(super) fn new() -> Self {
-            SlotWaiter
-        }
-
-        pub(super) fn snooze(&self) {
-            loom::thread::yield_now();
-        }
-    }
 }
 
-use sync::{AtomicPtr, AtomicUsize, Ordering, SlotWaiter, UnsafeCell};
+use sync::{AtomicPtr, AtomicUsize, Ordering, UnsafeCell};
 
 #[cfg(not(loom))]
 const SEG_LEN: usize = 32;
@@ -105,6 +75,7 @@ struct Segment<T> {
     slots: [Slot<T>; SEG_LEN],
     next: AtomicPtr<Segment<T>>,
     consumed: CachePadded<AtomicUsize>,
+    ref_count: CachePadded<AtomicUsize>,
     claimed: AtomicUsize,
 }
 
@@ -123,8 +94,17 @@ impl<T> Segment<T> {
             slots: std::array::from_fn(|_| Slot::new()),
             next: AtomicPtr::new(null_mut()),
             consumed: CachePadded::new(AtomicUsize::new(0)),
+            ref_count: CachePadded::new(AtomicUsize::new(0)),
             claimed: AtomicUsize::new(0),
         }
+    }
+
+    fn acquire_ref(&self) {
+        self.ref_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn release_ref(&self) -> usize {
+        self.ref_count.fetch_sub(1, Ordering::Relaxed)
     }
 }
 

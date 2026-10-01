@@ -190,7 +190,7 @@ mod tests {
         let mut acquire = pin!(semaphore.acquire());
 
         assert!(acquire.as_mut().poll(&mut ctx).is_pending()); // A xếp hàng
-        semaphore.close();                                     // wake A với lỗi
+        semaphore.close(); // wake A với lỗi
         assert!(matches!(
             acquire.as_mut().poll(&mut ctx),
             Poll::Ready(Err(_))

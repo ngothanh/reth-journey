@@ -12,8 +12,8 @@ mod sync {
     pub(super) use loom::sync::atomic::{AtomicUsize, Ordering};
 }
 
-use sync::{AtomicUsize, Ordering, UnsafeCell};
 use crate::CachePadded;
+use sync::{AtomicUsize, Ordering, UnsafeCell};
 
 pub struct MpmcRing<T> {
     data: Box<[Cell<T>]>,

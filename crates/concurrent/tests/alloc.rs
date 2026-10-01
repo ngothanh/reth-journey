@@ -59,7 +59,10 @@ fn counter_path() {
         drop(p); // Drop -> add_permits(1): lock, no waiters, counter += 1
     }
     let allocs = ALLOCS.load(Ordering::Relaxed) - before;
-    assert_eq!(allocs, 0, "counter path allocated {allocs} times in 10k ops");
+    assert_eq!(
+        allocs, 0,
+        "counter path allocated {allocs} times in 10k ops"
+    );
 }
 
 /// Path B: the intrusive-list path. Semaphore starts at 0 permits, so every
@@ -67,7 +70,7 @@ fn counter_path() {
 /// (Waiting->Granted) -> consume (Granted->Done).
 fn queue_path() {
     let sem = Semaphore::new(0);
-    let waker = Waker::noop();               // waker whose clone/wake are free
+    let waker = Waker::noop(); // waker whose clone/wake are free
     let mut cx = Context::from_waker(waker); // built once, reused every cycle
 
     queue_cycle(&sem, &mut cx); // warm-up, outside the window

@@ -261,7 +261,11 @@ mod tests {
         let unparker = parker.unparker();
 
         // Fresh parker starts EMPTY.
-        assert_eq!(parker.__state_for_test(), EMPTY, "new Parker should be EMPTY");
+        assert_eq!(
+            parker.__state_for_test(),
+            EMPTY,
+            "new Parker should be EMPTY"
+        );
 
         // unpark() on a never-parked Parker: EMPTY -> NOTIFIED, no waiter to
         // wake (the `swap` sees EMPTY, so no `wake_one`/futex syscall fires).

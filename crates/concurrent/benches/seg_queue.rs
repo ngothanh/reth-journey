@@ -320,7 +320,9 @@ fn bench_mpmc<Q: Queue<usize> + 'static>(
                 c.join().unwrap();
             }
             let elapsed = start.elapsed();
-            elapsed.mul_f64(iters as f64 / total as f64).max(Duration::ZERO)
+            elapsed
+                .mul_f64(iters as f64 / total as f64)
+                .max(Duration::ZERO)
         });
     });
 }

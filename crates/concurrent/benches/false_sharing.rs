@@ -119,8 +119,16 @@ fn measure<P: Pair>(iters: u64) -> Duration {
 
     // Pitfall #2 (Phase 3): each counter is hit by exactly one thread `iters`
     // times. If LLVM elided any write, these fail — proving the loop was real.
-    assert_eq!(pair.a().load(Ordering::Relaxed), iters, "counter a: writes elided?");
-    assert_eq!(pair.b().load(Ordering::Relaxed), iters, "counter b: writes elided?");
+    assert_eq!(
+        pair.a().load(Ordering::Relaxed),
+        iters,
+        "counter a: writes elided?"
+    );
+    assert_eq!(
+        pair.b().load(Ordering::Relaxed),
+        iters,
+        "counter b: writes elided?"
+    );
     black_box(pair.a().load(Ordering::Relaxed));
 
     elapsed

@@ -179,7 +179,8 @@ impl Semaphore {
                             }
                         }
                     } else {
-                        state.permits = state.permits.checked_add(left).expect("semaphore overflow");
+                        state.permits =
+                            state.permits.checked_add(left).expect("semaphore overflow");
                         left = 0;
                         break;
                     }

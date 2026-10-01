@@ -150,7 +150,7 @@ mod tests {
         let z = Arc::downgrade(&x); // 2 Weak
 
         let t = thread::spawn(move || {
-            let y = y.upgrade().unwrap();  // 2 Arc - 1 Weak
+            let y = y.upgrade().unwrap(); // 2 Arc - 1 Weak
             assert_eq!(y.0, "hello");
         });
         assert_eq!(x.0, "hello"); // 1 Arc - 1 Weak, y dropped. The Arc is x
