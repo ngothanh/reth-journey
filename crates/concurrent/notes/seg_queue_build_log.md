@@ -637,9 +637,80 @@ Hazard pointers and epoch escape by making the *acquire itself* safe: the thread
 announces "I am traversing" in per-thread state **before** touching anything, so the
 freer can hold off without the thread having to dereference first.
 
+### 10g. ⭐ Miri names it — the payoff, verbatim
+
+Built the strongest honest version of R1 before measuring: a RAII guard, plus a
+third cursor `reclaim` trailing `head`, freeing strictly oldest-first under a
+one-holder flag, with all three conditions checked. Reclamation **works**:
+
+| signal | result |
+|---|---|
+| `memory leaked` without `-Zmiri-ignore-leaks` | **20 → 0** |
+| Undefined Behavior | **1 × data race / use-after-free** |
+
+The report:
+
+```
+error: Undefined Behavior: Data race detected between
+  (1) atomic load                   on thread `unnamed-5`
+  (2) retag write of Segment<usize> on thread `unnamed-2`
+  at alloc63178+0x200
+
+(1) crates/concurrent/src/seg_queue.rs:296
+      let next = guard.get().next.load(Ordering::Acquire);     [pop]
+(2) Box::from_raw
+      → seg_queue.rs:285   try_reclaim
+      → seg_queue.rs:311   pop
+```
+
+The interleaving:
+
+```
+T5 (pop):  loads self.head → S          head == S here; S.ref_count == 0
+T2 (pop):  advances head  S → S.next
+T2:        drops its guard on S         S.ref_count still 0
+T2:        try_reclaim():  reclaim == S
+                          S != head          ✓  (head just moved)
+                          S drained          ✓
+                          S.ref_count == 0   ✓  ← all three conditions hold
+T5:        SegGuard::acquire(S)         0 → 1   ← too late; T2 has already decided
+T5:        line 296: reads S.next
+T2:        Box::from_raw(S)             frees S
+                                        ⇒ data race / use-after-free
+```
+
+**Every one of the three conditions was true at the instant T2 checked it.** The
+defect is not a missing fourth condition. T5 held a pointer to S but had not yet
+registered interest, and the gap between *obtaining a pointer* and *registering*
+cannot be covered by anything stored inside S — because registering means touching
+S.
+
+This is §10d's stale-decision trace confirmed by a tool on real code rather than by
+argument, which is the single most useful thing to show in the post: the reasoning
+predicted the failure, the strongest implementation of the design still exhibited it,
+and Miri named it on the first run while all nine unit tests stayed green.
+
+### 10h. Things built along the way that survive into R2/R3
+
+- **The guard interface.** `push`/`pop`/`advance_tail` no longer care what mechanism
+  is underneath, which is also the condition for the benchmarks to be comparable
+  across steps.
+- **`advance_tail(&SegGuard)`** — taking a guard by reference *proves* the caller
+  pins that segment, so the callee needs no acquire of its own. "Who holds what"
+  became a type-level fact.
+- **`fn get(&self) -> &Segment<T>`** — the returned reference borrows the guard, so
+  `let p = guard.get(); drop(guard); use(p);` does not compile.
+- **The ordered trailing-reclaim cursor** is a genuinely sound answer to a different
+  question (making a count of zero *final*), and the reason it does not rescue R1 is
+  worth stating precisely: monotonicity was never the problem.
+- **Cost noted, not measured yet:** the `reclaiming` flag reintroduces a
+  serialisation point — the same trade the `Mutex<VecDeque>` baseline makes — and
+  one thread sitting on an old segment blocks reclamation of everything after it,
+  which is the same pathology epoch has with a thread parked inside a pin.
+
 ## Running TODO for the blog
 
-- [x] B1 (naive refcount) — reasoning captured in §10; still to capture: the Miri UAF **verbatim**, and the bench numbers for the true-sharing cost
+- [x] B1 (naive refcount) — reasoning in §10, Miri UAF verbatim in §10g. Still to capture: the bench numbers for the true-sharing cost
 - [ ] B2 (hazard pointers) — capture the per-read fence cost
 - [ ] B3 (epoch) — capture the quiescence design and the loom adversarial cases
 - [ ] A3 / CB — capture the layout comparison and the diff against crossbeam source

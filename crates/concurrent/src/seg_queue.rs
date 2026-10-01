@@ -42,21 +42,20 @@
 use crate::CachePadded;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
-use std::sync::atomic::fence;
 
 mod sync {
     #[cfg(not(loom))]
-    pub(super) use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+    pub(super) use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 
     #[cfg(not(loom))]
     pub(super) use core::cell::UnsafeCell;
     #[cfg(loom)]
     pub(super) use loom::cell::UnsafeCell;
     #[cfg(loom)]
-    pub(super) use loom::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+    pub(super) use loom::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 }
 
-use sync::{AtomicPtr, AtomicUsize, Ordering, UnsafeCell};
+use sync::{AtomicBool, AtomicPtr, AtomicUsize, Ordering, UnsafeCell};
 
 #[cfg(not(loom))]
 const SEG_LEN: usize = 32;
@@ -89,6 +88,11 @@ struct SegGuard<T> {
 pub struct SegQueue<T> {
     head: CachePadded<AtomicPtr<Segment<T>>>,
     tail: CachePadded<AtomicPtr<Segment<T>>>,
+    /// Trails `head`. Everything strictly before it has been freed, so this is the
+    /// oldest segment still alive. Only the thread holding `reclaiming` touches it.
+    reclaim: CachePadded<AtomicPtr<Segment<T>>>,
+    /// Crude one-holder flag serialising the reclamation walk.
+    reclaiming: CachePadded<AtomicBool>,
 }
 
 unsafe impl<T: Send> Send for SegQueue<T> {}
@@ -132,13 +136,11 @@ impl<T> SegGuard<T> {
 }
 
 impl<T> Drop for SegGuard<T> {
+    /// Only releases. Freeing is deliberately NOT done here: a guard holds just its
+    /// own pointer, and "has my predecessor been freed?" is unanswerable from there
+    /// because the chain is forward-only. See [`SegQueue::try_reclaim`].
     fn drop(&mut self) {
-        if self.get().release_ref() == 1 && self.get().consumed.load(Ordering::Relaxed) == SEG_LEN {
-            fence(Ordering::Acquire);
-            unsafe {
-                drop(Box::from_raw(self.segment));
-            }
-        }
+        self.get().release_ref();
     }
 }
 
@@ -176,13 +178,15 @@ impl<T> SegQueue<T> {
         SegQueue {
             head: CachePadded::new(AtomicPtr::new(segment)),
             tail: CachePadded::new(AtomicPtr::new(segment)),
+            reclaim: CachePadded::new(AtomicPtr::new(segment)),
+            reclaiming: CachePadded::new(AtomicBool::new(false)),
         }
     }
 
     pub fn push(&self, value: T) {
         let mut guard = SegGuard::acquire(self.tail.load(Ordering::Acquire));
         loop {
-            let idx = unsafe { guard.get().claimed.fetch_add(1, Ordering::Relaxed) };
+            let idx = guard.get().claimed.fetch_add(1, Ordering::Relaxed);
             if idx < SEG_LEN {
                 guard.get().slots[idx].write_value(value);
                 guard.get().slots[idx]
@@ -217,6 +221,73 @@ impl<T> SegQueue<T> {
         SegGuard::acquire(next)
     }
 
+    /// Free segments that can no longer be reached, oldest first.
+    ///
+    /// Reclamation cannot be a per-guard decision. A guard holds only its own
+    /// pointer, and the chain is forward-only, so "has my predecessor been freed?"
+    /// is unanswerable from inside `Drop`. Instead the queue owns a cursor that
+    /// trails `head`, and freeing is a strictly ordered walk from the front:
+    ///
+    /// - the first segment ever allocated has **no predecessor**, so once `head` is
+    ///   past it and nobody holds it, *nothing* anywhere points to it — safe to free;
+    /// - freeing it destroys the only remaining pointer to its successor, which makes
+    ///   the successor safe in turn. Induction up the chain.
+    ///
+    /// That ordering is what makes a count of zero trustworthy: once the predecessor
+    /// is gone, no thread can obtain a *new* pointer to this segment, so its count can
+    /// only fall. A count that can rise again makes "I was the last holder" a
+    /// statement about the present that gets acted on in the future.
+    ///
+    /// Serialised by `reclaiming`, because the cursor itself would otherwise race:
+    /// two threads load the same `reclaim`, one frees it, the other then reads its
+    /// fields. Note the cost — this reintroduces a serialisation point, which is the
+    /// same trade the `Mutex<VecDeque>` baseline makes.
+    ///
+    /// Cost of the ordering: one thread sitting on an old segment blocks reclamation
+    /// of *everything after it*, so memory grows until it lets go. That is the same
+    /// pathology epoch-based reclamation has with a thread parked inside a pin.
+    fn try_reclaim(&self) {
+        if self.reclaiming.swap(true, Ordering::Acquire) {
+            return; // someone else is already walking the chain
+        }
+
+        loop {
+            let seg = self.reclaim.load(Ordering::Relaxed);
+
+            // Never free what `head` still points at: a consumer loading `head`
+            // would get a dangling pointer.
+            if seg == self.head.load(Ordering::Acquire) {
+                break;
+            }
+
+            let s = unsafe { &*seg };
+
+            // Drained? Otherwise freeing destroys the values still in it — and
+            // because slots hold `MaybeUninit`, it would not even drop them.
+            if s.consumed.load(Ordering::Relaxed) != SEG_LEN {
+                break;
+            }
+
+            // Held? The Acquire pairs with `release_ref`'s Release, so every prior
+            // holder's writes are visible before the destructor runs.
+            if s.ref_count.load(Ordering::Acquire) != 0 {
+                break;
+            }
+
+            // Read `next` BEFORE freeing: afterwards the field is gone.
+            let next = s.next.load(Ordering::Acquire);
+            if next.is_null() {
+                break;
+            }
+
+            // Only the flag holder walks the cursor, so a plain store suffices.
+            self.reclaim.store(next, Ordering::Relaxed);
+            unsafe { drop(Box::from_raw(seg)) };
+        }
+
+        self.reclaiming.store(false, Ordering::Release);
+    }
+
     pub fn pop(&self) -> Option<T> {
         let mut guard = SegGuard::acquire(self.head.load(Ordering::Acquire));
         let mut consuming = guard.get().consumed.load(Ordering::Relaxed);
@@ -234,6 +305,10 @@ impl<T> SegQueue<T> {
                 );
                 guard = SegGuard::acquire(next);
                 consuming = guard.get().consumed.load(Ordering::Relaxed);
+                // `head` just moved, so the segment behind it may now be eligible.
+                // Driving the walk only here keeps the flag's RMW off the hot path:
+                // it runs once per SEG_LEN pops, not once per pop.
+                self.try_reclaim();
                 continue;
             }
 
