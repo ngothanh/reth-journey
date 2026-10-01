@@ -708,6 +708,104 @@ and Miri named it on the first run while all nine unit tests stayed green.
   one thread sitting on an old segment blocks reclamation of everything after it,
   which is the same pathology epoch has with a thread parked inside a pin.
 
+### 10i. Design axis the user spotted: inline vs deferred reclamation
+
+Observation, unprompted: *"pop will take more time because it does two things at
+once — not single responsibility. It's the same as GC: either you collect during
+process, or you mark it collectable and do it as a side job."*
+
+Correct on both counts, and the taxonomy is the standard one:
+
+| approach | who pays | cost shape |
+|---|---|---|
+| **inline / synchronous** — collect during the operation *(R1 as built)* | the mutator, at an unpredictable moment | **latency spikes** |
+| **deferred** — mark retired, drain later | amortised, or a separate thread | steady, at the cost of delayed frees |
+
+And the punchline: **epoch-based reclamation *is* the deferred variant.**
+`defer_destroy` pushes onto a per-thread garbage bag which drains in batches once the
+epoch advances. "Mark it collectable then do it as a side job" is not an alternative
+to R3 — it is R3, arrived at from single-responsibility reasoning rather than from
+reading the paper.
+
+The irony worth putting in the post: check-then-claim removed the unbounded spin from
+`pop` *specifically* to bound its latency — and then R1 put a reclamation walk in the
+same function, reintroducing a spike. Bounded now, but variable: one pop in every
+`SEG_LEN` pays a contended flag `swap` plus however many segments happen to be
+freeable.
+
+Four options for this structure, with the one that matches the design philosophy
+already committed to:
+
+1. bounded work per call (free at most 1–2) — caps the spike, still the mutator's problem
+2. a dedicated reclaimer thread — clean, but a low-level primitive that spawns threads
+   is a serious API imposition (ownership, 10 000 queues, shutdown)
+3. **caller-driven**: make `try_reclaim()` public and let the caller choose when —
+   the same move as `pop() -> Option` leaving the wait policy outside
+4. per-thread retire lists drained at safe points — i.e. epoch
+
+Two costs recorded rather than measured:
+
+- the `reclaiming` flag is a **serialisation point**, and the measured finding at
+  4P/4C was that *serialisation is why `Mutex<VecDeque>` wins there*. R1 therefore
+  pushes the lock-free queue toward the mutex's cost profile.
+- one thread sitting on an old segment blocks reclamation of **everything after it**.
+  Same pathology epoch has with a thread parked inside a pin.
+
+**And a measurement-design lesson:** the spike is *invisible to the current bench*.
+Criterion reports a median per-item cost, and a spike on 1 pop in 32 barely moves a
+median — it lands almost entirely in p99. Seeing it needs percentile instrumentation
+(HdrHistogram / `latency-lab`, a later node). Choosing the wrong statistic hides the
+very effect you set out to find.
+
+---
+
+## 11. How hard is this, honestly — context for the post's framing
+
+The user asked, at the point of maximum frustration: *who invented this, did they
+struggle like this, how long did it take them?* The answer is load-bearing for the
+blog, because the honest version is encouraging in a way reassurance is not.
+
+| technique | who | when | context |
+|---|---|---|---|
+| Michael–Scott queue (the baseline segments are compared against) | Maged Michael & Michael Scott | 1996, PODC | — |
+| **Hazard pointers** (R2) | Maged Michael, IBM Research | 2002–2004 | **the same Michael, 6–8 years after the queue** |
+| **Epoch-based reclamation** (R3) | Keir Fraser | 2004 | **a Cambridge PhD thesis**, *Practical Lock-Freedom* |
+| the memory model all of this is reasoned in | Boehm, Adve et al. | PLDI 2008 → C++11 | Adve's memory-model work starts with her **1993 PhD** |
+| crossbeam / `crossbeam-epoch` | Aaron Turon (~2015); largely rewritten by Stjepan Glavina (~2017–18) | | multiple FTE-years |
+
+Three facts that reframe the difficulty:
+
+1. **Hazard pointers and EBR exist *because* refcounting was tried first and failed.**
+   The whole "safe memory reclamation" literature is the field working around exactly
+   the wall hit here. Re-deriving that negative result took two days; the field took
+   years to converge on it.
+2. **Published lock-free algorithms have repeatedly been proven incorrect after
+   publication**, by experts, in peer-reviewed venues.
+3. **loom exists because experts could not get this right by reading their own code.**
+   So do Relacy and CDSChecker. The tools are the admission.
+
+And the formal vocabulary — happens-before, release/acquire as a *specification*
+rather than per-architecture folklore — was not usable until **2011**. Everyone before
+that wrote this code against informal per-CPU rules and got it wrong routinely.
+
+**The "chaotic memory ordering" feeling, audited.** At the moment the user reported
+the orderings felt chaotic, all 24 sites in the file were checked: **23 followed the
+rule, 1 was wrong — and that one was *over-strict*, i.e. harmless** (`acquire_ref` as
+`fetch_add(Release)` where a bump publishes nothing). The subtle ones were right:
+`release_ref(Release)` paired with `ref_count.load(Acquire)`, the CAS failure ordering
+on `next`, `Relaxed` on both ticket counters, a correct `swap(Acquire)` /
+`store(Release)` lock.
+
+So the chaos was not in the artifact — it was eight orderings across three functions
+held in working memory at once. That is a capacity limit, not a comprehension failure,
+and "understand harder" is the wrong remedy. The remedy that worked was writing the
+**handoff table** down: one row per signal variable, who publishes, who observes, what
+it guards. It collapsed seven open questions into two categories in about a minute, and
+it now lives permanently in the module doc rather than in a conversation.
+
+That is probably the most transferable thing in the whole series: **the difficulty is
+real and historically validated, and the fix is an artifact, not more effort.**
+
 ## Running TODO for the blog
 
 - [x] B1 (naive refcount) — reasoning in §10, Miri UAF verbatim in §10g. Still to capture: the bench numbers for the true-sharing cost

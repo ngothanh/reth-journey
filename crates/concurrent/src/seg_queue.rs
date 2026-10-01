@@ -88,10 +88,7 @@ struct SegGuard<T> {
 pub struct SegQueue<T> {
     head: CachePadded<AtomicPtr<Segment<T>>>,
     tail: CachePadded<AtomicPtr<Segment<T>>>,
-    /// Trails `head`. Everything strictly before it has been freed, so this is the
-    /// oldest segment still alive. Only the thread holding `reclaiming` touches it.
     reclaim: CachePadded<AtomicPtr<Segment<T>>>,
-    /// Crude one-holder flag serialising the reclamation walk.
     reclaiming: CachePadded<AtomicBool>,
 }
 
@@ -136,9 +133,6 @@ impl<T> SegGuard<T> {
 }
 
 impl<T> Drop for SegGuard<T> {
-    /// Only releases. Freeing is deliberately NOT done here: a guard holds just its
-    /// own pointer, and "has my predecessor been freed?" is unanswerable from there
-    /// because the chain is forward-only. See [`SegQueue::try_reclaim`].
     fn drop(&mut self) {
         self.get().release_ref();
     }
@@ -248,22 +242,16 @@ impl<T> SegQueue<T> {
     /// pathology epoch-based reclamation has with a thread parked inside a pin.
     fn try_reclaim(&self) {
         if self.reclaiming.swap(true, Ordering::Acquire) {
-            return; // someone else is already walking the chain
+            return;
         }
 
         loop {
             let seg = self.reclaim.load(Ordering::Relaxed);
-
-            // Never free what `head` still points at: a consumer loading `head`
-            // would get a dangling pointer.
             if seg == self.head.load(Ordering::Acquire) {
                 break;
             }
 
             let s = unsafe { &*seg };
-
-            // Drained? Otherwise freeing destroys the values still in it — and
-            // because slots hold `MaybeUninit`, it would not even drop them.
             if s.consumed.load(Ordering::Relaxed) != SEG_LEN {
                 break;
             }
@@ -305,9 +293,6 @@ impl<T> SegQueue<T> {
                 );
                 guard = SegGuard::acquire(next);
                 consuming = guard.get().consumed.load(Ordering::Relaxed);
-                // `head` just moved, so the segment behind it may now be eligible.
-                // Driving the walk only here keeps the flag's RMW off the hot path:
-                // it runs once per SEG_LEN pops, not once per pop.
                 self.try_reclaim();
                 continue;
             }
