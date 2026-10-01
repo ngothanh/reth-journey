@@ -42,6 +42,7 @@
 use crate::CachePadded;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
+use std::sync::atomic::fence;
 
 mod sync {
     #[cfg(not(loom))]
@@ -105,24 +106,24 @@ impl<T> Segment<T> {
     }
 
     fn acquire_ref(&self) {
-        self.ref_count.fetch_add(1, Ordering::Relaxed);
+        self.ref_count.fetch_add(1, Ordering::Release);
     }
 
     fn release_ref(&self) -> usize {
-        self.ref_count.fetch_sub(1, Ordering::Relaxed)
+        self.ref_count.fetch_sub(1, Ordering::Release)
     }
 }
 
 impl<T> SegGuard<T> {
     fn acquire(seg: *mut Segment<T>) -> Self {
+        unsafe {
+            (*seg).acquire_ref();
+        }
         SegGuard { segment: seg }
     }
 
     fn get(&self) -> &Segment<T> {
-        unsafe {
-            (*self.segment).acquire_ref();
-            &*self.segment
-        }
+        unsafe { &*self.segment }
     }
 
     fn as_ptr(&self) -> *mut Segment<T> {
@@ -132,8 +133,11 @@ impl<T> SegGuard<T> {
 
 impl<T> Drop for SegGuard<T> {
     fn drop(&mut self) {
-        if unsafe { (*self.segment).release_ref() } == 1 {
-            todo!()
+        if self.get().release_ref() == 1 && self.get().consumed.load(Ordering::Relaxed) == SEG_LEN {
+            fence(Ordering::Acquire);
+            unsafe {
+                drop(Box::from_raw(self.segment));
+            }
         }
     }
 }
@@ -176,34 +180,30 @@ impl<T> SegQueue<T> {
     }
 
     pub fn push(&self, value: T) {
-        let mut cur_seg = self.tail.load(Ordering::Acquire);
+        let mut guard = SegGuard::acquire(self.tail.load(Ordering::Acquire));
         loop {
-            let idx = unsafe { (*cur_seg).claimed.fetch_add(1, Ordering::Relaxed) };
+            let idx = unsafe { guard.get().claimed.fetch_add(1, Ordering::Relaxed) };
             if idx < SEG_LEN {
-                unsafe {
-                    (*cur_seg).slots[idx].write_value(value);
-                    (*cur_seg).slots[idx]
-                        .state
-                        .store(WRITTEN, Ordering::Release);
-                }
+                guard.get().slots[idx].write_value(value);
+                guard.get().slots[idx]
+                    .state
+                    .store(WRITTEN, Ordering::Release);
                 return;
             }
-            cur_seg = self.advance_tail(cur_seg);
+            guard = self.advance_tail(&guard);
         }
     }
 
-    fn advance_tail(&self, cur_seg: *mut Segment<T>) -> *mut Segment<T> {
-        let mut next = unsafe { (*cur_seg).next.load(Ordering::Acquire) };
+    fn advance_tail(&self, guard: &SegGuard<T>) -> SegGuard<T> {
+        let mut next = guard.get().next.load(Ordering::Acquire);
         if next.is_null() {
             let raw = Box::into_raw(Box::new(Segment::new()));
-            match unsafe {
-                (*cur_seg).next.compare_exchange(
-                    null_mut(),
-                    raw,
-                    Ordering::Release,
-                    Ordering::Acquire,
-                )
-            } {
+            match guard.get().next.compare_exchange(
+                null_mut(),
+                raw,
+                Ordering::Release,
+                Ordering::Acquire,
+            ) {
                 Ok(_) => next = raw,
                 Err(winner) => {
                     drop(unsafe { Box::from_raw(raw) });
@@ -211,54 +211,53 @@ impl<T> SegQueue<T> {
                 }
             }
         }
-        let _ = self
-            .tail
-            .compare_exchange(cur_seg, next, Ordering::Release, Ordering::Relaxed);
-        next
+        let _ =
+            self.tail
+                .compare_exchange(guard.as_ptr(), next, Ordering::Release, Ordering::Relaxed);
+        SegGuard::acquire(next)
     }
 
     pub fn pop(&self) -> Option<T> {
-        let mut cur_seg = self.head.load(Ordering::Acquire);
-        let mut consuming = unsafe { (*cur_seg).consumed.load(Ordering::Relaxed) };
+        let mut guard = SegGuard::acquire(self.head.load(Ordering::Acquire));
+        let mut consuming = guard.get().consumed.load(Ordering::Relaxed);
         loop {
             if consuming >= SEG_LEN {
-                let next = unsafe { (*cur_seg).next.load(Ordering::Acquire) };
+                let next = guard.get().next.load(Ordering::Acquire);
                 if next.is_null() {
                     return None;
                 }
-                let _ =
-                    self.head
-                        .compare_exchange(cur_seg, next, Ordering::Release, Ordering::Relaxed);
-                cur_seg = next;
-                consuming = unsafe { (*cur_seg).consumed.load(Ordering::Relaxed) };
+                let _ = self.head.compare_exchange(
+                    guard.as_ptr(),
+                    next,
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                );
+                guard = SegGuard::acquire(next);
+                consuming = guard.get().consumed.load(Ordering::Relaxed);
                 continue;
             }
 
-            let claimed = unsafe { (*cur_seg).claimed.load(Ordering::Relaxed) };
+            let claimed = guard.get().claimed.load(Ordering::Relaxed);
             if claimed <= consuming {
                 return None;
             }
-            unsafe {
-                if (*cur_seg).slots[consuming].state.load(Ordering::Acquire) != WRITTEN {
-                    return None;
+            if guard.get().slots[consuming].state.load(Ordering::Acquire) != WRITTEN {
+                return None;
+            }
+            match guard.get().consumed.compare_exchange(
+                consuming,
+                consuming + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(idx) => {
+                    return Some(guard.get().slots[idx].read_existing_value());
                 }
-            }
-            unsafe {
-                match (*cur_seg).consumed.compare_exchange(
-                    consuming,
-                    consuming + 1,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(idx) => {
-                        return Some((*cur_seg).slots[idx].read_existing_value());
-                    }
-                    Err(e) => {
-                        consuming = e;
-                        continue;
-                    }
-                };
-            }
+                Err(e) => {
+                    consuming = e;
+                    continue;
+                }
+            };
         }
     }
 }

@@ -474,9 +474,172 @@ the "notes directory answers instead of memory" mechanism working as intended.
 
 ---
 
+## 10. R1 — naive refcount. Where it broke, in order
+
+### 10a. Manual acquire/release does not survive six exit paths
+
+First attempt put bare `fetch_add`/`fetch_sub` at the call sites. **8 sites, 5 wrong:**
+
+- **The lost `return`.** Rewriting `return Some(...)` into `let res = ...; fetch_sub(1); res`
+  left the match as a *statement*, so the trailing `;` discarded the value and the
+  loop went round again. Effect, traced on `test_push_pop`: CAS(0→1) succeeds, the
+  value is **read out of the slot** (moved!), **discarded**, loop continues;
+  `consuming` is stale so the next CAS fails, `consuming` becomes 1, then
+  `claimed(1) <= consuming(1)` → `return None`. **The item is destroyed and `pop`
+  reports empty.** With `T = usize` it evaporates silently; with `String`/`Box` the
+  payload would be dropped while the queue claims to be empty.
+- **Why that showed up as a hang, not a failure, in the MPMC test.** Its termination
+  is `popped >= TOTAL`, and `popped` only advances when `pop` returns `Some` — which
+  now never happened. Consumers spun forever. One bug, two completely different
+  symptoms depending on the test.
+- **The wrong-segment release.** In `pop`'s head-advance branch:
+  `cur_seg = next; ...; (*cur_seg).release_ref();` — the acquire at the loop top was
+  on the **old** segment, so the release landed on the **new** one, which this thread
+  never acquired. Old segment leaks +1; new segment does `fetch_sub` on `0` and
+  **wraps to `usize::MAX`**, after which `previous == 1` is unreachable forever.
+- **Four leaking exit paths in `pop`** (`next.is_null()`, `claimed <= consuming`,
+  `state != WRITTEN`, CAS `Err` → `continue`) plus a **double bump** on `push`'s
+  overflow path.
+
+Crucially: **all nine tests passed the whole time.** Nothing reads the refcount, so
+none of these bugs were observable. The mechanism was being built with no feedback
+loop at all — which is its own lesson about what "the tests are green" buys you.
+
+### 10b. The guard fixes the bookkeeping and nothing else
+
+RAII (`acquire_ref` in the constructor, `release_ref` in `Drop`) reduces 8 sites to
+one acquisition and zero manual releases; `return`, `continue` and unwinding are all
+handled by the compiler; reassigning the guard gives **acquire-new-then-release-old**
+for free, because Rust evaluates the RHS before dropping the old value. The
+wrong-segment bug becomes unrepresentable rather than merely fixed. Two further
+gifts: passing `&SegGuard` to `advance_tail` *proves* the caller pins that segment, so
+the callee's own acquire/release pair disappears entirely; and `fn get(&self) -> &Segment<T>`
+makes `let p = guard.get(); drop(guard); use(p);` stop compiling.
+
+**But it cannot fix the race**, because constructing the guard *is* a dereference of
+the pointer whose validity is in question.
+
+Why `Arc` is not a counter-example — the distinction worth a paragraph in the post:
+
+| | `Arc::clone` | this guard |
+|---|---|---|
+| pointer comes from | an `Arc` you **already own** | a shared slot (`head`/`tail`/`next`) you just **loaded** |
+| proof the count is ≥ 1 | the `&self` you cloned from | **none** |
+
+`Arc` never builds itself from a raw pointer found in shared memory. That is precisely
+what this does, and no amount of `Drop` makes it sound.
+
+### 10c. `&&` short-circuits — the bug that hides the bug
+
+```rust
+if self.get().consumed.load(Relaxed) == SEG_LEN && self.get().release_ref() == 1 {
+```
+
+Rust's `&&` is lazy, so when the segment is not fully consumed `release_ref()` **never
+runs**. An actively-used segment is by definition not fully consumed, so this skips the
+release for most guards and the count on a live segment only ever rises — it can never
+reach 1, nothing is ever freed, and the leak count never moves. A bug whose symptom is
+*the absence of the symptom you were looking for*.
+
+Correct shape: read `consumed` **first** (after releasing, if you were not the last
+holder another thread may have freed it and the read is a UAF), release
+**unconditionally**, decide last.
+
+### 10d. ⭐ The stale decision — the trace to show deep in the blog
+
+The refcount answers *"how many threads hold S right now?"*. Freeing needs
+*"will anyone ever hold S again?"*. Those are different questions, and
+`release_ref() == 1` answers only the first while the code acts as though it answered
+the second.
+
+S is fully consumed, `head` still points at it. Two threads call `pop`:
+
+| time | thread A | thread B | S's count |
+|---|---|---|---|
+| t1 | loads `head` → S | | 0 |
+| t2 | `acquire` S | | **1** |
+| t3 | `consuming >= SEG_LEN`, `next` null → `return None` | | 1 |
+| t4 | guard drops: reads `consumed == SEG_LEN` ✓ | | 1 |
+| t5 | `release_ref()` → 1 ✓ **decides to free** | | **0** |
+| t6 | | loads `head` → S, `acquire` S | **1** |
+| t7 | `fence`, `Box::from_raw` → **frees S** | | — |
+| t8 | | reads `S.consumed` | **use-after-free** |
+
+A's decision was *correct at t5*. By t7, when it acts, the world has changed.
+**The decision and the action are not atomic, and the fact being decided on can change
+in between.** That sentence is the heart of the post.
+
+### 10e. The double free — where "0 → 1 → 0" comes from
+
+Same setup, B gets further before A's free lands:
+
+| time | thread | action | count |
+|---|---|---|---|
+| t1 | A | acquire S | 0 → **1** |
+| t2 | A | drop: `release_ref()` → 1 → **decides to free** | 1 → **0** |
+| t3 | B | acquire S | 0 → **1** |
+| t4 | B | `return None`, drop, `consumed == SEG_LEN` ✓ | 1 |
+| t5 | B | `release_ref()` → 1 → **also decides to free** | 1 → **0** |
+| t6 | A | `Box::from_raw(S)` — first free | — |
+| t7 | B | `Box::from_raw(S)` — **second free** | — |
+
+Both observed `previous == 1`. **Neither was wrong about the present; both were wrong
+about the future.**
+
+### 10f. What would fix it, and why it is unavailable here
+
+Zero is only trustworthy if the count is **monotonically non-increasing** from the
+moment you start trusting it: then it can only fall, and once at zero it stays there.
+What lets it *rise* is **reachability** — a thread obtaining a fresh pointer. So the
+condition is "make it unreachable **first**, then trust zero", not an extra check
+bolted onto the free.
+
+Three conditions, each necessary, and the pair of orthogonal ones is worth stating
+because they look redundant and are not:
+
+| condition | what it establishes | what breaks without it |
+|---|---|---|
+| `ref_count == 0` | nobody is **mid-operation** | use-after-free |
+| `consumed == SEG_LEN` | every item has been **taken out** | silent data loss — and the `T`s leak, since `MaybeUninit` never drops |
+| **unreachable, one-shot** | nobody can **obtain a new pointer** | the two traces above |
+
+A nice illustration that the first two complement rather than duplicate each other:
+`consumed` counts *tickets issued*, not *reads completed* — a consumer that CAS'd
+`consumed` to `SEG_LEN` may still be inside `read_existing_value`. That gap is covered
+by the *other* condition, because that consumer still holds a guard.
+
+The one-shot already exists in the structure: exactly one thread wins
+`head.compare_exchange(S, S.next)`, and only that winner may release the queue's own
+reference (so a segment is born with count `1`, not `0`, which also removes the
+"a fresh segment is at zero" ambiguity).
+
+**And then the wall.** The `head` CAS stops *new arrivals* from reaching S — they load
+`head` and get `S.next` or later. It does not stop this:
+
+```
+Thread T calls pop(), loads head → P, acquires a guard on P.
+T is descheduled for a long time.
+Meanwhile: others drain P, then drain S, head moves past both, S is FREED.
+T wakes. Its guard on P is still perfectly valid; P is alive.
+T reads P.next  →  S                  ← a pointer to freed memory
+T calls acquire(S)                     ← dereferences it to bump a counter
+```
+
+T did nothing wrong. The principle, which is the line the whole step exists to earn:
+
+> **A guard on `P` protects `P`. It says nothing about what `P` points to.
+> Reachability is transitive; a per-node refcount is not.**
+
+Which is why no additional condition can rescue this design, and why
+"make it unreachable first" only works where unlinking is atomic — a Treiber stack pop
+removes the node with the same CAS that reads it. A segmented queue has no such moment.
+Hazard pointers and epoch escape by making the *acquire itself* safe: the thread
+announces "I am traversing" in per-thread state **before** touching anything, so the
+freer can hold off without the thread having to dereference first.
+
 ## Running TODO for the blog
 
-- [ ] B1 (naive refcount) — expected to fail; capture the Miri UAF verbatim here
+- [x] B1 (naive refcount) — reasoning captured in §10; still to capture: the Miri UAF **verbatim**, and the bench numbers for the true-sharing cost
 - [ ] B2 (hazard pointers) — capture the per-read fence cost
 - [ ] B3 (epoch) — capture the quiescence design and the loom adversarial cases
 - [ ] A3 / CB — capture the layout comparison and the diff against crossbeam source
