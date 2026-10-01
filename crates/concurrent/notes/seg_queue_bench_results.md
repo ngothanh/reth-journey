@@ -230,3 +230,91 @@ the notification layer (`Parker`/`WaitList` → `channel`, a separate node). Do 
 expect it to rescue 4P/4C: it reduces coherence traffic while waiting but adds
 µs-scale wake latency per item, and finding 11 says the deficit is structural
 rather than policy-shaped.
+
+---
+
+## Round 5 — R1 refcount: sealed prediction, BEFORE measuring
+
+R1 adds, per guard: one `acquire_ref` (`fetch_add`, Relaxed) + one `release_ref`
+(`fetch_sub`, Release) on a `ref_count` that sits on **its own cache line** and is
+written by producers *and* consumers — i.e. true sharing, which padding cannot help.
+Plus a `try_reclaim` walk once per `SEG_LEN` pops: a contended `swap` on the
+`reclaiming` flag plus up to N `free()` calls.
+
+Sealed before running anything:
+
+| scenario | R0 baseline (backoff arms) | **prediction** | implied delta |
+|---|---:|---:|---:|
+| uncontended (1 thread) | 16.12 | **17** | +0.9 |
+| spsc (2 threads) | 13.19 | **30** | +16.8 |
+| 2P/2C (4 threads) | 43.21 | **53** | +9.8 |
+| 4P/4C (8 threads) | 75.39 | **85** | +9.6 |
+
+Implied shape: a large jump at spsc, then a roughly **constant** ~+10 ns at higher
+thread counts — i.e. a fixed per-op tax rather than a penalty that widens with core
+count. (Note: the 12.52 quoted when sealing was the spsc *yield* arm; the backoff arm,
+used here for consistency with the 2P/2C and 4P/4C baselines, was 13.19.)
+
+### Round 5 — measured, and the prediction's mechanism confirmed despite wrong numbers
+
+| scenario | R0 | prediction | **measured** | delta vs R0 |
+|---|---:|---:|---:|---:|
+| uncontended | 16.12 | 17 | **10.79** | **−5.3** *(faster)* |
+| spsc backoff | 13.19 | 30 | **7.53** | **−5.7** *(faster)* |
+| 2P/2C backoff | 43.21 | 53 | **66.25** | **+23.0** |
+| 4P/4C backoff | 75.39 | 85 | **111.60** | **+36.2** |
+| 4P/4C spin | 83.35 | — | 102.75 | +19.4 |
+| 4P/4C yield | 84.91 | — | 96.59 | +11.7 |
+| spsc spin | 23.42 | — | 35.84 *(range 20.4–54.2!)* | +12.4 |
+
+`mutex_vecdeque` unchanged throughout (~27 spsc, ~56 2P/2C, ~55 4P/4C) — a clean control.
+
+**13. Adding two atomic RMWs per guard made 1–2 threads FASTER. R1 changed two
+variables, not one.** R1 did not only add a refcount: it started *freeing memory*. In
+R0 every 32 pushes allocated an ~896 B segment that was never reused — roughly 300k
+segments ≈ **280 MB** of cold, never-recycled memory per 300 ms measurement, each one
+costing allocator growth, a first-touch fault, and cold misses over ~7 cache lines. R1
+recycles a handful of segments: `malloc` hits a hot free-list entry and the memory is
+usually still in L1/L2. That win exceeds the ~4 ns of extra atomics.
+
+**So R0's leak was never only a memory problem — it was silently inflating every number
+we measured, and R1's figures are the first honest baseline for this structure.** The
+earlier padding conclusions are unaffected, since those compared R0 variants against
+each other under the same leak.
+
+Consequence: **the refcount's isolated cost is not readable from this comparison.** Two
+variables moved. To isolate it you would need an R0 run with a bounded workload (so the
+leak cannot grow) or an allocation-count instrument.
+
+**14. The shape question was still answered, and understated.** Deltas in thread-count
+order: **−5.3, −5.7, +23.0, +36.2** — monotonically widening. That is the true-sharing
+fingerprint for a line written by every thread on every operation, and every one of
+those figures already has the allocator win pulling it *down*, so the raw contention
+grows more steeply than shown.
+
+**15. The verdict flipped at 2P/2C.**
+
+| | R0 | R1 |
+|---|---|---|
+| 2P/2C vs mutex | SegQueue **won** 43 vs 55 | **loses** 66 vs 56 |
+| 4P/4C vs mutex | lost 75 vs 54 | **loses worse** 112 vs 55 |
+
+**16. R1 widened the policy spread enormously.** `spsc_spin` became wildly unstable —
+median 35.8, range **20.4–54.2** — against `spsc_backoff`'s tight 7.53. A shared
+contended counter amplifies whatever the drain policy does wrong.
+
+### What R2/R3 should recover, and what they will not
+
+Of the +23 / +36 at 4 and 8 threads, the parts that are **R1-specific by construction**:
+
+- the shared `ref_count` line, written by every thread on every op → R2 and R3 have no
+  shared counter at all; the signal moves to per-thread state
+- the `reclaiming` flag serialisation → epoch uses per-thread garbage bags, no global flag
+
+The part that is **permanent and keeps helping**: freeing memory at all, worth ~−5 ns.
+
+So R3 should land near R1's 1–2 thread figures and well below its 4–8 thread ones. What
+is *not* promised is beating a parking mutex at 8 threads on an 8-thread laptop with
+heterogeneous P/E cores — that configuration favours a lock that converts contention
+into queueing. The number that would actually justify a lock-free queue is **p99
+latency**, which this harness has never measured.
