@@ -15,6 +15,7 @@ slab = "0.4.12"
 criterion.workspace = true
 trybuild.workspace = true
 tokio = { version = "1", features = ["rt", "macros", "time", "sync"] }
+crossbeam-queue = "0.3.14"
 
 [[bench]]
 name = "backoff"

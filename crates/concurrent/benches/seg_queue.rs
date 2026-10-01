@@ -65,12 +65,13 @@
 //! `notes/seg_queue_bench_results.md`.
 
 use concurrent::{Backoff, SegQueue};
+use crossbeam_queue::SegQueue as CrossbeamSegQueue;
 use criterion::measurement::WallTime;
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, Criterion};
 use std::collections::VecDeque;
 use std::hint::{black_box, spin_loop};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -91,6 +92,20 @@ impl<T: Send> Queue<T> for SegQueue<T> {
     }
     fn pop(&self) -> Option<T> {
         SegQueue::pop(self)
+    }
+}
+
+/// The reference implementation of the algorithm being reimplemented here. The
+/// point of comparison that actually matters: am I competitive with the real thing?
+impl<T: Send> Queue<T> for CrossbeamSegQueue<T> {
+    fn create() -> Self {
+        CrossbeamSegQueue::new()
+    }
+    fn push(&self, value: T) {
+        CrossbeamSegQueue::push(self, value);
+    }
+    fn pop(&self) -> Option<T> {
+        CrossbeamSegQueue::pop(self)
     }
 }
 
@@ -169,6 +184,7 @@ fn uncontended(c: &mut Criterion) {
     let mut g = c.benchmark_group("seg_queue_uncontended");
     configure(&mut g);
     bench_uncontended::<SegQueue<usize>>(&mut g, "seg_queue");
+    bench_uncontended::<CrossbeamSegQueue<usize>>(&mut g, "crossbeam_segqueue");
     bench_uncontended::<MutexQueue<usize>>(&mut g, "mutex_vecdeque");
     g.finish();
 }
@@ -245,17 +261,18 @@ fn bench_spsc<Q: Queue<usize> + 'static>(
 //    inverted the verdict against the mutex.
 // ---------------------------------------------------------------------------
 
+/// NPNC is kept only as a control: it is the shape neither real consumer produces.
+/// See `np1c` for the one that matters.
 fn mpmc(c: &mut Criterion) {
     mpmc_config(c, 2, 2, Policy::Backoff);
-    for policy in [Policy::Spin, Policy::Backoff, Policy::Yield] {
-        mpmc_config(c, 4, 4, policy);
-    }
+    mpmc_config(c, 4, 4, Policy::Backoff);
 }
 
 fn mpmc_config(c: &mut Criterion, nprod: usize, ncon: usize, policy: Policy) {
     let mut g = c.benchmark_group(format!("seg_queue_mpmc_{nprod}p{ncon}c_{}", policy.name()));
     configure(&mut g);
     bench_mpmc::<SegQueue<usize>>(&mut g, "seg_queue", nprod, ncon, policy);
+    bench_mpmc::<CrossbeamSegQueue<usize>>(&mut g, "crossbeam_segqueue", nprod, ncon, policy);
     bench_mpmc::<MutexQueue<usize>>(&mut g, "mutex_vecdeque", nprod, ncon, policy);
     g.finish();
 }
@@ -327,5 +344,96 @@ fn bench_mpmc<Q: Queue<usize> + 'static>(
     });
 }
 
-criterion_group!(benches, uncontended, spsc, mpmc);
+
+// ---------------------------------------------------------------------------
+// 4. NP1C — THE SHAPE THAT ACTUALLY GETS USED.
+//
+//    Both real consumers of this queue are N producers into exactly one
+//    consumer, and both need unboundedness because the backlog is a function of
+//    something outside their control:
+//      * wal/group_commit.rs   — N request threads -> the sole fsync caller.
+//        A bounded ring here means request threads block on the disk.
+//      * runtime cross_shard.rs — N shards -> one shard's inbox. A bounded ring
+//        means one stalled shard blocks the others.
+//
+//    Note how different the contention profile is from NPNC: `consumed`, the
+//    `head` CAS and (for us) half the refcount traffic are all UNCONTENDED here,
+//    because there is only one consumer. Benchmarking NPNC measures pressure
+//    that neither real use case produces.
+//
+//    Opponents are the ones actually optimised for this shape:
+//      * `std::sync::mpsc`        — the standard library's answer to exactly MPSC
+//      * `crossbeam_queue::SegQueue` — the reference implementation of this algorithm
+//      * `Mutex<VecDeque>`        — the naive baseline
+// ---------------------------------------------------------------------------
+
+fn np1c(c: &mut Criterion) {
+    for nprod in [1usize, 2, 4, 8] {
+        let mut g = c.benchmark_group(format!("np1c_{nprod}p1c"));
+        configure(&mut g);
+        bench_mpmc::<SegQueue<usize>>(&mut g, "seg_queue", nprod, 1, Policy::Backoff);
+        bench_mpmc::<CrossbeamSegQueue<usize>>(&mut g, "crossbeam_segqueue", nprod, 1, Policy::Backoff);
+        bench_mpmc::<MutexQueue<usize>>(&mut g, "mutex_vecdeque", nprod, 1, Policy::Backoff);
+        bench_np1c_mpsc(&mut g, "std_mpsc", nprod, Policy::Backoff);
+        g.finish();
+    }
+}
+
+/// `std::sync::mpsc` cannot go behind the `Queue` trait: its `Receiver` is not
+/// `Sync`, which is precisely because it is specialised for a single consumer.
+/// Structured identically to `bench_mpmc` so the numbers are comparable, and using
+/// `try_recv` + the same drain policy rather than blocking `recv`, so the
+/// comparison is apples-to-apples. (Blocking `recv` is what you would really use,
+/// and would likely do better — worth a follow-up row.)
+fn bench_np1c_mpsc(
+    g: &mut BenchmarkGroup<'_, WallTime>,
+    name: &str,
+    nprod: usize,
+    policy: Policy,
+) {
+    g.bench_function(name, |b| {
+        b.iter_custom(|iters| {
+            let per_prod = (iters as usize / nprod).max(1);
+            let total = per_prod * nprod;
+            let (tx, rx) = mpsc::channel::<usize>();
+
+            let start = Instant::now();
+
+            let producers: Vec<_> = (0..nprod)
+                .map(|_| {
+                    let tx = tx.clone();
+                    thread::spawn(move || {
+                        for i in 0..per_prod {
+                            tx.send(i).unwrap();
+                        }
+                    })
+                })
+                .collect();
+            drop(tx);
+
+            let consumer = thread::spawn(move || {
+                let waiter = Waiter::new(policy);
+                let mut got = 0usize;
+                while got < total {
+                    match rx.try_recv() {
+                        Ok(v) => {
+                            black_box(v);
+                            got += 1;
+                        }
+                        Err(_) => waiter.wait(),
+                    }
+                }
+            });
+
+            for p in producers {
+                p.join().unwrap();
+            }
+            consumer.join().unwrap();
+            let elapsed = start.elapsed();
+            elapsed.mul_f64(iters as f64 / total as f64).max(Duration::ZERO)
+        });
+    });
+}
+
+criterion_group!(benches, uncontended, spsc, mpmc, np1c);
 criterion_main!(benches);

@@ -318,3 +318,81 @@ is *not* promised is beating a parking mutex at 8 threads on an 8-thread laptop 
 heterogeneous P/E cores — that configuration favours a lock that converts contention
 into queueing. The number that would actually justify a lock-free queue is **p99
 latency**, which this harness has never measured.
+
+---
+
+## Round 6 — the right shape, against the right opponents
+
+**Two methodology errors, both caught by the user:** every previous round benchmarked
+**NPNC** (1P1C, 2P2C, 4P4C), which is a shape *neither real consumer of this queue
+produces*; and the only opponent was `Mutex<VecDeque>`, which is not what anyone would
+actually reach for.
+
+Both real uses are **N producers → exactly 1 consumer**, unbounded because the backlog
+is a function of something outside their control:
+
+- `wal/group_commit.rs` — N request threads into the sole `fsync` caller. A bounded ring
+  means request threads block on the disk.
+- `runtime/cross_shard.rs` — N shards into one shard's inbox. A bounded ring means one
+  stalled shard blocks the others.
+
+NP1C also has a materially different contention profile: `consumed`, the `head` CAS and
+half the refcount traffic are **uncontended** with a single consumer. Benchmarking NPNC
+was measuring pressure neither use case creates.
+
+Opponents now are the ones actually specialised for MPSC:
+
+| config | **ours (R1)** | **crossbeam `SegQueue`** | `Mutex<VecDeque>` | `std::sync::mpsc` |
+|---|---:|---:|---:|---:|
+| 1P1C | **7.66** | 13.78 | 28.23 | 14.01 |
+| 2P1C | 77.85 | **14.43** | 76.29 | 40.44 |
+| 4P1C | 105.91 | **15.40** | 48.28 | 78.10 |
+| 8P1C | 104.94 | **16.74** | 39.20 | 169.32 |
+| 2P2C *(control — unused shape)* | 62.95 | **14.08** | 53.56 | — |
+| 4P4C *(control — unused shape)* | 103.46 | **18.61** | 55.05 | — |
+
+### Findings
+
+**17. The algorithm is decisively worth building — and the proof is crossbeam, not us.**
+Crossbeam's `SegQueue` is essentially **flat** from 1 to 8 producers (13.8 → 16.7), and at
+8 producers it is **2.3× faster than a mutex** and **10× faster than `std::sync::mpsc`**.
+So "why not just use a mutex" has a measured answer at the shape that matters. What was
+in doubt was never the structure; it was our implementation of it.
+
+**18. Ours is 6–7× off the reference, and it is a cliff, not a slope.**
+
+```
+ours:       7.7  →  77.8  →  105.9  →  104.9      (1 → 2 → 4 → 8 producers)
+crossbeam: 13.8  →  14.4  →   15.4  →   16.7
+```
+
+A **10× jump from one producer to two.** Not "contention exists" — crossbeam has
+contended counters too and barely moves.
+
+**19. The prime suspect is the shared refcount, which R2/R3 delete by construction.**
+Crossbeam's SegQueue has **no refcount at all**; it reclaims via per-slot
+WRITE/READ/DESTROY bits. Ours adds a counter written by every thread on every operation.
+At 2P1C that is 3 threads × 2 RMWs per item on one line ≈ 4 contended transfers ≈ 43 ns,
+plus contended `claimed` — most of the observed +70.
+
+**20. The strongest evidence the core mechanics are sound: at 1P1C we BEAT crossbeam**
+(7.66 vs 13.78). push/pop/boundary is not the problem. The problem is specifically the
+reclamation scheme bolted on top — the part that is temporary by design.
+
+**21. `std::sync::mpsc` scales badly**: 14 → 169 ns from 1 to 8 producers, *worse than a
+mutex* at 8. The standard library's purpose-built MPSC loses to a lock under load.
+
+**22. The mutex gets FASTER with more producers** (76 → 48 → 39). Almost certainly
+because at low producer counts the single consumer starves and burns backoff on an empty
+queue, while more producers keep it fed. Which means the low-N figures for *every* arm
+are partly measuring consumer starvation rather than the queue — a confound to remember
+when reading 1P1C and 2P1C.
+
+### Not measured, and deliberately deferred
+
+Every number here is a **median throughput**. The argument that actually motivates
+lock-free is **p99 latency** — a mutex's tail includes "the holder was descheduled while
+holding the lock", which is unbounded. That was going to be the deciding measurement if
+throughput had been inconclusive; finding 17 settled it on throughput alone, so p99 waits
+for `latency-lab`/HdrHistogram. Note also (finding 10i) that the reclamation spike is
+invisible to a median by construction.
