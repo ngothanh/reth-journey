@@ -342,7 +342,7 @@ was measuring pressure neither use case creates.
 
 Opponents now are the ones actually specialised for MPSC:
 
-| config | **ours (R1)** | **crossbeam `SegQueue`** | `Mutex<VecDeque>` | `std::sync::mpsc` |
+| config | **`seg_queue` (this crate, R1)** | **crossbeam `SegQueue`** | `Mutex<VecDeque>` | `std::sync::mpsc` |
 |---|---:|---:|---:|---:|
 | 1P1C | **7.66** | 13.78 | 28.23 | 14.01 |
 | 2P1C | 77.85 | **14.43** | 76.29 | 40.44 |
@@ -357,12 +357,12 @@ Opponents now are the ones actually specialised for MPSC:
 Crossbeam's `SegQueue` is essentially **flat** from 1 to 8 producers (13.8 → 16.7), and at
 8 producers it is **2.3× faster than a mutex** and **10× faster than `std::sync::mpsc`**.
 So "why not just use a mutex" has a measured answer at the shape that matters. What was
-in doubt was never the structure; it was our implementation of it.
+in doubt was never the structure; it was this crate's implementation of it.
 
-**18. Ours is 6–7× off the reference, and it is a cliff, not a slope.**
+**18. `seg_queue` is 6–7× off the reference, and it is a cliff, not a slope.**
 
 ```
-ours:       7.7  →  77.8  →  105.9  →  104.9      (1 → 2 → 4 → 8 producers)
+seg_queue:  7.7  →  77.8  →  105.9  →  104.9      (1 → 2 → 4 → 8 producers)
 crossbeam: 13.8  →  14.4  →   15.4  →   16.7
 ```
 
@@ -371,11 +371,11 @@ contended counters too and barely moves.
 
 **19. The prime suspect is the shared refcount, which R2/R3 delete by construction.**
 Crossbeam's SegQueue has **no refcount at all**; it reclaims via per-slot
-WRITE/READ/DESTROY bits. Ours adds a counter written by every thread on every operation.
+WRITE/READ/DESTROY bits. `seg_queue` adds a counter written by every thread on every operation.
 At 2P1C that is 3 threads × 2 RMWs per item on one line ≈ 4 contended transfers ≈ 43 ns,
 plus contended `claimed` — most of the observed +70.
 
-**20. The strongest evidence the core mechanics are sound: at 1P1C we BEAT crossbeam**
+**20. The strongest evidence the core mechanics are sound: at 1P1C `seg_queue` BEATS crossbeam**
 (7.66 vs 13.78). push/pop/boundary is not the problem. The problem is specifically the
 reclamation scheme bolted on top — the part that is temporary by design.
 

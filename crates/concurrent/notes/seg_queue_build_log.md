@@ -7,7 +7,15 @@
 > messages — this file exists to preserve the *order in which things went wrong*,
 > which is the part that normally evaporates.
 
-Stage R0 (lock-free queue, segments leaked). Machine: Apple Silicon (aarch64).
+Machine: Apple Silicon (aarch64).
+
+**Authorship, because this is blog source material and it matters.** The `SegQueue`
+implementation is the user's: `push`, `pop`, the boundary protocol, the slot state flag,
+`SegGuard`, the refcount and the free conditions were all written by him. Claude wrote
+the criterion harness, the loom test bodies, and two refactors done on explicit request
+(the local-cursor rewrite of `push`, and the trailing `reclaim` cursor). Where this log
+says "the user caught X", that is literal; where it records a wrong hypothesis about
+false sharing or a mis-aimed benchmark, that was Claude's.
 
 ---
 
@@ -831,10 +839,10 @@ Fixing both reversed the conclusion in **both** directions at once:
 - **the structure is vindicated** — crossbeam is flat from 1 to 8 producers (13.8 → 16.7 ns)
   and beats a mutex 2.3× and `std::sync::mpsc` 10× at 8 producers. The answer to "why not
   a mutex" is a measured 2.3×.
-- **our implementation is indicted** — 7.7 → 77.8 → 105.9 → 104.9, a **10× cliff from one
+- **this implementation is indicted** — 7.7 → 77.8 → 105.9 → 104.9, a **10× cliff from one
   producer to two**, and slower than a plain mutex at 4 and 8 producers.
 
-And one consolation that localises the fault precisely: **at 1P1C we beat crossbeam**
+And one consolation that localises the fault precisely: **at 1P1C `seg_queue` beats crossbeam**
 (7.66 vs 13.78). The push/pop/boundary machinery is fine; the reclamation scheme bolted
 on top is what costs.
 
@@ -844,12 +852,12 @@ here, and neither was visible from inside the numbers — five rounds of increas
 careful measurement of the wrong configuration produced increasingly confident wrong
 conclusions. The fix was not better statistics.
 
-**An attribution caveat to carry into B3.** Crossbeam differs from ours in *two* ways at
-once: layout A (global index) versus our layout B (per-segment counters), **and**
+**An attribution caveat to carry into B3.** Crossbeam differs from `seg_queue` in *two*
+ways at once: layout A (global index) versus layout B (per-segment counters), **and**
 DESTROY-bit reclamation versus a refcount. So the 6× cannot be attributed to the refcount
 from this data alone. That makes B3's bench the decisive measurement:
 
-- if **B3 (our layout B + epoch) lands near crossbeam** → the refcount was the problem and
+- if **B3 (layout B + epoch) lands near crossbeam** → the refcount was the problem and
   layout B is fine
 - if **B3 is still ~6× off** → layout B is the problem, and Track A stops being "understand
   everything" and becomes necessary
