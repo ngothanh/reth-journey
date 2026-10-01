@@ -110,3 +110,123 @@ Two separate spin sites, and **only the first belongs to the queue**:
   those numbers are comparable to Round 2 — **not** to Round 1.
 - Keep `uncontended` as the tripwire: it must not move when only concurrency
   behaviour changes.
+
+---
+
+## Round 3 — sealed prediction, BEFORE measuring
+
+`pop` refactored from **claim-then-wait** to **check-then-claim**: read
+`state[c]`; if not WRITTEN return `None` *without* committing `consumed`; only CAS
+`consumed` once WRITTEN is observed. Removes the in-`pop` wait entirely (and with
+it `SlotWaiter`/`Backoff` inside the queue).
+
+Sealed by me before running anything:
+
+| Scenario | prior measurement | **my prediction** |
+|---|---|---|
+| uncontended | 12.7–14.8 | **70 ns** |
+| spsc | 12.5–13.8 | **35 ns** |
+| 2P/2C | 41.3–42.5 | **45 ns** |
+| 4P/4C | 46.2–66.8 (unstable) | **45 ns** |
+
+Reasoning: `pop` is deterministic now — nothing waits inside it — so the thread
+count should stop mattering; 2P/2C, 4P/4C and anything beyond should converge to
+roughly the same per-item cost.
+
+### Round 3 — measured, vs the sealed prediction
+
+| Scenario | prior | prediction | **measured** | verdict |
+|---|---|---|---|---|
+| uncontended | 12.7–14.8 | 70 | **17.3** | miss 4x |
+| spsc | 12.5–13.8 | 35 | **13.8** | miss 2.5x |
+| 2P/2C | 41.3–42.5 | 45 | **44.5** | **HIT, <1%** |
+| 4P/4C | 46.2–66.8 | 45 | **71.9** | miss 1.6x, **wrong direction** |
+
+**The prediction's thesis was falsified.** It said: `pop` is deterministic now, so
+the thread count stops mattering and every config converges to ~45. Measured:
+2P/2C = 44.5 but 4P/4C = 71.9 — a 1.6x spread. Thread count still dominates.
+
+**Why the reasoning was wrong, which is the whole value of having sealed it.**
+Removing the wait from inside `pop` bounds `pop`'s *instruction count*. It does not
+remove waiting from the *system* — it relocates it, and the relocation is
+expensive:
+
+| | claim-then-wait (before) | check-then-claim (after) |
+|---|---|---|
+| consumer meets an unwritten slot | already CAS'd, **owns** the slot → spins on **one** `state` line it already holds | **bails out entirely** → caller waits → **re-enters from the top** |
+| contended lines touched per wait iteration | ~1 (already owned) | `head` + `consumed` + `claimed` + `state` = **4** |
+
+Coherence traffic is the dominant cost term (~10.7 ns per contended line), so
+converting a *local* wait into a *global retry* multiplies the dominant term. At
+4P/4C with 8 threads doing it, that is worst. "Deterministic ⇒ thread count stops
+mattering" is false precisely because thread count matters through coherence
+traffic, and this change increased traffic per unit of waiting.
+
+Kept anyway: `pop` is now bounded, so its tail latency no longer depends on
+another thread's scheduler. That is the trade — **bounded latency bought with
+worse throughput under contention** — and it is usually the right trade for a
+latency-critical consumer. Stated, not hidden.
+
+---
+
+## Round 4 — drain policy as an explicit variable
+
+Hypothesis under test: *the 4P/4C deficit is the caller's fault; a smarter
+consumer would fix it.* So the drain policy became a swept dimension.
+
+| Scenario | SegQueue | `Mutex<VecDeque>` |
+|---|---|---|
+| uncontended (no policy applies) | 16.12 | 15.53 |
+| spsc **spin** | 23.42 | 26.87 |
+| spsc **backoff** | 13.19 | 27.56 |
+| spsc **yield** | **12.52** | 27.48 |
+| 2P/2C backoff | **43.21** | 54.95 |
+| 4P/4C **spin** | 83.35 | 54.27 |
+| 4P/4C **backoff** | **75.39** | 54.13 |
+| 4P/4C **yield** | 84.91 | 54.63 |
+
+### Findings
+
+8. **Policy swings SegQueue 1.9x and leaves the mutex flat.** spsc: SegQueue
+   23.4 / 13.2 / 12.5 across spin/backoff/yield; the mutex sits at 26.9 / 27.6 /
+   27.5. Cleanest possible confirmation of finding 6: taking the lock to discover
+   emptiness *is* the mutex's backoff, so policy cannot move it. A lock-free queue
+   has no built-in throttle, so **the policy IS the throttle**.
+
+9. **Hot spinning is the WORST policy in spsc** (23.4 vs 12.5 for yield), which
+   contradicts the reflex "spin for latency". With only 2 threads there is no CPU
+   oversubscription — the spinner starves the producer through *coherence traffic*,
+   not through CPU. Flooding the shared lines makes the producer's own atomics
+   slower.
+
+10. **No single policy wins everywhere.** Yield is best at spsc (12.5) and worst
+    at 4P/4C (84.9); backoff is best at 4P/4C (75.4) and near-best at spsc (13.2).
+    That spread is the empirical justification for an adaptive ladder rather than a
+    fixed choice.
+
+11. **Hypothesis FALSIFIED: the 4P/4C deficit is not the caller's fault.**
+    SegQueue loses to the mutex under *all three* policies (75–85 vs ~54), and the
+    mutex is rock stable (54.1–54.6) while SegQueue swings 75–85. At 8 contending
+    threads on this machine the lock genuinely wins, whatever the consumer does.
+    Plausible mechanism: serialisation is the *right* strategy once oversubscribed.
+    The mutex converts contention into queueing (one at a time, parked); the
+    lock-free structure converts contention into coherence traffic (everyone
+    hammering the same lines). Making the policy an explicit variable cost one
+    bench run and killed the hypothesis cheaply — which is the point.
+
+12. **uncontended regressed slightly**: 12.7–14.8 → 16.1, now marginally behind
+    the mutex (15.5). Part drift, part the extra `state.load(Acquire)` now sitting
+    *before* the CAS on the success path rather than after it.
+
+### Honest R0 verdict
+
+- spsc with a sane policy: SegQueue wins **~−55%** (12.5 vs 27.5)
+- 2P/2C: SegQueue wins **~−21%** (43.2 vs 55.0)
+- 4P/4C: **mutex wins under every policy** (54 vs 75–85)
+- uncontended: a tie, slightly behind
+
+A fourth policy — park, woken by the producer — is still untested because it needs
+the notification layer (`Parker`/`WaitList` → `channel`, a separate node). Do not
+expect it to rescue 4P/4C: it reduces coherence traffic while waiting but adds
+µs-scale wake latency per item, and finding 11 says the deficit is structural
+rather than policy-shaped.

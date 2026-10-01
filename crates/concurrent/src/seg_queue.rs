@@ -50,9 +50,9 @@ mod sync {
     #[cfg(not(loom))]
     pub(super) use core::cell::UnsafeCell;
     #[cfg(loom)]
-    pub(super) use loom::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-    #[cfg(loom)]
     pub(super) use loom::cell::UnsafeCell;
+    #[cfg(loom)]
+    pub(super) use loom::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 
     /// The waiter used while a consumer holds a slot whose producer has not
     /// finished storing the value yet.
@@ -228,7 +228,11 @@ impl<T> SegQueue<T> {
             if claimed <= consuming {
                 return None;
             }
-
+            unsafe {
+                if (*cur_seg).slots[consuming].state.load(Ordering::Acquire) != WRITTEN {
+                    return None;
+                }
+            }
             unsafe {
                 match (*cur_seg).consumed.compare_exchange(
                     consuming,
@@ -237,14 +241,6 @@ impl<T> SegQueue<T> {
                     Ordering::Relaxed,
                 ) {
                     Ok(idx) => {
-                        // The slot is ours and its producer is committed to writing
-                        // it, so this wait always terminates — but it may be long if
-                        // that producer got descheduled, hence backoff rather than a
-                        // bare spin.
-                        let waiter = SlotWaiter::new();
-                        while (*cur_seg).slots[idx].state.load(Ordering::Acquire) != WRITTEN {
-                            waiter.snooze();
-                        }
                         return Some((*cur_seg).slots[idx].read_existing_value());
                     }
                     Err(e) => {
