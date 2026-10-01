@@ -1,0 +1,483 @@
+# `SegQueue` build log — the failure sequence
+
+> **TEMPORARY FILE.** Raw material for the blog series only. Kept up to date while
+> the build is in progress; **delete once the blog is finalised.** Everything here
+> that belongs in permanent documentation has already been written into the module
+> docs, `seg_queue_bench_results.md`, `backoff_bench_results.md`, or the commit
+> messages — this file exists to preserve the *order in which things went wrong*,
+> which is the part that normally evaporates.
+
+Stage R0 (lock-free queue, segments leaked). Machine: Apple Silicon (aarch64).
+
+---
+
+## 0. Brainstorm — framings worth keeping
+
+**Problem statement.** A fan-in queue whose capacity cannot be known in advance,
+because it is a function of *consumer latency*, not of workload. The motivating
+consumer: WAL group-commit, where N request threads append and exactly one flush
+thread calls `fsync` (~500 µs). A bounded ring forces you to pick `N` at
+construction, and then answer: what happens to producer N+1 when `fsync` stalls
+for 10 ms? Too small and every request thread blocks behind the disk; sized for
+peak burst and you pre-pay RAM for a rare event — and there is always a larger
+burst.
+
+**"Unbounded" does not remove backpressure, it changes the failure mode from
+*block* to *OOM*.** What the structure actually does is separate two things a
+bounded ring conflates: storage capacity (the data structure's job) and admission
+policy (the caller's job, e.g. a `pending_count` soft cap).
+
+**Single responsibility, settled early and load-bearing for the rest of the
+build.** The queue owns **rate** — temporal decoupling of producer and consumer.
+It does *not* own:
+- **order** beyond enqueue order. There are two orderings and they diverge:
+  ticket order (`next_lsn.fetch_add`) and physical push order. A producer can take
+  LSN 42, be preempted, and push after the producer holding 43 — so the queue's
+  FIFO is push-order, not LSN-order. Application order belongs to the LSN.
+- **admission** — that is the caller's soft cap.
+- **durability** — WAL + fsync + a `durable_lsn` watermark.
+
+A user question that sharpened this: *"does the consumer even need FIFO, or just a
+bag?"* Answer: order almost always matters (payment: debit-then-credit ≠
+credit-then-debit), and ordering that matters for correctness can never be
+established by racing producers anyway — it must be fixed *before* the concurrency
+point.
+
+**Why segments rather than one node per element (Michael–Scott).** MS-queue is
+correct and solves the same problem. Segments buy four amortisations, measured or
+reasoned:
+1. alloc count: 1 malloc per 32 pushes instead of per push, and malloc touches a
+   *shared* allocator across cores
+2. cache locality: contiguous slots vs a pointer chase per element (~100 ns miss),
+   and pointer chasing is address-dependent so the prefetcher is blind
+3. CAS *quality*: `fetch_add` (one instruction, no retry) vs a CAS retry loop that
+   degrades with contention
+4. reclamation granularity: 32 elements freed as one unit
+Cost: wasted space when near-empty, plus a genuinely hard boundary race.
+
+**Segment ≠ ring.** User's own insight, and it was right: slots are written once
+and read once, never reused, so no wrap-generation sequence counter is needed — a
+one-shot flag suffices. A ring needs `seq` *because* it reuses slots.
+
+**The reclamation circularity**, walked through before any code (this became the
+spine of the R1→R3 ladder):
+
+```
+C2: load head  → raw pointer p to seg k
+C1: drains last slot, refcount 1→0, frees seg k
+C2: p->refcount.fetch_add(1)   ← bumping a counter inside freed memory
+```
+
+The counter that is supposed to tell you "this memory is live, go ahead and touch
+it" **lives inside the memory you are not yet sure is live**. Provably not fixable
+from the inside, which is why every real solution (hazard pointers, EBR) puts the
+"I am reading this" signal in per-thread state *outside* the object.
+
+**Correction made during brainstorm:** real crossbeam `SegQueue` does **not** use
+`crossbeam-epoch`. It self-reclaims blocks via per-slot WRITE/READ/DESTROY bits.
+`crossbeam-epoch` is for `SkipList`. The teaching question that falls out: crossbeam
+*has* epoch — why not use it for the queue? Because the queue's structure lets it
+self-reclaim more cheaply than epoch's pin/unpin.
+
+---
+
+## 1. Struct modelling — the questions asked
+
+Good questions, in the order they came, each of which closed a real gap:
+
+- **"Why does a slot need `state`?"** Because `push` is two steps: `fetch_add` to
+  reserve index `i`, then store the value. A consumer computing the same `i` can
+  arrive *between* them and read `MaybeUninit::uninit()`. `state` is the only thing
+  that distinguishes "reserved" from "written".
+- **"Why a pointer and not a reference to `next`?"** A `&Segment` carries a
+  lifetime the compiler must prove; the successor is heap-allocated at runtime,
+  linked concurrently, and eventually freed by a scheme the compiler cannot see.
+  Also `next` is null until a boundary is crossed, and `&T` is never null.
+- **"Why `AtomicPtr` and not plain `*mut`?"** `next` is written and read
+  concurrently (data race), the boundary needs `compare_exchange` so exactly one
+  producer links the successor, and loom cannot model a plain `*mut`.
+- **"Why `*mut` and not `*const`?"** `AtomicPtr<T>` is defined over `*mut T`; the
+  pointee gets mutated and eventually freed through `Box::from_raw`.
+- **"Should it be `claimed`/`consumed`, not `claim`/`consume`?"** Yes — the field
+  holds a *count*, so the noun form is right. (Also: do not name them `head`/`tail`,
+  those are already the segment pointers one level up.)
+
+One correct subtle choice made unprompted: `unsafe impl<T: Send> Sync`, not
+`T: Sync`. The queue never hands out `&T` across threads — it moves `T` in and out —
+so `T: Send` is the right bound. Matches crossbeam.
+
+---
+
+## 2. `push` — four iterations
+
+**v1.** Used `consumed` (the *consumer's* cursor) for the producer; created a fresh
+`Slot::new()` and assigned it over the existing slot before writing; never
+published `state`; never returned, so the success path looped forever and the
+borrow checker rejected the second move of `value`.
+
+The move error was the useful one: *a successful write must be the last thing the
+function does, because `value` is consumed.* The type system was describing the
+control flow.
+
+**v2.** Fixed the write form and added `state` + `return`, but still initialised
+the loop from `consumed`, and still overwrote the slot with `Slot::new()` —
+a non-atomic write to memory a consumer may be reading, which also reset the
+`state` atomic mid-flight.
+
+**v3.** Attempted the boundary. Encoded several broken ideas at once:
+- `break` on finding `next` already linked → the function returned having pushed
+  nothing, silently dropping `value`. Should have been `continue`.
+- `self.tail.store(next)` then `(*cur_seg).next = AtomicPtr::new(next)` — blind
+  non-atomic writes, so N overflowing producers each allocated a segment and raced
+  to clobber both fields.
+- `cur_seg = (*next).next.load(...)` — read the *successor's* successor (null) and
+  then dereferenced it.
+- `idx = 0` — self-assigned slot 0 of the new segment without claiming it, so
+  every overflowing producer would take slot 0.
+- `> SEG_LEN` instead of `>= SEG_LEN`.
+
+**v4 (correct).** Boundary protocol: read `next`; if null, allocate and
+`compare_exchange(null → mine)`; winner uses its own, loser frees its spare and
+uses the winner's; nudge `tail` forward with a CAS; `continue` and re-claim.
+
+A user question here was sharper than my own description: *"advancing `tail` doesn't
+solve anything for this producer — it has to go to `next` and claim again."*
+Correct, and I had conflated two concerns: the producer's own progress (must claim
+on `next`) and the courtesy tail advance (reduces other threads' spinning). That
+distinction produced the local-cursor refactor.
+
+**v5 (refactor, written by me at user's request).** Local cursor: load `tail` once,
+walk forward with your own pointer, `fetch_add` instead of a CAS loop, boundary
+extracted into `advance_tail`. The user then asked for all orderings reverted to
+`Relaxed` — *"I have to learn memory ordering myself"* — which turned out to be the
+right call, because the two Miri failures below became his to derive.
+
+User question worth preserving because the answer is a genuine semantic gap, not a
+slip: **"with `fetch_add`, who gets index 0?"** The caller does — `fetch_add`
+returns the *previous* value and then adds. That is what "fetch" means.
+
+And the right follow-up: **"isn't blind `fetch_add` also wrong in push, since the
+counter grows past `SEG_LEN`?"** No, and the asymmetry is the interesting part: a
+producer's wasted ticket costs nothing because the item is not bound to the ticket —
+it travels with the producer to the next segment. A consumer's wasted ticket
+*orphans a specific slot*. Same primitive, opposite consequence.
+
+---
+
+## 3. `pop` — the data-loss bug
+
+**v1** mirrored push: blind `consumed.fetch_add`, then if `state != WRITTEN` return
+`None`. This loses data, and the trace is the single best teaching artifact of the
+whole build:
+
+```
+push(A)   → claimed=1, slot0 WRITTEN
+pop()     → fetch_add → 0, state[0]=WRITTEN → returns A.  consumed=1
+pop()     → fetch_add → 1, state[1]=EMPTY   → returns None. consumed=2   ← index 1 BURNED
+push(B)   → claimed.fetch_add → 1 → writes slot1, WRITTEN
+pop()     → fetch_add → 2, state[2]=EMPTY   → None
+```
+
+**B is in slot 1, `consumed` is already past 1. B is lost forever.**
+
+Two things were conflated: a consumer that finds `state == EMPTY` might be looking
+at a slot *no producer has claimed* (genuinely empty) or at one *a producer owns and
+is mid-write* (not empty — an item is coming). Returning `None` in the second case is
+wrong, and committing `consumed` in the first case is fatal.
+
+**v2** added a `claimed` check but kept the blind `fetch_add` *above* it, so the
+index was already burned by the time the check ran. Also `continue`d on
+`state != WRITTEN`, which re-ran `fetch_add` and burned a *fresh* index per spin.
+
+**v3** off-by-one argument. I said empty is `c >= claimed`; the user argued for
+`c > claimed` — *"`c == claimed` means a producer is still writing"*. The resolution
+is count-vs-index: `claimed = p` means tickets `0..p-1` have been issued, so the
+highest claimed index is `p-1`. The producer that may be mid-write sits at `p-1`,
+which `c < p` already covers. `c == p` is the first *unissued* index, i.e. empty.
+
+**v4 (correct).** Conditional claim: load `c`, bail if `c >= claimed` without
+touching `consumed`, then `compare_exchange(c → c+1)` to commit, then wait for
+`WRITTEN`. The asymmetry stated plainly: **push always succeeds so blind
+`fetch_add` is fine; pop can be empty so it needs a conditional CAS.**
+
+**v4 bug, caught by inspection, untested at the time.** The head-advance branch
+moved `cur_seg = next` but did not reload `consuming` from the new segment, so
+after exhausting a segment `pop` walked to the end of the chain and returned `None`,
+skipping every item in every later segment.
+
+---
+
+## 4. Tests that passed while testing nothing
+
+**The vacuous `assert_ne!`.** `test_auto_create_new_segment` asserted
+`assert_ne!(queue.head.as_ptr(), queue.tail.as_ptr())` and passed. `AtomicPtr::as_ptr()`
+returns `*mut *mut T` — the address of the *atomic itself*, not the pointer it
+holds. Two different fields always differ, so the assertion was a tautology. It
+only surfaced when the user changed it to `assert_eq!` for the "one segment"
+precondition and saw the failure: `0x1703ae5c8` vs `0x1703ae5d0` — **exactly 8 bytes
+apart**, which is also how the `head`/`tail` same-cache-line observation was found.
+
+**The weak concurrent test.** First version: 2 producers spawned *before* the
+consumers (so they finished during consumer-spawn overhead), 99 items total, no
+no-loss/no-duplicate assertion at all, and an ordering assertion
+(`assert!(v[i+1] > v[i])`) that demanded *global* increasing order across both
+producers. It passed only because the producers happened to serialise; under real
+interleaving it would have false-failed on correct behaviour. Rewritten with a
+barrier, 80 000 items, values encoded as `producer * N + seq`, a `vec![false; TOTAL]`
+mark-once check, and *per-producer* ordering checked within each consumer's own log.
+
+---
+
+## 5. Miri — two UB reports, and the lesson about hardware tests
+
+### 5a. The headline result
+
+| Tool | Outcome |
+|---|---|
+| Stress test ×100, **release**, 80 000 items, 8 threads | 🟢 0/100 fail |
+| Stress test ×100, **debug** | 🟢 0/100 fail |
+| **Miri, first run** | 🔴 **UB: data race** |
+
+**200/200 green on real hardware while the code contained real UB.** The window
+never opened: `value` and `state` sit on the same cache line and Apple Silicon is
+practically strong for this pattern. This is the empirical case for why loom and
+Miri exist, and it is worth stating in the blog exactly this way, with the numbers.
+
+### 5b. UB #1 — the value handoff (all orderings `Relaxed`)
+
+```
+error: Undefined Behavior: Data race detected between (1) retag write on thread
+`unnamed-9` and (2) retag read of type `std::mem::MaybeUninit<usize>` on thread
+`unnamed-3` at alloc58566+0x10
+   --> crates/concurrent/src/seg_queue.rs:135
+135 |   return Some((*(*cur_seg).slots[idx].value.get()).assume_init_read());
+    |   (2) just happened here
+help: and (1) occurred earlier here
+   --> crates/concurrent/src/seg_queue.rs:66
+ 66 |   (*(*cur_seg).slots[idx].value.get()).write(value);
+```
+
+Miri says *where*, not *what to do*. The user derived the fix himself:
+`state.store(WRITTEN, Release)` in push, `state.load(Acquire)` in pop.
+
+### 5c. UB #2 — publishing a pointer before its pointee
+
+Same shape, different signal variable: the value write/read pair was fixed, but
+the *segment* was still published with `Relaxed`.
+
+```
+error: Undefined Behavior: Data race detected between (1) retag write on thread
+`unnamed-8` and (2) atomic read-modify-write on thread `unnamed-7` at alloc82546+0x210
+   --> crates/concurrent/src/seg_queue.rs:63
+ 63 |   let idx = unsafe { (*cur_seg).claimed.fetch_add(1, Ordering::Release) };
+    |   (2) just happened here
+help: and (1) occurred earlier here
+   --> crates/concurrent/src/seg_queue.rs:80
+ 80 |   let raw = Box::into_raw(Box::new(Segment::new()));
+```
+
+(An earlier variant of the same race reported (2) as `consumed.load` in `pop`.)
+
+The non-obvious part, and a genuine user objection — *"`consumed` is an
+`AtomicUsize`, how can reading it race?"* — **atomicity belongs to the access, not
+to the type.** The segment's fields are *initialised* by plain non-atomic writes
+inside `Box::new`, so init-write vs atomic-load is still a data race without a
+happens-before edge.
+
+Framing that unlocked it: **every pointer is also a signal.** Publishing a pointer
+publishes everything the pointee contains. `state` guards `value`; `next`, `tail`
+and `head` each guard an entire `Segment`.
+
+### 5d. The CAS blind spot — the hardest single step
+
+After Release on the `next` CAS *success* ordering, Miri still failed. The hole was
+the **failure** ordering:
+
+```rust
+next.compare_exchange(null_mut(), raw, Release, Relaxed)
+//                                              ^^^^^^^ a LOAD, and its result is used
+Err(winner) => { drop(Box::from_raw(raw)); next = winner; }   // then dereferenced
+```
+
+A failing CAS performs **only a load**, and its ordering is the failure ordering.
+The loser receives the winner's pointer through a `Relaxed` load, so it sees the
+address without the contents. Rules that fell out:
+
+- **A floor (Release) exists only where there is a store; a ceiling (Acquire) only
+  where there is a load.** CAS success = load + store, so it can need both; CAS
+  failure = load only, so `Release`/`AcqRel` as a failure ordering is meaningless.
+- My first statement of the rule was too broad — *"if you use the `Err` value you
+  need Acquire"*. Corrected: **only if that value is a handle to memory whose
+  contents you will read.** `consumed`'s `Err` value is used too, but it is a
+  *number*, not a door into a room, so `Relaxed` is right. `next` returns a key to a
+  room that must already be furnished.
+
+### 5e. Reasoning beats tools, demonstrated
+
+`tail.load` was weakened from `Acquire` to `Relaxed` and Miri stayed green across
+seeds. It was still a latent race: it only bites when a thread's *first* sight of a
+segment comes via `tail` rather than via its own `Acquire` on `next`, which is rare.
+Lesson: **Miri green after a weakening is not a licence.** Authority order is
+(1) happens-before derivation, (2) loom (near-verifier for its bounded model),
+(3) Miri (falsifier only), (4) asm/bench (cost only).
+
+### 5f. "Miri reports UB" that wasn't
+
+Later, Miri exited 1 with 20 `error: memory leaked` lines and no UB. Miri prints
+both kinds as `error:`, so they are easy to conflate. The leak is R0 working as
+designed; **the leak count (20 across 9 tests) is the acceptance test for B1** — drop
+`-Zmiri-ignore-leaks` and it must reach 0. I also misread this once myself: an early
+run showed `EXIT=1` with `test result: ok` and I reported it as clean.
+
+Also: `#[cfg(miri)]` shrinking of the workload constants took Miri from **379 s to
+2.7 s**, which is what made a 20-seed sweep possible at all.
+
+---
+
+## 6. loom
+
+**Setup friction, all real:** missing `AtomicPtr` in the loom import branch;
+`SEG_LEN` not shrunk under `cfg(loom)` (state-space explosion); `loom::cell::UnsafeCell`
+has no `.get()`, only `with`/`with_mut` closures, which forced the `Slot::write_value`
+/ `read_existing_value` helpers; `#[cfg(loom)]` instead of `#[cfg(all(test, loom))]`,
+which the compiler itself diagnosed by reporting the test module's imports as unused.
+Correct and non-obvious choice made by the user unprompted: map the spin hint to
+`loom::thread::yield_now()`, without which loom deadlocks at the wait loop.
+
+Also: `RUSTFLAGS="--cfg loom"` is needed because cargo has no `--cfg` flag (I wrote
+the wrong command first), and a separate `CARGO_TARGET_DIR` avoids rebuilding the
+workspace on every toggle.
+
+**The vacuous loom test.** First version asserted `assert_eq!(queue.pop(), Some(1))`
+— which false-fails, since a consumer may legitimately run first. The "fix" was to
+move `join()` *before* `pop()`. That made it pass, and **destroyed the test**:
+`join()` is itself a happens-before edge, so the handoff ordering was no longer
+exercised at all. The correct shape allows both outcomes and asserts the invariant:
+`got = pop()` → `join()` → `rest = pop()` → exactly one of them is `Some(1)`.
+
+Diagnostic value of matching on the pair: `(Some, Some)` = duplicate,
+`(None, None)` = lost, `(Some(garbage), None)` = ordering bug.
+
+**Five one-axis tests**, then the negative control that proves they have teeth.
+Weakening `state.store` to `Relaxed`:
+
+| test | result |
+|---|---|
+| L1 `one_producer_one_consumer` | 🔴 FAILED |
+| L5 `empty_pop_does_not_burn_the_slot` | 🔴 FAILED |
+| L2 `two_producers_claim_distinct_slots` | 🟢 ok |
+| L3 `two_consumers_take_one_value_once` | 🟢 ok |
+| L4 `two_producers_race_to_install_next_segment` | 🟢 ok |
+
+Exactly the right shape: only the two tests whose axis *is* the `state` handoff
+failed. One-axis-per-test means a failure names the broken edge.
+
+L4 carries a comment recording that loom 0.7 does not reliably model handoffs
+through `compare_exchange`, so green there is weak evidence.
+
+---
+
+## 7. Benchmarks — where my own hypothesis was wrong
+
+Full numbers live in `seg_queue_bench_results.md`. What belongs here is the arc.
+
+**My hypothesis was aimed at the wrong pair.** I pointed at `head`/`tail` because
+they are 8 bytes apart and logically disjoint. They are also written **once per 32
+ops**, which makes them cold. The hot pair is `Segment::{claimed, consumed}` — same
+adjacency, written on *every* push and pop.
+
+**The number that refuted me was already in the user's own notes.**
+`cache_padded_bench_results.md` had measured false sharing at 12.75 ns vs 2.09 ns
+uncontended — a ~10.7 ns penalty. `10.7 / 32 = 0.33 ns/op` kills the `head`/`tail`
+hypothesis in one division. The whole detour was avoidable by opening a file.
+
+**Padding is not free:** spsc −34%, uncontended +74%. Separating the counters costs
+a second cache line per push+pop and a larger `Segment` to initialise.
+
+**The caller dominated everything.** Giving the bench drain loops a backoff took
+spsc from 28.3 → 12.5 ns (−56%), reproducibly, while backoff *inside* `pop` was
+noise. A consumer hot-spinning on `None` floods the shared lines and starves the
+producer it is waiting for.
+
+**Why the mutex had looked so strong:** its consumer must take the lock to discover
+emptiness, which self-throttles it and leaves the producer room. **The lock's
+serialisation was acting as accidental backpressure.** A lock-free queue has no such
+throttle and must re-create it explicitly — the cost side of `pop() -> Option<T>`
+refusing to own the wait policy.
+
+**The sealed prediction, and its falsification.** First prediction exercise under
+the new discipline. User predicted 70 / 35 / 45 / 45 for
+uncontended / spsc / 2p2c / 4p4c after the check-then-claim refactor, reasoning
+*"`pop` is deterministic now, so the thread count stops mattering"*.
+Measured 17.3 / 13.8 / **44.5** / 71.9 — one hit inside 1%, and the thesis refuted
+(2p2c = 44.5 vs 4p4c = 71.9).
+
+Why the reasoning failed, which is the whole point of sealing it: removing the wait
+from inside `pop` bounds `pop`'s instruction count but **relocates** the waiting.
+A consumer that owned its slot used to spin on *one line it already held*; now it
+bails out and re-enters, touching `head` + `consumed` + `claimed` + `state` each
+time. Coherence traffic is the dominant term, so a local wait converted into a
+global retry **multiplies** it.
+
+**The follow-up hypothesis, also falsified.** User argued the 4p4c deficit was the
+caller's fault and a smarter consumer (or a notified future) would fix it. Making
+the drain policy an explicit swept dimension answered it in one run: SegQueue loses
+to the mutex under **all three** policies (75–85 vs ~54), while the mutex is flat at
+54.1–54.6. At 8 contending threads serialisation is simply the better strategy —
+the lock converts contention into queueing, the lock-free structure converts it
+into coherence traffic. Policy swings SegQueue 1.9× and the mutex not at all, which
+is the cleanest confirmation of the accidental-backpressure finding.
+
+Counter-intuitive sub-result: **hot spinning is the worst spsc policy** (23.4 vs
+12.5 for yield) with only 2 threads and no CPU oversubscription — the spinner
+starves the producer through *coherence traffic*, not CPU.
+
+---
+
+## 8. A side finding: `Backoff` is tuned for x86
+
+`SPIN_LIMIT = 6` is inherited from `crossbeam-utils`, tuned against x86 `pause`
+(~1 ns). `core::hint::spin_loop()` lowers to `isb SY` on aarch64, measured at
+**12.2 ns**. So the same constant buys a 12× larger budget: 784 ns at the capped
+burst, ~1.55 µs for the full ladder before the first yield (vs ~64 ns / ~127 ns on
+x86). The module doc claimed "~64 ns on modern x86/aarch64" and was wrong here by
+12×.
+
+Wasted CPU is defensible (`yield_now` measures 4.6 µs, so ~1.55 µs of spinning
+first is a sane ~1:3 ratio). The non-obvious cost is **check granularity**: the
+caller re-tests its condition every 784 ns instead of every ~64 ns. Harmless for
+waiters resolving in tens of ns; not harmless in the 100 ns–1 µs band.
+
+The user found this by reading his own measurement notes back against a doc claim —
+the "notes directory answers instead of memory" mechanism working as intended.
+
+---
+
+## 9. Meta — process observations worth a paragraph in the blog
+
+- **Where the work divided well:** the user wrote every line touching atomics,
+  `unsafe`, ordering and lock-free protocol; I wrote scaffolding and bench harness.
+  Where it divided *badly*: I also formed the benchmark hypothesis and interpreted
+  the numbers, which is where the learning was. I got the false-sharing hypothesis
+  wrong and the measurement corrected *me* — that correction should have been his.
+  Fix adopted mid-build: the user seals a numeric prediction in `notes/` before each
+  measurement; I keep the harness but not the hypothesis.
+- **Three buckets are the whole cost model**, not a memorised table: same-core
+  L1 ~1–2 ns, cross-core line transfer ~10 ns, scheduler involvement ~5 µs. They are
+  5× and 500× apart, so only the bucket matters, never the digit. Everything else is
+  counting frequency — which is exactly the step that would have killed the
+  `head`/`tail` hypothesis.
+- **The queue's contract pushes a performance-critical decision onto the caller**,
+  and the caller will get it wrong. That is the honest cost of `pop() -> Option<T>`,
+  and it is the thread that ties the brainstorm's single-responsibility argument to
+  the final benchmark table.
+
+---
+
+## Running TODO for the blog
+
+- [ ] B1 (naive refcount) — expected to fail; capture the Miri UAF verbatim here
+- [ ] B2 (hazard pointers) — capture the per-read fence cost
+- [ ] B3 (epoch) — capture the quiescence design and the loom adversarial cases
+- [ ] A3 / CB — capture the layout comparison and the diff against crossbeam source
+- [ ] **Delete this file once the blog is finalised**
