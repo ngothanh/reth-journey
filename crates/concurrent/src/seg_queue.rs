@@ -107,7 +107,7 @@ impl<T> Segment<T> {
     }
 
     fn acquire_ref(&self) {
-        self.ref_count.fetch_add(1, Ordering::Release);
+        self.ref_count.fetch_add(1, Ordering::Relaxed);
     }
 
     fn release_ref(&self) -> usize {
@@ -256,19 +256,14 @@ impl<T> SegQueue<T> {
                 break;
             }
 
-            // Held? The Acquire pairs with `release_ref`'s Release, so every prior
-            // holder's writes are visible before the destructor runs.
             if s.ref_count.load(Ordering::Acquire) != 0 {
                 break;
             }
-
-            // Read `next` BEFORE freeing: afterwards the field is gone.
             let next = s.next.load(Ordering::Acquire);
             if next.is_null() {
                 break;
             }
 
-            // Only the flag holder walks the cursor, so a plain store suffices.
             self.reclaim.store(next, Ordering::Relaxed);
             unsafe { drop(Box::from_raw(seg)) };
         }
