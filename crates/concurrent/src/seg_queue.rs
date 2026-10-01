@@ -80,6 +80,11 @@ struct Segment<T> {
 }
 
 #[repr(C)]
+struct SegGuard<T> {
+    segment: *mut Segment<T>,
+}
+
+#[repr(C)]
 pub struct SegQueue<T> {
     head: CachePadded<AtomicPtr<Segment<T>>>,
     tail: CachePadded<AtomicPtr<Segment<T>>>,
@@ -105,6 +110,31 @@ impl<T> Segment<T> {
 
     fn release_ref(&self) -> usize {
         self.ref_count.fetch_sub(1, Ordering::Relaxed)
+    }
+}
+
+impl<T> SegGuard<T> {
+    fn acquire(seg: *mut Segment<T>) -> Self {
+        SegGuard { segment: seg }
+    }
+
+    fn get(&self) -> &Segment<T> {
+        unsafe {
+            (*self.segment).acquire_ref();
+            &*self.segment
+        }
+    }
+
+    fn as_ptr(&self) -> *mut Segment<T> {
+        self.segment
+    }
+}
+
+impl<T> Drop for SegGuard<T> {
+    fn drop(&mut self) {
+        if unsafe { (*self.segment).release_ref() } == 1 {
+            todo!()
+        }
     }
 }
 
