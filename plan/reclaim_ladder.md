@@ -12,7 +12,32 @@ acceptance test that can fail. Every bench is preceded by a numeric prediction s
 
 ---
 
-## The steps
+## Where we are
+
+Spent ≈ **26 h** (from `notes/seg_queue_build_log.md` and the old estimate lines):
+
+| Done | What it bought | Spent |
+|---|---|---:|
+| **B0** queue on leak | push/pop, ticket cursors, boundary CAS, 9 std tests, 5 loom models, Miri clean with `-Zmiri-ignore-leaks`, bench vs `Mutex<VecDeque>` | ~8 h |
+| **B0.5** check-then-claim `pop` | removed the unbounded internal spin; pop's worst case stops depending on another thread's scheduler | ~1.5 h |
+| **B1** refcount, and its impossibility | the announcement-is-the-dangerous-access proof: a counter inside the object cannot be made sound. Also RAII `SegGuard`, the three free conditions, and the ordered trailing `reclaim` cursor — **all three survive into the final design** | ~3 h |
+| **Blog** 6 parts + 33 figures | on branch `blog/segqueue` | ~11 h |
+| **Research** | `notes/smr_inventory.md` (192 mechanisms), `notes/folly_gap_analysis.md` (~24 gaps) | ~2 h |
+
+Currently in `crates/concurrent/src/seg_queue.rs`: 9 passing tests, 5 loom models, the refcount
+and the ordered walk. **R1 deletes the refcount** — its value is already banked in blog Part 5,
+and the code was only ever kept as a documented failure.
+
+---
+
+## Remaining: 87 h
+
+| | Steps | Hours |
+|---|---|---:|
+| **Phase 1 — reclamation axis** | R0 → R6 | **69 h** |
+| **Phase 2 — layout axis (the crossbeam techniques)** | L1 → L2 | **18 h** |
+
+## Phase 1 — the steps
 
 | Step | What you build | The wall that forces the next step | Est |
 |---|---|---|---:|
@@ -24,7 +49,7 @@ acceptance test that can fail. Every bench is preceded by a numeric prediction s
 | **R5** | **Epoch (EBR)** behind the trait. Announce epochs; three-generation garbage; advance policy. | Works, and pays per *critical section* instead of per pointer — but garbage is now unbounded if a thread parks pinned | 20 h |
 | **R6** | The **bench matrix**: `Leak` / `Hazard` / `Epoch` / `Mutex<VecDeque>` / real `crossbeam`, same queue code, one variable at a time. | Reclamation is now isolated from layout. Whatever gap remains against crossbeam is attributable to **layout**, which is the layout axis below | 8 h |
 
-**Subtotal ≈ 69 h.** Then the layout axis, unchanged: **A3** layout A, global index (7 h) → **CB** crossbeam-exact, block cursor + DESTROY-bit (11 h).
+**Phase 1 subtotal ≈ 69 h.** Phase 2 (the layout axis and crossbeam's own scheme) is below.
 
 ---
 
@@ -164,11 +189,59 @@ the prediction note so a bad HP number is explainable rather than mysterious.
 
 ---
 
-## Not in this ladder
+---
 
-- **EventCount** — scheduled in `concurrent` (`PRODUCT_TREE.md` §9), blocks
-  `channel + select` and the MPMC ring's N-consumer blocking story. Independent of
-  reclamation; do not tangle it in here.
-- **`CachePadded` / `Backoff` corrections** — also `concurrent`, also independent.
-- The remaining ~24 folly techniques — `notes/folly_gap_analysis.md`, each picked up when
-  its own artifact is built.
+## Phase 2 — the layout axis, and crossbeam's own technique
+
+Phase 1 makes reclamation swappable, so a measurement can finally change **one** variable.
+Phase 2 does the same for layout. This is also where crossbeam's actual reclamation scheme
+gets built — which is *not* one of Phase 1's, and that is the point.
+
+| Step | What you build | The wall that forces the next step | Est |
+|---|---|---|---:|
+| **L1** | **Layout A — a global index.** Replace the per-segment `claimed`/`consumed` pair with one global position (index + block pointer), the crossbeam family's shape. Reclamation held fixed at `Epoch`. | Bench `B-epoch` vs `A-epoch` is now **pure layout**: one permanently-hot contended line that never moves, against a cursor pair that migrates to each new segment and is cold on arrival. Whichever wins, the remaining gap to real crossbeam is neither layout nor reclamation — it is crossbeam's own scheme | 7 h |
+| **L2** | **crossbeam-exact.** Block cursor, per-slot `WRITE`/`READ`/`DESTROY` bits, and the tunings. Then diff against the real source. | — endpoint | 11 h |
+
+### Why L2 is a third reclamation technique and not a `Reclaim` implementation
+
+Real `crossbeam_queue::SegQueue` does **not** use `crossbeam-epoch`. It self-reclaims: each
+slot carries state bits, and the last thread to finish with a block frees it. The
+participant set per slot is statically known and finite, which is what makes a cooperative
+hand-off possible at all.
+
+**That cannot be a `Reclaim` implementor.** The announcement is per-slot state *inside the
+structure being reclaimed* — the same shape as the ordered walk from B1, and the same reason
+`is_protected` cannot be in the trait. So L2 is deliberately outside Phase 1's abstraction,
+and the teaching question it answers is: *crossbeam ships an epoch crate, so why doesn't its
+queue use it?* Answer: this structure self-reclaims more cheaply than pin/unpin, and the
+trait that unifies hazard pointers with epochs cannot express it.
+
+---
+
+## Reclamation techniques the finished plan covers
+
+Five families, which is the "lose no technique" claim made concrete:
+
+| Technique | Where | State |
+|---|---|---|
+| Leak / no reclamation | R1 `Leak` | baseline |
+| Reference count inside the object | B1 | **done — proven unsound** |
+| RAII guard + three free conditions + ordered trailing cursor | B1 | **done — all three survive** |
+| Hazard pointers (announce addresses) | R4 | |
+| Epoch (announce time) | R5 | |
+| Per-slot cooperative hand-off (`DESTROY` bit) | L2 | not a trait impl, on purpose |
+
+Deliberately out of scope, recorded in `notes/smr_inventory.md` so the decision is explicit
+rather than an oversight: QSBR, RCU, hazard eras / IBR, Hyaline, Crystalline, VBR and the
+optimistic-access family. VBR is the interesting one — it is the only family that drops
+requirement (A) entirely, at the cost of a type-preserving allocator and a version word per
+mutable field.
+
+---
+
+## Not in this plan
+
+- **EventCount**, `CachePadded` and `Backoff` corrections — `concurrent`, not SegQueue.
+  Independent; `PRODUCT_TREE.md` §9.
+- The remaining folly gaps — `notes/folly_gap_analysis.md`, each picked up with its own
+  artifact.
