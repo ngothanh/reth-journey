@@ -1,4 +1,4 @@
-# `reclaim` + SegQueue — the rung ladder
+# `reclaim` + SegQueue — the build steps
 
 Reworked 2026-10-03. Supersedes the B0→B3 ordering, which built reclamation schemes
 *inside* SegQueue. They are general concepts and now live in their own Layer-1 crate
@@ -6,15 +6,15 @@ Reworked 2026-10-03. Supersedes the B0→B3 ordering, which built reclamation sc
 trivial implementation to integrate against, then a second client to falsify the contract,
 then the real implementations.**
 
-Each rung ends at a wall that is the reason the next rung exists, and each has an
+Each step ends at a wall that is the reason the next step exists, and each has an
 acceptance test that can fail. Every bench is preceded by a numeric prediction sealed in
 `notes/` first.
 
 ---
 
-## The ladder
+## The steps
 
-| Rung | What you build | The wall that forces the next rung | Est |
+| Step | What you build | The wall that forces the next step | Est |
 |---|---|---|---:|
 | **R0** | The `Reclaim` trait and **its safety documentation**. No scheme, no registry. The docs are the deliverable. | A contract with no implementor and no client is unfalsifiable — nothing yet says it is *writable* | 4 h |
 | **R1** | `Leak` — the trivial implementor. `shield()` is a no-op, `protect` is a plain load, `retire` drops the pointer on the floor. Then `SegQueue<T, R: Reclaim>` and the protect-source restructure. | Proves the trait is *integrable* and the queue still works — but `Leak` exercises none of the contract, and nothing confirms the trait fits anything but SegQueue | 8 h |
@@ -106,7 +106,7 @@ a vacuous validate.
 - 9 std tests and 5 loom models green against `SegQueue<T, Leak>`
 - Miri clean with `-Zmiri-ignore-leaks`
 - A test asserting the chain **does** grow — `Leak` must be observably leaking, or the
-  rung proved nothing
+  step proved nothing
 
 ---
 
@@ -156,7 +156,7 @@ Shape: N producers → 1 consumer, N ∈ {1,2,4,8} — the shape both real calle
 Seal the prediction first. The open question it answers: the previous measurement went
 `7.7 → 77.8 → 105.9 → 104.9` ns against crossbeam's flat `13.8 → 16.7`. If `Epoch` lands
 near crossbeam, reclamation was the whole story. If it stays 6× off, layout is implicated
-and A3 becomes the interesting rung rather than a formality.
+and A3 becomes the interesting step rather than a formality.
 
 Note before measuring: HP's per-protect `SeqCst` fence is the known cost, and folly's fix
 (asymmetric barriers via `membarrier`) is **not available on macOS/aarch64**. Put that in
