@@ -500,7 +500,7 @@ progression, `SimpleEncode`, and the Pin examples. `cargo test --workspace --all
   because `concurrent` (SegQueue, skiplist) and `bufpool` both consume it. Contract and the
   192-mechanism source inventory: `notes/smr_inventory.md`. A second client (Treiber stack) is part
   of the scope — a trait backing only SegQueue is not a trait. **Rung ladder, acceptance tests and
-  hour estimates: `plan/reclaim_ladder.md`, which is now the single plan for all remaining SegQueue work (87 h) including the crossbeam layout and DESTROY-bit steps.**
+  hour estimates: `plan/reclaim_ladder.md`, which is now the single plan for all remaining SegQueue work (91 h, implementation only) including the crossbeam layout and DESTROY-bit steps.**
 - `EventCount` — lock-free blocking handoff. `Parker` is 1:1 and cannot express "N consumers parked
   on one ring, wake one"; `Condvar` needs the mutex; `Semaphore` takes its `Mutex<State>` even when
   the waiter list is empty. Pack {epoch | waiter-count} in one word so notify is a single `fetch_add`

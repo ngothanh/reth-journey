@@ -1,118 +1,103 @@
-# `reclaim` + SegQueue — the build steps
+# `reclaim` + SegQueue — implementation plan
 
-Reworked 2026-10-03. Supersedes the B0→B3 ordering, which built reclamation schemes
-*inside* SegQueue. They are general concepts and now live in their own Layer-1 crate
-(`PRODUCT_TREE.md` §3/§4/§6/§8/§9), so the order inverts: **contract first, then one
-trivial implementation to integrate against, then a second client to falsify the contract,
-then the real implementations.**
-
-Each step ends at a wall that is the reason the next step exists, and each has an
-acceptance test that can fail. Every bench is preceded by a numeric prediction sealed in
-`notes/` first.
+> **Component**: SegQueue (unbounded lock-free MPMC) + `reclaim` (safe memory reclamation)
+> **Crate(s) touched**: **[NEW]** `crates/reclaim/`; `concurrent` → `SegQueue` becomes generic over the scheme
+> **Bar**: (c) — both are Layer-1 substrate, so the two-track rule applies: a sealed numeric prediction *before* every measurement, then the measured number, then reconcile the gap
+> **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
+> **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
+> **Current position**: refcount built, proven unsound, and benched. Reclamation is the open problem.
+> **Remaining**: **≈ 91 h** across 6 steps
+> **Not counted here**: the blog. It is an output of finished work, not part of the build.
+> **Source research**: `notes/smr_inventory.md` (192 mechanisms from folly / crossbeam-epoch / haphazard / the literature) · `notes/folly_gap_analysis.md`
 
 ---
 
 ## Where we are
 
-Spent ≈ **26 h** (from `notes/seg_queue_build_log.md` and the old estimate lines):
+Spent ≈ **15 h** on implementation (approximate — from `notes/seg_queue_build_log.md`):
 
-| Done | What it bought | Spent |
-|---|---|---:|
-| **B0** queue on leak | push/pop, ticket cursors, boundary CAS, 9 std tests, 5 loom models, Miri clean with `-Zmiri-ignore-leaks`, bench vs `Mutex<VecDeque>` | ~8 h |
-| **B0.5** check-then-claim `pop` | removed the unbounded internal spin; pop's worst case stops depending on another thread's scheduler | ~1.5 h |
-| **B1** refcount, and its impossibility | the announcement-is-the-dangerous-access proof: a counter inside the object cannot be made sound. Also RAII `SegGuard`, the three free conditions, and the ordered trailing `reclaim` cursor — **all three survive into the final design** | ~3 h |
-| **Blog** 6 parts + 33 figures | on branch `blog/segqueue` | ~11 h |
-| **Research** | `notes/smr_inventory.md` (192 mechanisms), `notes/folly_gap_analysis.md` (~24 gaps) | ~2 h |
+| Done | What it bought |
+|---|---|
+| Queue on leak | push / pop, ticket cursors, boundary CAS, 9 std tests, 5 loom models, Miri clean with `-Zmiri-ignore-leaks`, bench vs `Mutex<VecDeque>` |
+| `pop` check-then-claim | removed the unbounded internal spin, so pop's worst case no longer depends on another thread's scheduler |
+| Refcount, **and its impossibility proof** | a counter inside the object cannot be made sound — the announcement *is* the dangerous access. Also produced three things that **survive into the final design**: the RAII guard, the three free conditions, and the ordered trailing `reclaim` cursor |
+| Benches, six rounds | the false-sharing pair is `Segment::{claimed, consumed}` not head/tail · padding is a trade (spsc −34 %, uncontended +74 %) · drain policy dominated everything (−56 %) · the real shape is N→1, not N→N · the real opponents are `std::sync::mpsc` and `crossbeam`, not a mutex |
 
-Currently in `crates/concurrent/src/seg_queue.rs`: 9 passing tests, 5 loom models, the refcount
-and the ordered walk. **R1 deletes the refcount** — its value is already banked in blog Part 5,
-and the code was only ever kept as a documented failure.
+In the tree today: 9 passing tests, 5 loom models, the refcount and the ordered walk.
+**Step 2 deletes the refcount** — its value is the proof, which is already banked.
 
 ---
 
-## Remaining: 87 h
+## The six steps
 
-| | Steps | Hours |
-|---|---|---:|
-| **Phase 1 — reclamation axis** | R0 → R6 | **69 h** |
-| **Phase 2 — layout axis (the crossbeam techniques)** | L1 → L2 | **18 h** |
-
-## Phase 1 — the steps
-
-| Step | What you build | The wall that forces the next step | Est |
-|---|---|---|---:|
-| **R0** | The `Reclaim` trait and **its safety documentation**. No scheme, no registry. The docs are the deliverable. | A contract with no implementor and no client is unfalsifiable — nothing yet says it is *writable* | 4 h |
-| **R1** | `Leak` — the trivial implementor. `shield()` is a no-op, `protect` is a plain load, `retire` drops the pointer on the floor. Then `SegQueue<T, R: Reclaim>` and the protect-source restructure. | Proves the trait is *integrable* and the queue still works — but `Leak` exercises none of the contract, and nothing confirms the trait fits anything but SegQueue | 8 h |
-| **R2** | A **Treiber stack** on the same trait. Second *client*, not second implementation. | Proves the trait is not SegQueue-shaped. Still only one implementor, so nothing confirms the trait is implementable by a scheme that actually reclaims | 5 h |
-| **R3** | The **registry**: immortal per-thread records + `Domain`. Shared by both real schemes; no reclamation policy yet. | Per-thread state that is never freed exists, but nothing announces into it | 10 h |
-| **R4** | **Hazard pointers** behind the trait. Announce addresses; validate; scan. | Works. Costs a store and a fence on *every* protect — per-pointer, on the hot path | 14 h |
-| **R5** | **Epoch (EBR)** behind the trait. Announce epochs; three-generation garbage; advance policy. | Works, and pays per *critical section* instead of per pointer — but garbage is now unbounded if a thread parks pinned | 20 h |
-| **R6** | The **bench matrix**: `Leak` / `Hazard` / `Epoch` / `Mutex<VecDeque>` / real `crossbeam`, same queue code, one variable at a time. | Reclamation is now isolated from layout. Whatever gap remains against crossbeam is attributable to **layout**, which is the layout axis below | 8 h |
-
-**Phase 1 subtotal ≈ 69 h.** Phase 2 (the layout axis and crossbeam's own scheme) is below.
+| # | Step | Deliverable | Wall that forces the next step | Est |
+|---|---|---|---|---:|
+| **1** | **Define the problem** | the `Reclaim` trait and its safety documentation. No scheme, no registry. | A contract with no implementor and no client is unfalsifiable | 4 h |
+| **2** | **Integrate with SegQueue** | `Leak` (the trivial implementor) · `SegQueue<T, R: Reclaim>` · the protect-source restructure · a Treiber stack as a second client | Integrable and not SegQueue-shaped — but nothing yet reclaims anything | 13 h |
+| **3** | **Implement the schemes** | the shared registry + `Domain` (10 h) · hazard pointers (14 h) · epoch (20 h) | Two schemes exist behind one interface and have never been compared | 44 h |
+| **4** | **Bench the reclamation axis** | `Leak` / `Hazard` / `Epoch` / `Mutex<VecDeque>` / real `crossbeam`, identical queue code | Reclamation is now isolated. Any remaining gap to crossbeam is **layout** or **crossbeam's own scheme** — and neither has been built | 8 h |
+| **5** | **The crossbeam approach** | layout A, a global index, reclamation held fixed (7 h) · crossbeam-exact: block cursor + per-slot `WRITE`/`READ`/`DESTROY` bits (11 h) | Everything is built; nothing has been compared head to head | 18 h |
+| **6** | **Final bench — which wins, and why** | the full matrix, one variable per comparison, and the written argument for the winner | — endpoint | 4 h |
 
 ---
 
-## R0 — the contract
+## Step 1 — Define the problem
 
-The deliverable is the safety documentation, because that is the part that is load-bearing
-and the part that is wrong in most libraries.
+The deliverable is the safety documentation, because that is the load-bearing part and the
+part most libraries get wrong.
 
 ### What the docs must state
 
 An SMR scheme's safety argument has two halves, and a scheme supplies only one:
 
-- **(A) Unobtainability** — after `retire(p)`, no thread that does not already hold `p`
-  may obtain it. **The data structure supplies this.**
+- **(A) Unobtainability** — after `retire(p)`, no thread that does not already hold `p` may
+  obtain it. **The data structure supplies this.**
 - **(B) Grace** — threads that already hold `p` eventually let go. **The scheme supplies
   this.**
 
-"Unlink before retire" is the usual phrasing and it is a special case. The precise
-statement is about protect sources:
+"Unlink before retire" is the usual phrasing and it is a special case. The precise statement
+is about protect sources:
 
 > **The set of atomics ever passed to `protect` is the root set. `retire(p)` is sound once
-> `p` is unreachable from that root set.** A heap edge nobody protects through is not a
-> root.
+> `p` is unreachable from that root set.** A heap edge nobody protects through is not a root.
 
-Source: `notes/smr_inventory.md`, which is also why hazard pointers apply to only 3 of 18
-data structures in Singh's survey.
+This is why hazard pointers apply to only 3 of 18 data structures in Singh's survey.
 
-### Open questions to settle at R0
+### Open questions to settle here
 
-Decide these before writing the trait, because each one changes the signature:
+Each one changes the signature, so decide before writing:
 
-1. **Shield granularity.** One pointer per shield, so two simultaneous protections means
-   two shields? Or N slots per shield? HP has a real per-record limit; EBR has none.
-   Whichever is chosen imposes HP's constraint on EBR or hides it.
-2. **Does `retire` take a drop function**, or is `T: Send` enough to monomorphise
+1. **Shield granularity** — one pointer per shield, so two simultaneous protections means two
+   shields? Or N slots per shield? Hazard pointers have a real per-record limit; epoch has
+   none. Either choice imposes HP's constraint on epoch or hides it.
+2. **Does `retire` carry a drop function**, or is `T: Send` enough to monomorphise
    `drop_in_place`?
-3. **Who owns the retire list.** This is the live trade: SegQueue's chain from `reclaim`
-   to `head` *is* a retire list, in order, for free. A scheme-owned retire list throws
-   that away and allocates. EBR needs its own garbage bags regardless.
-4. **`Domain` or one global registry.** Global is simpler and is what made two tests race
-   each other in the discarded prototype; `Domain` is the standard answer.
+3. **Who owns the retire list.** The live trade: SegQueue's chain from `reclaim` to `head`
+   *is* a retire list — ordered, in the structure, free. A scheme-owned list throws that away
+   and allocates. Epoch needs its own garbage bags regardless.
+4. **`Domain`, or one global registry.** Global is simpler, and is what made two tests race
+   each other in the discarded prototype.
 
-### Known trap
+### Known trap, to state in the docs
 
-A refcount-in-the-object *can* implement this trait and still be unsound: `protect` would
-be `fetch_add` on the object, which is the announcement-is-the-dangerous-access bug from
-blog Part 5. **The trait's safety docs constrain the client, not the implementor.** The
-implementor needs its own soundness argument, which is what R4 and R5 are.
+A refcount-in-the-object **can** implement this trait and still be unsound: `protect` would be
+`fetch_add` on the object, which is exactly the bug already proven. **The safety docs constrain
+the client, not the implementor.** Each scheme needs its own soundness argument.
 
 ---
 
-## R1 — `Leak`, and the restructure
+## Step 2 — Integrate with SegQueue
 
-### Why `Leak` first
+### Why a `Leak` implementor comes first
 
-It is the only implementor that can exist before the registry, and it gives the refactor
-an acceptance test it otherwise would not have: `SegQueue<T, Leak>` must reproduce today's
+It is the only implementor that can exist before the registry, and it gives the refactor an
+acceptance test it otherwise would not have: `SegQueue<T, Leak>` must reproduce today's
 behaviour exactly.
 
 ### The restructure, and why it belongs here
 
-(A) is currently violated. `protect` is called on `&cur.next`, a write-once field, so a
-retired segment stays permanently obtainable. Move both advances onto the moving cursors:
+(A) is currently violated. `protect` is called on `&cur.next`, a write-once field, so a retired
+segment stays obtainable forever. Move both advances onto the moving cursors:
 
 ```
 pop advance:   CAS head A→B, then protect(&self.head)    // not &A.next
@@ -120,128 +105,142 @@ push advance:  CAS tail A→B, then protect(&self.tail)    // not &A.next
 ```
 
 The successor is still *read* out of `A.next` while `A` is shielded, and used as a CAS
-argument — it is just never announced through. Root set becomes `{head, tail}`, and (A)
-holds.
+argument — it is just never announced through. Root set becomes `{head, tail}`, and (A) holds.
+Falls out of it: shields per thread drops 2 → 1, because the overlap existed only to cover a
+vacuous validate.
 
-Falls out of it: shields-per-thread drops 2 → 1, because the overlap existed only to cover
-a vacuous validate.
+### The Treiber stack, and why it is in this step
+
+A second *client* validates the trait's client-facing surface; a second *implementation*
+validates the implementor-facing one. The stack is ~80 lines, a scheme is 200–400, so the cheap
+falsifier runs first. Finding out the trait is wrong after writing two schemes against it is the
+expensive order.
+
+It is also the contrasting case: a popped node genuinely *is* unlinked, so it satisfies (A) the
+ordinary way, while SegQueue satisfies it through the root-set argument. Having both is what
+makes the contract legible.
 
 ### Acceptance
 
 - 9 std tests and 5 loom models green against `SegQueue<T, Leak>`
 - Miri clean with `-Zmiri-ignore-leaks`
-- A test asserting the chain **does** grow — `Leak` must be observably leaking, or the
-  step proved nothing
+- a test asserting the chain **does** grow — `Leak` must be observably leaking, or the step
+  proved nothing
+- the Treiber stack passes its own loom models on the same trait
 
 ---
 
-## R2 — Treiber stack, before any real scheme
+## Step 3 — Implement the schemes
 
-Ordering argument: a second *client* validates the trait's client-facing surface; a second
-*implementation* validates the implementor-facing surface. The stack is ~80 lines, a
-reclaimer is 200–400, so the cheap falsifier goes first. Discovering the trait is wrong
-after writing two schemes against it is the expensive order.
+`notes/smr_inventory.md` marks every mechanism in folly's `hazptr` and in `crossbeam-epoch` as
+core / important / optional / skip. Take scope from the `core` rows; the rest is a menu.
 
-The stack is also the contrasting case: a popped node genuinely *is* unlinked, so it
-satisfies (A) the ordinary way. SegQueue satisfies it through the root-set argument. Having
-both is what makes the contract legible.
+Things to derive rather than copy:
 
----
+- **Hazard pointers** — the announce/validate pair is a store followed by a load of a *different*
+  variable on the same thread. `Release`/`Acquire` cannot order that. Loom is trustworthy here:
+  the handoff is store/load, not CAS, so the blind spot in `reference_loom_cas_blindspot` does
+  not apply.
+- **Epoch** — why **three** generations and not two. Build it with two and let loom produce the
+  counterexample.
 
-## R3–R5 — the schemes
-
-`notes/smr_inventory.md` marks every mechanism in folly's `hazptr` and in
-`crossbeam-epoch` as core / important / optional / skip. Pick scope from the `core` rows;
-treat the rest as a menu, not a checklist.
-
-Specific things to derive rather than copy:
-
-- **R4** — the announce/validate pair is a store followed by a load of a *different*
-  variable on the same thread. `Release`/`Acquire` cannot order that. Loom should be
-  trusted here: the handoff is store/load, not CAS, so the blind spot in
-  `reference_loom_cas_blindspot` does not apply.
-- **R5** — why **three** epoch generations and not two. Build it with two and let loom
-  produce the counterexample.
-
-Negative controls are mandatory at both (`reference_concurrent_test_checklist`). For a
-scan-based scheme they bracket it from both sides: always-protected must stall reclamation
-and fail a chain-length test; never-protected must produce a Miri UAF.
+Negative controls are mandatory for both (`reference_concurrent_test_checklist`). For a
+scan-based scheme they bracket it from both sides: always-protected must stall reclamation and
+fail a chain-length test; never-protected must produce a Miri UAF.
 
 ---
 
-## R6 — the bench
+## Step 4 — Bench the reclamation axis
 
-The reason the trait exists. Blog Part 6 could not attribute the 6× gap to crossbeam
-because crossbeam differs in **two** ways at once — layout *and* reclamation. Behind one
-trait, with identical queue code, reclamation becomes the only variable.
+The reason the trait exists. The previous measurement could not attribute the 6× gap to
+crossbeam, because crossbeam differs in **two** ways at once — layout *and* reclamation. Behind
+one trait, with identical queue code, reclamation becomes the only variable.
 
 Arms: `Leak` · `Hazard` · `Epoch` · `Mutex<VecDeque>` · real `crossbeam_queue::SegQueue`.
-Shape: N producers → 1 consumer, N ∈ {1,2,4,8} — the shape both real callers have.
+Shape: N producers → 1 consumer, N ∈ {1, 2, 4, 8} — the shape both real callers have.
 
-Seal the prediction first. The open question it answers: the previous measurement went
-`7.7 → 77.8 → 105.9 → 104.9` ns against crossbeam's flat `13.8 → 16.7`. If `Epoch` lands
-near crossbeam, reclamation was the whole story. If it stays 6× off, layout is implicated
-and A3 becomes the interesting step rather than a formality.
+Seal the prediction first. The open question: the last measurement went `7.7 → 77.8 → 105.9 →
+104.9` ns against crossbeam's flat `13.8 → 16.7`. If `Epoch` lands near crossbeam, reclamation
+was the whole story; if it stays 6× off, layout is implicated and step 5 becomes the interesting
+one rather than a formality.
 
-Note before measuring: HP's per-protect `SeqCst` fence is the known cost, and folly's fix
-(asymmetric barriers via `membarrier`) is **not available on macOS/aarch64**. Put that in
-the prediction note so a bad HP number is explainable rather than mysterious.
-
----
+Note before measuring: HP's per-protect `SeqCst` fence is the known cost, and folly's fix —
+asymmetric barriers via `membarrier` — is **not available on macOS/aarch64**. Put that in the
+prediction note so a bad HP number is explainable rather than mysterious.
 
 ---
 
-## Phase 2 — the layout axis, and crossbeam's own technique
+## Step 5 — The crossbeam approach
 
-Phase 1 makes reclamation swappable, so a measurement can finally change **one** variable.
-Phase 2 does the same for layout. This is also where crossbeam's actual reclamation scheme
-gets built — which is *not* one of Phase 1's, and that is the point.
+Two sub-steps, each moving one thing.
 
-| Step | What you build | The wall that forces the next step | Est |
-|---|---|---|---:|
-| **L1** | **Layout A — a global index.** Replace the per-segment `claimed`/`consumed` pair with one global position (index + block pointer), the crossbeam family's shape. Reclamation held fixed at `Epoch`. | Bench `B-epoch` vs `A-epoch` is now **pure layout**: one permanently-hot contended line that never moves, against a cursor pair that migrates to each new segment and is cold on arrival. Whichever wins, the remaining gap to real crossbeam is neither layout nor reclamation — it is crossbeam's own scheme | 7 h |
-| **L2** | **crossbeam-exact.** Block cursor, per-slot `WRITE`/`READ`/`DESTROY` bits, and the tunings. Then diff against the real source. | — endpoint | 11 h |
+**5a — layout A, a global index (7 h).** Replace the per-segment `claimed`/`consumed` pair with
+one global position (index + block pointer), the crossbeam family's shape. Reclamation held
+fixed at the best scheme from step 4, so the comparison is **pure layout**: one permanently-hot
+contended line that never moves, against a cursor pair that migrates to each new segment and
+arrives cold.
 
-### Why L2 is a third reclamation technique and not a `Reclaim` implementation
+**5b — crossbeam-exact (11 h).** Block cursor, per-slot `WRITE` / `READ` / `DESTROY` bits, the
+tunings. Then diff against the real source.
 
-Real `crossbeam_queue::SegQueue` does **not** use `crossbeam-epoch`. It self-reclaims: each
-slot carries state bits, and the last thread to finish with a block frees it. The
-participant set per slot is statically known and finite, which is what makes a cooperative
-hand-off possible at all.
+### Why 5b is a third reclamation technique and not a `Reclaim` implementation
+
+Real `crossbeam_queue::SegQueue` does **not** use `crossbeam-epoch`. It self-reclaims: each slot
+carries state bits, and the last thread to finish with a block frees it. The participant set per
+slot is statically known and finite, which is what makes a cooperative hand-off possible at all.
 
 **That cannot be a `Reclaim` implementor.** The announcement is per-slot state *inside the
-structure being reclaimed* — the same shape as the ordered walk from B1, and the same reason
-`is_protected` cannot be in the trait. So L2 is deliberately outside Phase 1's abstraction,
-and the teaching question it answers is: *crossbeam ships an epoch crate, so why doesn't its
-queue use it?* Answer: this structure self-reclaims more cheaply than pin/unpin, and the
-trait that unifies hazard pointers with epochs cannot express it.
+structure being reclaimed* — the same shape as the ordered walk, and the same reason a
+"is this pointer protected?" query cannot live on the trait (epoch has no per-pointer
+information and could not answer it).
+
+So 5b sits outside step 1's abstraction on purpose, and the question it answers is worth being
+able to answer out loud: *crossbeam ships an epoch crate — why doesn't its own queue use it?*
+Because this structure self-reclaims more cheaply than pin/unpin, and no interface unifying
+hazard pointers with epochs can express it.
 
 ---
 
-## Reclamation techniques the finished plan covers
+## Step 6 — Which wins, and why
 
-Five families, which is the "lose no technique" claim made concrete:
+The full matrix, and the written argument. Comparisons that are each one variable:
+
+| Comparison | Isolates |
+|---|---|
+| `Leak` vs `Hazard` vs `Epoch`, layout B | reclamation scheme |
+| layout B vs layout A, reclamation fixed | layout |
+| layout A + best scheme vs crossbeam-exact | crossbeam's own DESTROY-bit scheme |
+| crossbeam-exact vs real `crossbeam` | whatever is left: tunings and the source diff |
+
+The deliverable is not the fastest number. It is being able to say which of the four axes the
+difference came from, with a measurement per axis — which is the thing the earlier six rounds
+could not do.
+
+---
+
+## Reclamation techniques this plan covers
+
+Five families, which is the "lose no technique" goal made concrete:
 
 | Technique | Where | State |
 |---|---|---|
-| Leak / no reclamation | R1 `Leak` | baseline |
-| Reference count inside the object | B1 | **done — proven unsound** |
-| RAII guard + three free conditions + ordered trailing cursor | B1 | **done — all three survive** |
-| Hazard pointers (announce addresses) | R4 | |
-| Epoch (announce time) | R5 | |
-| Per-slot cooperative hand-off (`DESTROY` bit) | L2 | not a trait impl, on purpose |
+| Leak / no reclamation | step 2 | baseline |
+| Reference count inside the object | done | **proven unsound** |
+| RAII guard + three free conditions + ordered trailing cursor | done | **all three survive** |
+| Hazard pointers — announce *addresses* | step 3 | |
+| Epoch — announce *time* | step 3 | |
+| Per-slot cooperative hand-off (`DESTROY` bit) | step 5b | not a trait impl, on purpose |
 
-Deliberately out of scope, recorded in `notes/smr_inventory.md` so the decision is explicit
-rather than an oversight: QSBR, RCU, hazard eras / IBR, Hyaline, Crystalline, VBR and the
-optimistic-access family. VBR is the interesting one — it is the only family that drops
-requirement (A) entirely, at the cost of a type-preserving allocator and a version word per
-mutable field.
+Deliberately out of scope, recorded in `notes/smr_inventory.md` so it is a decision and not an
+oversight: QSBR, RCU, hazard eras / IBR, Hyaline, Crystalline, and the optimistic-access family.
+VBR is the interesting one — the only family that drops requirement (A) entirely, paying for it
+with a type-preserving allocator and a version word per mutable field.
 
 ---
 
 ## Not in this plan
 
-- **EventCount**, `CachePadded` and `Backoff` corrections — `concurrent`, not SegQueue.
-  Independent; `PRODUCT_TREE.md` §9.
-- The remaining folly gaps — `notes/folly_gap_analysis.md`, each picked up with its own
-  artifact.
+- **EventCount**, and the `CachePadded` / `Backoff` corrections — `concurrent`, not SegQueue.
+  Independent work, scheduled in `PRODUCT_TREE.md` §9.
+- The remaining folly gaps — `notes/folly_gap_analysis.md`, each picked up with its own artifact.
+- The blog. An output of finished work, not part of the build.
