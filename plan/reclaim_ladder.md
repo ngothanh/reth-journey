@@ -307,7 +307,7 @@ pop advance:   CAS head A→B, then protect(&self.head)    // not &A.next
 push advance:  CAS tail A→B, then protect(&self.tail)    // not &A.next
 ```
 
-The successor is still *read* out of `A.next` while `A` is shielded, and used as a CAS
+The successor is still *read* out of `A.next` while `A` is guarded, and used as a CAS
 argument — it is just never announced through. Root set becomes `{head, tail}`, and (A) holds.
 Falls out of it: guards per thread drops 2 → 1, because the overlap existed only to cover a
 vacuous validate.
