@@ -32,7 +32,7 @@ In the tree today: 9 passing tests, 5 loom models, the refcount and the ordered 
 
 | # | Step | Deliverable | Wall that forces the next step | Est |
 |---|---|---|---|---:|
-| **1** | **Define the problem** | the `Reclaim` trait and its safety documentation. No scheme, no registry. | A contract with no implementor and no client is unfalsifiable | 4 h |
+| **1** | **Define the problem** | the `Reclaim` trait and its safety documentation. No scheme, no registry. All signature questions are settled below — this step writes them down and proves they compile. | A contract with no implementor and no client is unfalsifiable | 4 h |
 | **2** | **Integrate with SegQueue** | `Leak` (the trivial implementor) · `SegQueue<T, R: Reclaim>` · the protect-source restructure · a Treiber stack as a second client | Integrable and not SegQueue-shaped — but nothing yet reclaims anything | 13 h |
 | **3** | **Implement the schemes** | the shared registry + `Domain` (10 h) · hazard pointers (14 h) · epoch **including its native typed API** (38 h) | Two schemes exist behind one interface and have never been compared | 62 h |
 | **4** | **Bench the reclamation axis** | `Leak` / `Hazard` / `Epoch` / `Mutex<VecDeque>` / real `crossbeam`, identical queue code | Reclamation is now isolated. Any remaining gap to crossbeam is **layout** or **crossbeam's own scheme** — and neither has been built | 8 h |
@@ -63,20 +63,78 @@ is about protect sources:
 
 This is why hazard pointers apply to only 3 of 18 data structures in Singh's survey.
 
-### Open questions to settle here
+### The retire list is scheme-owned (decided)
 
-Each one changes the signature, so decide before writing:
+`retire(ptr)` hands the object to the scheme, which batches and frees it — the folly /
+crossbeam-epoch / haphazard / seize shape. The alternative considered was a `stamp` +
+`can_free(ptr, stamp)` pair, letting SegQueue keep its chain as a free ordered retire list.
+Rejected, strongest reason first:
 
-1. **Shield granularity** — one pointer per shield, so two simultaneous protections means two
-   shields? Or N slots per shield? Hazard pointers have a real per-record limit; epoch has
-   none. Either choice imposes HP's constraint on epoch or hides it.
-2. **Does `retire` carry a drop function**, or is `T: Send` enough to monomorphise
-   `drop_in_place`?
-3. **Who owns the retire list.** The live trade: SegQueue's chain from `reclaim` to `head`
-   *is* a retire list — ordered, in the structure, free. A scheme-owned list throws that away
-   and allocates. Epoch needs its own garbage bags regardless.
-4. **`Domain`, or one global registry.** Global is simpler, and is what made two tests race
-   each other in the discarded prototype.
+1. **Bounded garbage becomes impossible.** Under `can_free`, the scheme can never make
+   progress on its own — freeing happens only when a client walks its own list, and
+   `try_reclaim` is called from `pop`, so a queue nobody pops never frees however long the
+   grace period has elapsed. folly's threshold machinery exists precisely to bound this and
+   can only live in the scheme.
+2. **Hazard-pointer scans must be batched.** Build the guarded set once, match all retired
+   objects against it: O(R + H). Per-object `can_free` is O(R × H) — 8× the work at 8
+   threads, 64× at 64.
+3. **One unsafe boundary instead of one per client**, and there will be four clients.
+4. The zero-allocation advantage evaporates: production makes the retired list **intrusive**
+   (folly's `hazptr_obj` carries its own `next_`), which costs one pointer per `Segment` and
+   allocates nothing.
+
+Consequence, stated plainly: the ordered walk stops being load-bearing *for safety*. The
+`reclaim` cursor stays — it is still how you know `tail` has also passed — but the
+front-to-back induction no longer carries the argument, because (A) now comes from the root
+set being `{head, tail}` and (B) from the scheme. `Box::from_raw` becomes `retire`.
+
+### Shields are growable, not capped (decided)
+
+One pointer per shield; hold N shields for N pointers. With batching inside the scheme a
+growable per-thread record is cheap — folly's thread cache is exactly this — and a cap would
+lock the skiplist out of using the crate later. The acceptance test for growth is any
+hand-over-hand traversal, which needs two shields at once.
+
+### Three more, decided (two against the obvious answer)
+
+**`Domain` is a cheaply-clonable handle, not a global static and not a lifetime.**
+Internally an `Arc`, like `crossbeam-epoch`'s `Collector`; `Domain::global()` for the common
+case. **No type-level families** — that is where `haphazard` became unsound (its open issue
+#54: `unique_domain!` can mint two domains sharing one family). Instead the queue *stores*
+the domain it was built with, so an object can never be retired in one domain while a shield
+from another protects it — prevented by construction rather than by a type parameter. For
+loom, tests build an explicit `Domain` inside `loom::model` and never touch `global()`, which
+sidesteps the global-state problem that made two tests race each other in the prototype.
+
+**`retire` does NOT take a drop function — the `Retire` trait carries an overridable
+`reclaim`.** This reverses the earlier lean, and the reason is the named consumers:
+
+```rust
+pub unsafe trait Retire: Send {
+    fn retire_link(&self) -> &RetireLink;
+    /// Dispose of this object once the grace period has passed.
+    /// Default: run the destructor and free the `Box` allocation.
+    unsafe fn reclaim(ptr: *mut Self);
+}
+```
+
+`T: Send` plus a monomorphised `drop_in_place` would be enough **only if every retired object
+came from a `Box`.** `bufpool` page reclaim and P4's price levels are both named consumers of
+this crate and both allocate from a pool, so `Box::from_raw` would be wrong for them. folly
+solves this with a deleter type parameter (`hazptr_deleter<T, D>`); putting it on the object's
+trait instead keeps `retire`'s signature to one parameter and still monomorphises into the
+stored function pointer, so it costs nothing.
+
+**No default type parameter on `SegQueue<T, R>` — not yet, and never `Leak`.** The earlier
+lean was `R = Leak` so call sites would not churn. That is a bad production default: someone
+writes `SegQueue<usize>` and silently gets an unbounded leak. Worse, it would hide the leak
+exactly where the honest-test discipline wants it visible — `SegQueue<usize, Leak>` **names
+the leak in the type**, which is what makes step 2's acceptance test mean something.
+
+So: explicit through steps 2–4 (few call sites: tests and the bench), then add a default equal
+to whatever step 4 measures as the best general-purpose scheme — probably epoch. Adding a
+default later is backward-compatible, so this costs nothing. `Leak` stays public but
+documented as benchmark-only.
 
 ### Known trap, to state in the docs
 
