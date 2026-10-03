@@ -415,7 +415,7 @@ Listed in execution order (§7), not numeric order.
 
 | Stage | Scope | Estimate | Range |
 |---|---|---:|---|
-| **Finish `concurrent` + `time`** | semaphore, `SeqLock<T>`, Vyukov MPMC ring, SegQueue, channel + select, **`reclaim` crate (trait + hazard + epoch w/ typed API + Treiber stack + Harris set)**, skiplist, **EventCount + CachePadded/Backoff corrections**, time substrate | **271 h** | 225–335 |
+| **Finish `concurrent` + `time`** | semaphore, `SeqLock<T>`, Vyukov MPMC ring, SegQueue, channel + select, **`reclaim` crate (trait + hazard + epoch w/ typed API + Treiber stack + Harris set)**, skiplist, **EventCount + CachePadded/Backoff corrections**, time substrate | **272 h** | 226–336 |
 | **P4 v0–v0.5 `matching-engine`** | book + order types + STP + triggers · intrusive price levels + object pool + zero-alloc apply loop | **180 h** | 150–250 |
 | **P1 `ethdb`** | v0 nibbles/node/naive MPT · v0.5 HashBuilder+walker+proofs · **v1 pager+bufpool+B+tree+WAL+ARIES** · v1.5 MVCC · v2 parallel+sparse+pruning | **740 h** | 600–900 |
 | **P2 `exec-vm`** | v0.5 interpreter+gas+journal · v1 full opcodes+precompiles+mainnet conformance · v1.5 block-STM | **470 h** | 400–600 |
@@ -423,7 +423,7 @@ Listed in execution order (§7), not numeric order.
 | **P3 `eth-node`** | v0.5 RLPx+ECIES+discv4+eth/68 · v1 staged sync+txpool+Engine API · v1.5 snap sync | **550 h** | 450–750 |
 | **P5 `perp-dex-core`** | oracle+risk+liquidation+ledger · VSR+VOPR · cluster assembly · BFT apex+model-check | **1000 h** | 800–1300 |
 | **PR track** | 2–3 merged PRs per product, sourced from differential-test mismatches (§7) | **250 h** | 150–400 |
-| | **Total** | **≈4021 h** | **3235–5215** |
+| | **Total** | **≈4022 h** | **3236–5216** |
 
 ### Cross-check
 
@@ -500,7 +500,7 @@ progression, `SimpleEncode`, and the Pin examples. `cargo test --workspace --all
   because `concurrent` (SegQueue, skiplist) and `bufpool` both consume it. Contract and the
   192-mechanism source inventory: `notes/smr_inventory.md`. A second client (Treiber stack) is part
   of the scope — a trait backing only SegQueue is not a trait. **Rung ladder, acceptance tests and
-  hour estimates: `plan/reclaim_ladder.md`, which is now the single plan for all remaining SegQueue work (115 h, implementation only) including the crossbeam layout and DESTROY-bit steps.**
+  hour estimates: `plan/reclaim_ladder.md`, which is now the single plan for all remaining SegQueue work (116 h, implementation only) including the crossbeam layout and DESTROY-bit steps.**
 - `EventCount` — lock-free blocking handoff. `Parker` is 1:1 and cannot express "N consumers parked
   on one ring, wake one"; `Condvar` needs the mutex; `Semaphore` takes its `Mutex<State>` even when
   the waiter list is empty. Pack {epoch | waiter-count} in one word so notify is a single `fetch_add`

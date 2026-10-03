@@ -6,7 +6,7 @@
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
 > **Current position**: refcount built, proven unsound, and benched. Reclamation is the open problem.
-> **Remaining**: **≈ 115 h** across 6 steps
+> **Remaining**: **≈ 116 h** across 6 steps
 > **Not counted here**: the blog. It is an output of finished work, not part of the build.
 > **Source research**: `notes/smr_inventory.md` (192 mechanisms from folly / crossbeam-epoch / haphazard / the literature) · `notes/folly_gap_analysis.md`
 
@@ -33,7 +33,7 @@ In the tree today: 9 passing tests, 5 loom models, the refcount and the ordered 
 | # | Step | Deliverable | Wall that forces the next step | Est |
 |---|---|---|---|---:|
 | **1** | **Define the problem** | the `Reclaim` trait and its safety documentation. No scheme, no registry. All signature questions are settled below — this step writes them down and proves they compile. | A contract with no implementor and no client is unfalsifiable | 4 h |
-| **2** | **Integrate with SegQueue** | `Leak` (the trivial implementor) · `SegQueue<T, R: Reclaim>` · the protect-source restructure · a Treiber stack as a second client | Integrable and not SegQueue-shaped — but nothing yet reclaims anything | 13 h |
+| **2** | **Integrate with SegQueue** | `Leak` (the trivial implementor) · `SegQueue<T, R: Reclaim>` · the protect-source restructure · a Treiber stack as a second client | Integrable and not SegQueue-shaped — but nothing yet reclaims anything | 14 h |
 | **3** | **Implement the schemes** | the shared registry + `Domain` (10 h) · hazard pointers (14 h) · epoch **including its native typed API** (38 h) · a **Harris linked set** as that API's acceptance test (6 h) | Two schemes exist behind one interface and have never been compared | 68 h |
 | **4** | **Bench the reclamation axis** | `Leak` / `Hazard` / `Epoch` / `Mutex<VecDeque>` / real `crossbeam`, identical queue code | Reclamation is now isolated. Any remaining gap to crossbeam is **layout** or **crossbeam's own scheme** — and neither has been built | 8 h |
 | **5** | **The crossbeam approach** | layout A, a global index, reclamation held fixed (7 h) · crossbeam-exact: block cursor + per-slot `WRITE`/`READ`/`DESTROY` bits (11 h) | Everything is built; nothing has been compared head to head | 18 h |
@@ -188,6 +188,34 @@ makes the contract legible.
 
 ---
 
+## The SegQueue side, in edit order
+
+Line numbers are `crates/concurrent/src/seg_queue.rs` as it stands today (9 tests, 5 loom
+models, the refcount and the ordered walk). Each edit is its own commit and its own green
+test run — there is no intermediate state where the queue is broken.
+
+| # | Edit | What it touches | Verified by | Est |
+|---|---|---|---|---:|
+| **Q1** | **A loss-detecting loom model, written against the CURRENT code.** 2 producers, 2 consumers, enough items to cross a boundary at `SEG_LEN = 2`; assert the multiset of popped values equals the pushed set. | new `loom_tests` entry | passes today — that is the point. It becomes the regression harness for Q3 | 1.5 h |
+| **Q2** | **Trait integration.** `SegGuard` (`:83`, `:118-139`) becomes the scheme's shield; `Segment::ref_count` (`:78`, `:104`) and `acquire_ref`/`release_ref` (`:109-115`) are deleted; `try_reclaim`'s refcount check (`:259`) becomes nothing and its `Box::from_raw` becomes `retire`. `SegQueue<T, R: Reclaim>` stores its `Domain`. Scheme = `Leak`. | the struct defs, `SegGuard`, `try_reclaim` | 9 std + 5 loom + Q1 green · Miri clean with `-Zmiri-ignore-leaks` · **a test asserting the chain grows** | 4 h |
+| **Q3** | **The protect-source restructure.** `advance_tail`'s tail (`:215`) and `pop`'s advance (`:289`) stop protecting through `&cur.next` and protect through `&self.tail` / `&self.head`. Shields per thread 2 → 1. | `push`/`advance_tail`/`pop` only | Q1 must still pass — this is the FIFO question, and Q1 exists to answer it | 2.5 h |
+| **Q4** | Bench arms for the new shape. `benches/seg_queue.rs` already has the `Queue<T>` trait and the N→1 scenarios; add one arm per scheme. | bench only | runs, numbers recorded against a sealed prediction | 1 h |
+
+Q1–Q4 is **9 h**; the Treiber stack is the other 5 h of step 2.
+
+**Why Q2 and Q3 can be separate.** Under `Leak` nothing is ever freed, so requirement (A) is
+*vacuously* satisfied and protecting through `cur.next` is harmless. That is what lets the
+trait integration land and be tested before the restructure, instead of one large change where
+a failure could be either.
+
+**Why Q1 comes first and is not optional.** Q3 rests on a claim: after `CAS head A→B`,
+protecting through `&self.head` can return a *later* segment than `B` if another consumer has
+already advanced, and that is safe because a consumer only advances past a drained segment.
+That is an argument, not a measurement, and every later step builds on it. Q1 turns it into
+something loom can refute.
+
+---
+
 ## Step 3 — Implement the schemes
 
 `notes/smr_inventory.md` marks every mechanism in folly's `hazptr` and in `crossbeam-epoch` as
@@ -275,10 +303,17 @@ prediction note so a bad HP number is explainable rather than mysterious.
 Two sub-steps, each moving one thing.
 
 **5a — layout A, a global index (7 h).** Replace the per-segment `claimed`/`consumed` pair with
-one global position (index + block pointer), the crossbeam family's shape. Reclamation held
-fixed at the best scheme from step 4, so the comparison is **pure layout**: one permanently-hot
-contended line that never moves, against a cursor pair that migrates to each new segment and
-arrives cold.
+one global position (index + block pointer), the crossbeam family's shape. Still on the
+`Reclaim` trait — this step moves layout, not reclamation — with the scheme pinned to step 4's
+winner, so the comparison is **pure layout**: one permanently-hot contended line that never
+moves, against a cursor pair that migrates to each new segment and arrives cold.
+
+Concretely: `Segment` loses both cursors and keeps only `slots` + `next`; `SegQueue` gains
+`head`/`tail` as `{ index: AtomicUsize, block: AtomicPtr<Block> }`; `push` does one `fetch_add`
+on the global index and derives `(block, slot)` from it. **This is where Track B's avoided case
+shows up** — a producer can be handed a ticket for a block that is not linked yet and has to
+wait for whoever is installing it. Expect that spin to be visible in the 8-producer arm; it is
+the known cost of the layout, and the reason B was built first.
 
 **5b — crossbeam-exact (11 h).** Block cursor, per-slot `WRITE` / `READ` / `DESTROY` bits, the
 tunings. Then diff against the real source.
