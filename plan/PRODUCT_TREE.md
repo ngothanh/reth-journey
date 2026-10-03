@@ -436,23 +436,26 @@ reassuring, not proof.
 
 | Pace | Elapsed | Notes |
 |---|---|---|
-| 20 h/wk (your observed rate) | **~3.8 years** | |
-| 30 h/wk | **~2.5 years** | |
+| 20 h/wk (your observed rate) | **~3.9 years** | |
+| 30 h/wk | **~2.6 years** | |
 | 40 h/wk | **~1.9 years** | full-time equivalent |
 
 ### When each product lands (30 h/wk, PR hours interleaved)
 
 | Milestone | Cumulative | Elapsed |
 |---|---:|---|
-| `concurrent` + `time` done | 180 h | ~1.5 months |
-| **P4 v0.5 — sub-µs allocation-free book + first merged PRs** ⭐ **first public artifact** | 400 h | **~3 months** |
-| **P1 `ethdb` v2** — mainnet state root on your own storage engine | 1190 h | ~9 months |
-| **P2 `exec-vm` v1.5** — self-contained block replay | 1710 h | ~13 months |
-| **P4 v1.5** — thread-per-core, kernel bypass, measured p99 | 2320 h | ~18 months |
-| **P3 `eth-node` v1.5** — holds mainnet tip *(cuttable)* | 2920 h | ~22.5 months |
-| **P5 `perp-dex-core` v1.5** — replicated, BFT | 3970 h | ~30.5 months |
+| SegQueue + `reclaim` done *(the 116 h in `plan/reclaim_ladder.md`)* | 116 h | ~1 month |
+| `concurrent` + `time` done | 272 h | ~2 months |
+| **P4 v0.5 — sub-µs allocation-free book + first merged PRs** ⭐ **first public artifact** | 492 h | **~3.8 months** |
+| **P1 `ethdb` v2** — mainnet state root on your own storage engine | 1282 h | ~10 months |
+| **P2 `exec-vm` v1.5** — self-contained block replay | 1802 h | ~14 months |
+| **P4 v1.5** — thread-per-core, kernel bypass, measured p99 | 2412 h | ~18.5 months |
+| **P3 `eth-node` v1.5** — holds mainnet tip *(cuttable)* | 3012 h | ~23 months |
+| **P5 `perp-dex-core` v1.5** — replicated, BFT | 4062 h | ~31 months |
 
-Cutting P3 (§7) removes ~600 h and pulls P5 to ~25.5 months.
+Cutting P3 (§7) removes ~600 h and pulls P5 to ~26 months. The `concurrent` row grew
+180 → 272 h when the `reclaim` crate, EventCount and the two corrections were scheduled;
+every row below it shifted by the same ~92 h.
 
 ### How much to trust this
 
