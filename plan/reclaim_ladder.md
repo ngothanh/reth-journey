@@ -41,6 +41,147 @@ In the tree today: 9 passing tests, 5 loom models, the refcount and the ordered 
 
 ---
 
+## The full sequence — 17 edits, in dependency order
+
+The one table to work from. `C*` are `reclaim`-crate edits, `Q*` are `seg_queue.rs` edits;
+they interleave because `Q2` cannot land before the traits exist. Detail for each is in the
+two sections after this one.
+
+| Order | Edit | Depends on | Est | Cumulative |
+|---:|---|---|---:|---:|
+| 1 | **C1** traits + `Leak`, and the safety docs | — | 4 h | 4 |
+| 2 | **Q1** loss-detecting loom model, against today's code | — | 1.5 h | 5.5 |
+| 3 | **Q2** trait integration under `Leak`; refcount deleted | C1 | 4 h | 9.5 |
+| 4 | **Q3** protect-source restructure → root set `{head, tail}` | Q1, Q2 | 2.5 h | 12 |
+| 5 | **C2** intrusive retired list | C1 | 3 h | 15 |
+| 6 | **C3** registry — immortal per-thread records | C2 | 4 h | 19 |
+| 7 | **C4** `Domain<R>` | C3 | 3 h | 22 |
+| 8 | **C5** hazard pointers | C4 | 14 h | 36 |
+| 9 | **C8** Treiber stack — second client | C5 | 5 h | 41 |
+| 10 | **Q4** bench arms wired | Q3, C5 | 1 h | 42 |
+| 11 | **C6** epoch core — two generations, then three | C4 | 20 h | 62 |
+| 12 | **C7** epoch typed API | C6 | 18 h | 80 |
+| 13 | **C9** Harris linked set — third client | C7 | 6 h | 86 |
+| 14 | **step 4** bench the reclamation axis | C5, C6, Q4 | 8 h | 94 |
+| 15 | **5a** layout A — global index | step 4 | 7 h | 101 |
+| 16 | **5b** crossbeam-exact — DESTROY bit | 5a | 11 h | 112 |
+| 17 | **step 6** final bench: which wins, and why | 5b | 4 h | **116** |
+
+Three things this ordering buys that a different one would not:
+
+- **C5 before C6.** Hazard pointers are the simpler scheme and the first real user of C3's
+  registry and C4's threshold. If the registry's payload generics are wrong, discovering it
+  inside a 14 h step beats discovering it inside a 38 h one.
+- **C8 before C6.** The stack has to run against two schemes to prove anything about the
+  trait, and `Leak` + `Hazard` is already two. So epoch gets written against a trait that
+  already has two implementors and two clients, instead of being the thing that discovers the
+  trait is wrong.
+- **Q1 at position 2, not later.** Q3 rests on an argument, not a measurement; Q1 is what lets
+  loom refute it before eleven more edits are stacked on top.
+
+Optional early read: after edit 10 you can bench `Leak` vs `Hazard` alone. It is not step 4 —
+epoch is missing — but it catches a hazard-pointer disaster 40 h before step 4 would.
+
+---
+
+## The `reclaim` crate, in edit order
+
+Labelled **C1–C9** so nothing collides with the queue-side Q-edits or the old reclamation
+labels. Each is its own commit with its own green run.
+
+```
+crates/reclaim/
+  src/lib.rs        Reclaim · Shield · Retire · RetireLink        C1
+  src/sync.rs       the loom shim (mirrors seg_queue's mod sync)  C1
+  src/leak.rs       Leak                                          C1
+  src/retire.rs     intrusive retired list, type-erased Retired   C2
+  src/registry.rs   immortal per-thread records, claim/release    C3
+  src/domain.rs     Domain<R> (Arc handle) + global()             C4
+  src/hazard.rs     announce addresses                            C5
+  src/epoch/
+    mod.rs          the Reclaim impl                              C6
+    epoch.rs        AtomicEpoch, the 3-generation rule            C6
+    local.rs        per-thread pin counter + local epoch          C6
+    bag.rs          garbage bags, Deferred                        C6
+    atomic.rs       Atomic/Owned/Shared/Pointable + tagging       C7
+crates/concurrent/
+  src/stack.rs      Treiber stack  — 2nd client, on the trait     C8
+  src/list.rs       Harris set     — 3rd client, on the typed API C9
+```
+
+Clients live in `concurrent`, not `reclaim`: `reclaim` stays pure substrate, and the Harris
+set is the skiplist's precursor so it belongs next to it.
+
+| # | Edit | Acceptance test | Est |
+|---|---|---|---:|
+| **C1** | Crate skeleton and **the three traits**, plus `Leak`. No concurrency anywhere. | `cargo build` · a doc-test using `Leak` · the safety docs from step 1 are written here, not later | 4 h |
+| **C2** | **Intrusive retired list.** `RetireLink { next: AtomicPtr<()> }` on the object; `Retired` is the type-erased `(ptr, reclaim_fn)` pair that `Retire::reclaim` monomorphises into. | single-threaded: push N objects, drain, assert each object's **custom** `reclaim()` ran exactly once — a pooled object must go back to the pool, not through `Box` | 3 h |
+| **C3** | **The registry.** Append-only immortal list of per-thread records, `claim`/`release`, hand-back on thread exit. **Generic over the record payload**, because C5 stores addresses in it and C6 stores an epoch. | a declaration is visible from another thread · release clears stale payload (a leftover would be a permanent false positive for whoever reuses the record) · 64 sequential threads do **not** create 64 records | 4 h |
+| **C4** | **`Domain<R>`** — `Arc` handle, `global()`, owns the registry + retired list + reclamation threshold. | two independent domains cannot see each other's records · a dropped domain asserts its retired list is empty · a loom model builds a `Domain` inside `loom::model` and never touches `global()` | 3 h |
+| **C5** | **Hazard pointers.** In three landable pieces: announce + validate (loom first), then the scan, then batching against the threshold. | loom on the announce/validate handoff — store/load, so loom is trustworthy here · **both negative controls**: always-protected stalls reclamation, never-protected produces a Miri UAF in a client · Miri clean | 14 h |
+| **C6** | **Epoch core.** `AtomicEpoch` and the generation rule, then re-entrant `pin`/`unpin` with the pin counter, then bags, then `try_advance` + `collect`. | **build it with TWO generations first and let loom produce the counterexample**, then go to three — the whole point of the step is why two is not enough · loom on pin/unpin nesting · Miri | 20 h |
+| **C7** | **Epoch's typed API.** `Atomic<T>` / `Owned<T>` / `Shared<'g, T>` / `Pointable`, pointer tagging, the full `compare_exchange` family. | `trybuild` compile-fail tests (already a dev-dependency) proving `Shared<'g, T>` cannot outlive its guard · tag round-trips at every alignment · `Pointable` for `[MaybeUninit<T>]`, which is what the bags need | 18 h |
+| **C8** | **Treiber stack** in `concurrent`, on the trait. Second *client*. | its own loom models · runs against `Leak`, `Hazard` and `Epoch` unchanged — that is the test of the trait, not of the stack | 5 h |
+| **C9** | **Harris linked set** in `concurrent`, on the typed API. Third client. | loom with **two shields held at once** (hand-over-hand on `pred`/`curr`) · a node marked but not yet physically unlinked must **not** be retired — the deferred-unlink case · Miri | 6 h |
+
+**C1 = step 1. C2–C4 = step 3's registry + `Domain` (10 h). C5 = hazard (14 h). C6 + C7 =
+epoch (38 h). C8 = step 2's second client (5 h). C9 = step 3's Harris set (6 h).**
+
+### Ordering constraints that are real
+
+- **C2 before C3.** The registry's thread-exit path has to hand back a record *and* leave its
+  payload clean; writing that before the retired list exists means guessing at what "clean"
+  means.
+- **C5 before C6.** Hazard pointers are the simpler scheme and they exercise C3's registry and
+  C4's threshold first. If the registry's payload generics are wrong, finding out during a
+  14 h step beats finding out during a 38 h one.
+- **C8 after C5, before C6.** The stack must run against two schemes to prove the trait, and
+  `Leak` + `Hazard` is enough for that. Doing it before epoch means epoch is written against a
+  trait that already has two clients and two implementors.
+- **C7 after C6.** The typed API's `Pointable` impl is what the bags allocate through, so the
+  bags have to exist to know what it needs.
+- **C9 last.** It is the only client of C7, so it cannot be written earlier.
+
+### What is deliberately *not* ported
+
+From `notes/smr_inventory.md`, marked `optional` or `skip` and skipped on purpose: folly's
+thread cache (`hazptr_tc`), cohorts and tagged retired lists, `hazptr_obj_linked`, asymmetric
+barriers (unavailable on macOS/aarch64), the sharded retired lists, `hazptr_local<M>`, the
+reclamation-offload executor; crossbeam's `sync::list`/`sync::queue`, `load_consume`,
+`crossbeam_sanitize`, and `no_std` support. Each is a named row in the inventory with its
+forcing pressure recorded, so a later decision to add one starts from a reason rather than a
+rediscovery.
+
+---
+
+## The SegQueue side, in edit order
+
+Line numbers are `crates/concurrent/src/seg_queue.rs` as it stands today (9 tests, 5 loom
+models, the refcount and the ordered walk). Each edit is its own commit and its own green
+test run — there is no intermediate state where the queue is broken.
+
+| # | Edit | What it touches | Verified by | Est |
+|---|---|---|---|---:|
+| **Q1** | **A loss-detecting loom model, written against the CURRENT code.** 2 producers, 2 consumers, enough items to cross a boundary at `SEG_LEN = 2`; assert the multiset of popped values equals the pushed set. | new `loom_tests` entry | passes today — that is the point. It becomes the regression harness for Q3 | 1.5 h |
+| **Q2** | **Trait integration.** `SegGuard` (`:83`, `:118-139`) becomes the scheme's shield; `Segment::ref_count` (`:78`, `:104`) and `acquire_ref`/`release_ref` (`:109-115`) are deleted; `try_reclaim`'s refcount check (`:259`) becomes nothing and its `Box::from_raw` becomes `retire`. `SegQueue<T, R: Reclaim>` stores its `Domain`. Scheme = `Leak`. | the struct defs, `SegGuard`, `try_reclaim` | 9 std + 5 loom + Q1 green · Miri clean with `-Zmiri-ignore-leaks` · **a test asserting the chain grows** | 4 h |
+| **Q3** | **The protect-source restructure.** `advance_tail`'s tail (`:215`) and `pop`'s advance (`:289`) stop protecting through `&cur.next` and protect through `&self.tail` / `&self.head`. Shields per thread 2 → 1. | `push`/`advance_tail`/`pop` only | Q1 must still pass — this is the FIFO question, and Q1 exists to answer it | 2.5 h |
+| **Q4** | Bench arms for the new shape. `benches/seg_queue.rs` already has the `Queue<T>` trait and the N→1 scenarios; add one arm per scheme. | bench only | runs, numbers recorded against a sealed prediction | 1 h |
+
+Q1–Q4 is **9 h**; the Treiber stack is the other 5 h of step 2.
+
+**Why Q2 and Q3 can be separate.** Under `Leak` nothing is ever freed, so requirement (A) is
+*vacuously* satisfied and protecting through `cur.next` is harmless. That is what lets the
+trait integration land and be tested before the restructure, instead of one large change where
+a failure could be either.
+
+**Why Q1 comes first and is not optional.** Q3 rests on a claim: after `CAS head A→B`,
+protecting through `&self.head` can return a *later* segment than `B` if another consumer has
+already advanced, and that is safe because a consumer only advances past a drained segment.
+That is an argument, not a measurement, and every later step builds on it. Q1 turns it into
+something loom can refute.
+
+---
+
 ## Step 1 — Define the problem
 
 The deliverable is the safety documentation, because that is the load-bearing part and the
@@ -185,34 +326,6 @@ makes the contract legible.
 - a test asserting the chain **does** grow — `Leak` must be observably leaking, or the step
   proved nothing
 - the Treiber stack passes its own loom models on the same trait
-
----
-
-## The SegQueue side, in edit order
-
-Line numbers are `crates/concurrent/src/seg_queue.rs` as it stands today (9 tests, 5 loom
-models, the refcount and the ordered walk). Each edit is its own commit and its own green
-test run — there is no intermediate state where the queue is broken.
-
-| # | Edit | What it touches | Verified by | Est |
-|---|---|---|---|---:|
-| **Q1** | **A loss-detecting loom model, written against the CURRENT code.** 2 producers, 2 consumers, enough items to cross a boundary at `SEG_LEN = 2`; assert the multiset of popped values equals the pushed set. | new `loom_tests` entry | passes today — that is the point. It becomes the regression harness for Q3 | 1.5 h |
-| **Q2** | **Trait integration.** `SegGuard` (`:83`, `:118-139`) becomes the scheme's shield; `Segment::ref_count` (`:78`, `:104`) and `acquire_ref`/`release_ref` (`:109-115`) are deleted; `try_reclaim`'s refcount check (`:259`) becomes nothing and its `Box::from_raw` becomes `retire`. `SegQueue<T, R: Reclaim>` stores its `Domain`. Scheme = `Leak`. | the struct defs, `SegGuard`, `try_reclaim` | 9 std + 5 loom + Q1 green · Miri clean with `-Zmiri-ignore-leaks` · **a test asserting the chain grows** | 4 h |
-| **Q3** | **The protect-source restructure.** `advance_tail`'s tail (`:215`) and `pop`'s advance (`:289`) stop protecting through `&cur.next` and protect through `&self.tail` / `&self.head`. Shields per thread 2 → 1. | `push`/`advance_tail`/`pop` only | Q1 must still pass — this is the FIFO question, and Q1 exists to answer it | 2.5 h |
-| **Q4** | Bench arms for the new shape. `benches/seg_queue.rs` already has the `Queue<T>` trait and the N→1 scenarios; add one arm per scheme. | bench only | runs, numbers recorded against a sealed prediction | 1 h |
-
-Q1–Q4 is **9 h**; the Treiber stack is the other 5 h of step 2.
-
-**Why Q2 and Q3 can be separate.** Under `Leak` nothing is ever freed, so requirement (A) is
-*vacuously* satisfied and protecting through `cur.next` is harmless. That is what lets the
-trait integration land and be tested before the restructure, instead of one large change where
-a failure could be either.
-
-**Why Q1 comes first and is not optional.** Q3 rests on a claim: after `CAS head A→B`,
-protecting through `&self.head` can return a *later* segment than `B` if another consumer has
-already advanced, and that is safe because a consumer only advances past a drained segment.
-That is an argument, not a measurement, and every later step builds on it. Q1 turns it into
-something loom can refute.
 
 ---
 
