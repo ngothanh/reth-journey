@@ -91,7 +91,7 @@ labels. Each is its own commit with its own green run.
 
 ```
 crates/reclaim/
-  src/lib.rs        Reclaim · Shield · Retire · RetireLink        C1
+  src/lib.rs        Reclaim · Guard · Retire · RetireLink        C1
   src/sync.rs       the loom shim (mirrors seg_queue's mod sync)  C1
   src/leak.rs       Leak                                          C1
   src/retire.rs     intrusive retired list, type-erased Retired   C2
@@ -122,7 +122,7 @@ set is the skiplist's precursor so it belongs next to it.
 | **C6** | **Epoch core.** `AtomicEpoch` and the generation rule, then re-entrant `pin`/`unpin` with the pin counter, then bags, then `try_advance` + `collect`. | **build it with TWO generations first and let loom produce the counterexample**, then go to three — the whole point of the step is why two is not enough · loom on pin/unpin nesting · Miri | 20 h |
 | **C7** | **Epoch's typed API.** `Atomic<T>` / `Owned<T>` / `Shared<'g, T>` / `Pointable`, pointer tagging, the full `compare_exchange` family. | `trybuild` compile-fail tests (already a dev-dependency) proving `Shared<'g, T>` cannot outlive its guard · tag round-trips at every alignment · `Pointable` for `[MaybeUninit<T>]`, which is what the bags need | 18 h |
 | **C8** | **Treiber stack** in `concurrent`, on the trait. Second *client*. | its own loom models · runs against `Leak`, `Hazard` and `Epoch` unchanged — that is the test of the trait, not of the stack | 5 h |
-| **C9** | **Harris linked set** in `concurrent`, on the typed API. Third client. | loom with **two shields held at once** (hand-over-hand on `pred`/`curr`) · a node marked but not yet physically unlinked must **not** be retired — the deferred-unlink case · Miri | 6 h |
+| **C9** | **Harris linked set** in `concurrent`, on the typed API. Third client. | loom with **two guards held at once** (hand-over-hand on `pred`/`curr`) · a node marked but not yet physically unlinked must **not** be retired — the deferred-unlink case · Miri | 6 h |
 
 **C1 = step 1. C2–C4 = step 3's registry + `Domain` (10 h). C5 = hazard (14 h). C6 + C7 =
 epoch (38 h). C8 = step 2's second client (5 h). C9 = step 3's Harris set (6 h).**
@@ -163,8 +163,8 @@ test run — there is no intermediate state where the queue is broken.
 | # | Edit | What it touches | Verified by | Est |
 |---|---|---|---|---:|
 | **Q1** | **A loss-detecting loom model, written against the CURRENT code.** 2 producers, 2 consumers, enough items to cross a boundary at `SEG_LEN = 2`; assert the multiset of popped values equals the pushed set. | new `loom_tests` entry | passes today — that is the point. It becomes the regression harness for Q3 | 1.5 h |
-| **Q2** | **Trait integration.** `SegGuard` (`:83`, `:118-139`) becomes the scheme's shield; `Segment::ref_count` (`:78`, `:104`) and `acquire_ref`/`release_ref` (`:109-115`) are deleted; `try_reclaim`'s refcount check (`:259`) becomes nothing and its `Box::from_raw` becomes `retire`. `SegQueue<T, R: Reclaim>` stores its `Domain`. Scheme = `Leak`. | the struct defs, `SegGuard`, `try_reclaim` | 9 std + 5 loom + Q1 green · Miri clean with `-Zmiri-ignore-leaks` · **a test asserting the chain grows** | 4 h |
-| **Q3** | **The protect-source restructure.** `advance_tail`'s tail (`:215`) and `pop`'s advance (`:289`) stop protecting through `&cur.next` and protect through `&self.tail` / `&self.head`. Shields per thread 2 → 1. | `push`/`advance_tail`/`pop` only | Q1 must still pass — this is the FIFO question, and Q1 exists to answer it | 2.5 h |
+| **Q2** | **Trait integration.** `SegGuard` (`:83`, `:118-139`) becomes the scheme's guard; `Segment::ref_count` (`:78`, `:104`) and `acquire_ref`/`release_ref` (`:109-115`) are deleted; `try_reclaim`'s refcount check (`:259`) becomes nothing and its `Box::from_raw` becomes `retire`. `SegQueue<T, R: Reclaim>` stores its `Domain`. Scheme = `Leak`. | the struct defs, `SegGuard`, `try_reclaim` | 9 std + 5 loom + Q1 green · Miri clean with `-Zmiri-ignore-leaks` · **a test asserting the chain grows** | 4 h |
+| **Q3** | **The protect-source restructure.** `advance_tail`'s tail (`:215`) and `pop`'s advance (`:289`) stop protecting through `&cur.next` and protect through `&self.tail` / `&self.head`. Guards per thread 2 → 1. | `push`/`advance_tail`/`pop` only | Q1 must still pass — this is the FIFO question, and Q1 exists to answer it | 2.5 h |
 | **Q4** | Bench arms for the new shape. `benches/seg_queue.rs` already has the `Queue<T>` trait and the N→1 scenarios; add one arm per scheme. | bench only | runs, numbers recorded against a sealed prediction | 1 h |
 
 Q1–Q4 is **9 h**; the Treiber stack is the other 5 h of step 2.
@@ -190,6 +190,10 @@ part most libraries get wrong.
 ### What the docs must state
 
 An SMR scheme's safety argument has two halves, and a scheme supplies only one:
+
+A **guard** is the thing a reader holds while it is using a pointer — the same role
+`SegGuard` already plays in `seg_queue.rs:83`: acquire pins, `Drop` unpins, and while you
+hold it the pointee is safe to read. `crossbeam-epoch` and `seize` both call it `Guard`.
 
 - **(A) Unobtainability** — after `retire(p)`, no thread that does not already hold `p` may
   obtain it. **The data structure supplies this.**
@@ -229,12 +233,12 @@ Consequence, stated plainly: the ordered walk stops being load-bearing *for safe
 front-to-back induction no longer carries the argument, because (A) now comes from the root
 set being `{head, tail}` and (B) from the scheme. `Box::from_raw` becomes `retire`.
 
-### Shields are growable, not capped (decided)
+### Guards are growable, not capped (decided)
 
-One pointer per shield; hold N shields for N pointers. With batching inside the scheme a
+One pointer per guard; hold N guards for N pointers. With batching inside the scheme a
 growable per-thread record is cheap — folly's thread cache is exactly this — and a cap would
 lock the skiplist out of using the crate later. The acceptance test for growth is any
-hand-over-hand traversal, which needs two shields at once.
+hand-over-hand traversal, which needs two guards at once.
 
 ### Three more, decided (two against the obvious answer)
 
@@ -242,7 +246,7 @@ hand-over-hand traversal, which needs two shields at once.
 Internally an `Arc`, like `crossbeam-epoch`'s `Collector`; `Domain::global()` for the common
 case. **No type-level families** — that is where `haphazard` became unsound (its open issue
 #54: `unique_domain!` can mint two domains sharing one family). Instead the queue *stores*
-the domain it was built with, so an object can never be retired in one domain while a shield
+the domain it was built with, so an object can never be retired in one domain while a guard
 from another protects it — prevented by construction rather than by a type parameter. For
 loom, tests build an explicit `Domain` inside `loom::model` and never touch `global()`, which
 sidesteps the global-state problem that made two tests race each other in the prototype.
@@ -305,7 +309,7 @@ push advance:  CAS tail A→B, then protect(&self.tail)    // not &A.next
 
 The successor is still *read* out of `A.next` while `A` is shielded, and used as a CAS
 argument — it is just never announced through. Root set becomes `{head, tail}`, and (A) holds.
-Falls out of it: shields per thread drops 2 → 1, because the overlap existed only to cover a
+Falls out of it: guards per thread drops 2 → 1, because the overlap existed only to cover a
 vacuous validate.
 
 ### The Treiber stack, and why it is in this step
@@ -362,7 +366,7 @@ What it tests that nothing else in this plan does:
 |---|---|
 | pointer tagging | logical deletion sets a **mark bit in the node's `next` pointer**; this is tagging's actual use, not a demo |
 | the tagged `compare_exchange` family | physical unlinking is a CAS on a pointer whose low bit is part of the value |
-| **two shields held at once** | traversal is hand-over-hand on `(pred, curr)` — the acceptance test for the growable-shield decision above |
+| **two guards held at once** | traversal is hand-over-hand on `(pred, curr)` — the acceptance test for the growable-guard decision above |
 
 It also completes the contract's teaching surface, because the three clients end up with
 three *different* arguments for requirement (A):
