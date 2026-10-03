@@ -174,7 +174,9 @@ Legend: **✍️ hand-written** · **📦 borrowed crate** · **🧪 scaffold, l
    │  concurrent ✍️[✓]  CachePadded, Backoff, AtomicCell, Parker, Pod,   │
    │                    Mutex, RwLock, Semaphore, Condvar, Arc,          │
    │                    SeqLock<T: Pod>, MPMC ring (Vyukov), SegQueue,   │
-   │                    channel + select, epoch-gc, skiplist             │
+   │                    channel + select, skiplist                       │
+   │  reclaim ✍️        Reclaim trait · hazard pointers · epoch (EBR)     │
+   │                    consumed by SegQueue, skiplist, bufpool           │
    │  bufpool ✍️[✓]     Page, PageBox, PageAllocator, eviction, sharding  │
    │  backpressure ✍️[✓] BackpressureStrategy, BoundedBuffer              │
    │  time ✍️           Monotonic, Lamport, HLC, rdtsc                    │
@@ -212,7 +214,7 @@ Columns are product roots. A mark means the crate is **consumed again**, not rew
 | `mmap-queue` | | | | ● | ● |
 | `messaging-aeron` | | | | ● | ● |
 | `p2p` | | | ● | | ● |
-| `epoch-gc` | ● | | | ● | ● |
+| `reclaim` (hazard + epoch) | ● | | | ● | ● |
 | `lsm-core` + `bloom` | ○ | | | | ● |
 
 ● = required · ○ = optional / used for benchmarking
@@ -254,12 +256,25 @@ bug in the plan.
 | False sharing, CachePadded, MESI cost model | `concurrent` | W4, W10 drill #11 |
 | Memory ordering, Release/Acquire vs SeqCst, loom | `concurrent` | W6 drill #3, W1–37 drills |
 | Lock-free MPMC (Vyukov), SegQueue, skiplist | `concurrent` | W11, W26, W37 |
-| Epoch-based reclamation | `epoch-gc` → bufpool page reclaim, P4 price levels | W33–37 |
+| SMR contract: unobtainability (A) vs grace (B) | `reclaim` trait docs · `notes/smr_inventory.md` | NEW — found 2026-10 |
+| Hazard pointers: protect/validate, immortal registry | `reclaim` → `concurrent` SegQueue, skiplist | NEW — W33–37 extended |
+| Epoch-based reclamation: 3-epoch cycle, bags, pin | `reclaim` → bufpool page reclaim, P4 price levels | W33–37 |
+| Lock-free blocking handoff: packed {epoch \| waiters}, notify = one `fetch_add`, no syscall when idle | `concurrent` EventCount → channel + select, MPMC ring, rings between P4 stages | NEW — folly gap analysis |
+| Destructive vs constructive interference: two cache constants, opposite jobs (128 on x86, not 64) | `concurrent::CachePadded` — correction to shipped code | NEW — folly gap analysis |
+| Spin budget measured in cycles (rdtsc), not loop iterations | `concurrent::Backoff` — correction to shipped code | NEW — folly gap analysis |
 | Disruptor / SPSC ring, single-writer principle | `concurrent` rings → P4 stage pipeline | W10, reference-only |
 | Thread-per-core, shard-by-key, cross-shard queues | `runtime-thread-per-core` → P4 v1 | W30/57/84 |
 | io_uring, epoll, AF_XDP kernel bypass | `marketdata-kernelbypass` → P4 v1.5 | W85–90 |
 | HdrHistogram, coordinated omission, rdtsc, `perf`, NUMA | `latency-lab` → every bar-(c) bench | W21–24 |
 | Zero-alloc / static-memory hot path | P4 v0.5, P5 apply loop | W92 ledger |
+
+> **Deferred folly gaps.** `notes/folly_gap_analysis.md` holds ~24 further techniques diffed out of
+> folly, each already mapped to the artifact that would consume it (IntrusiveHeap → P4 triggers /
+> P5 liquidation; wake economy + SmoothLoopTime → `runtime-thread-per-core`; AsyncLogWriter →
+> `log-distributed`; BufferedStat → `latency-lab`; AccessSpreader → `bufpool`; split debit/credit →
+> `backpressure`; radix sort → P1 HashBuilder). **Not scheduled here on purpose** — each is picked up
+> when its artifact is built, so the technique is learned against a real consumer instead of in the
+> abstract. The file also records 12 candidates that were refuted, with reasons.
 | Group commit, WAL segments, checksums | `wal` → P1 v1 | W26 |
 | ARIES 3-pass recovery | `recovery` → P1 v1 | W29–30 |
 | B+tree split/merge, cursors, dupsort | `btree` → P1 v1 | W28 (expanded) |
@@ -400,7 +415,7 @@ Listed in execution order (§7), not numeric order.
 
 | Stage | Scope | Estimate | Range |
 |---|---|---:|---|
-| **Finish `concurrent` + `time`** | semaphore, `SeqLock<T>`, Vyukov MPMC ring, SegQueue, channel + select, `epoch-gc`, skiplist, time substrate | **180 h** | 150–220 |
+| **Finish `concurrent` + `time`** | semaphore, `SeqLock<T>`, Vyukov MPMC ring, SegQueue, channel + select, **`reclaim` crate (trait + hazard + epoch + 2nd client)**, skiplist, **EventCount + CachePadded/Backoff corrections**, time substrate | **247 h** | 205–310 |
 | **P4 v0–v0.5 `matching-engine`** | book + order types + STP + triggers · intrusive price levels + object pool + zero-alloc apply loop | **180 h** | 150–250 |
 | **P1 `ethdb`** | v0 nibbles/node/naive MPT · v0.5 HashBuilder+walker+proofs · **v1 pager+bufpool+B+tree+WAL+ARIES** · v1.5 MVCC · v2 parallel+sparse+pruning | **740 h** | 600–900 |
 | **P2 `exec-vm`** | v0.5 interpreter+gas+journal · v1 full opcodes+precompiles+mainnet conformance · v1.5 block-STM | **470 h** | 400–600 |
@@ -408,7 +423,7 @@ Listed in execution order (§7), not numeric order.
 | **P3 `eth-node`** | v0.5 RLPx+ECIES+discv4+eth/68 · v1 staged sync+txpool+Engine API · v1.5 snap sync | **550 h** | 450–750 |
 | **P5 `perp-dex-core`** | oracle+risk+liquidation+ledger · VSR+VOPR · cluster assembly · BFT apex+model-check | **1000 h** | 800–1300 |
 | **PR track** | 2–3 merged PRs per product, sourced from differential-test mismatches (§7) | **250 h** | 150–400 |
-| | **Total** | **≈3930 h** | **3150–5100** |
+| | **Total** | **≈3997 h** | **3215–5190** |
 
 ### Cross-check
 
@@ -478,7 +493,25 @@ progression, `SimpleEncode`, and the Pin examples. `cargo test --workspace --all
 - `semaphore` — ✅ sync version done (5 loom models, 8 std tests, all negative-controlled)
 - `AsyncSemaphore` — **next up**; needs `block_on` + a loom-compatible `Waker` first (both reused by
   the P4 runtime)
-- MPMC ring (Vyukov), `SegQueue`, channel + select, `epoch-gc`, skiplist
+- MPMC ring (Vyukov), `SegQueue` — ✅ queue mechanics done; reclamation blocked on `reclaim` below
+- `reclaim` — **new Layer-1 crate.** One `Reclaim` trait, two implementations (hazard pointers,
+  epoch), one shared immortal per-thread registry. Exists as its own crate because the two schemes
+  must be swappable behind one interface for the A/B bench to isolate reclamation from layout, and
+  because `concurrent` (SegQueue, skiplist) and `bufpool` both consume it. Contract and the
+  192-mechanism source inventory: `notes/smr_inventory.md`. A second client (Treiber stack) is part
+  of the scope — a trait backing only SegQueue is not a trait.
+- `EventCount` — lock-free blocking handoff. `Parker` is 1:1 and cannot express "N consumers parked
+  on one ring, wake one"; `Condvar` needs the mutex; `Semaphore` takes its `Mutex<State>` even when
+  the waiter list is empty. Pack {epoch | waiter-count} in one word so notify is a single `fetch_add`
+  and issues no syscall when nobody is parked, with publish-then-recheck closing the lost-wakeup
+  window. **Blocks `channel + select` and the MPMC ring's N-consumer blocking story (W011 R4/D5
+  specs Parker, which only answers 1 consumer).**
+- channel + select, skiplist
+- Corrections to shipped code, from `notes/folly_gap_analysis.md`: `CachePadded` must use the
+  *destructive* interference size (128 on x86 — adjacent line PAIRS interfere under RMW) and expose a
+  second *constructive* constant for fields meant to share a line; `Backoff` must budget spin in
+  cycles via rdtsc rather than iterations, which is what makes `SPIN_LIMIT` portable instead of
+  documented-as-x86-tuned.
 - `time` — Monotonic, Lamport, HLC, rdtsc
 
 ⬜ P1 not started.
