@@ -499,7 +499,8 @@ progression, `SimpleEncode`, and the Pin examples. `cargo test --workspace --all
   must be swappable behind one interface for the A/B bench to isolate reclamation from layout, and
   because `concurrent` (SegQueue, skiplist) and `bufpool` both consume it. Contract and the
   192-mechanism source inventory: `notes/smr_inventory.md`. A second client (Treiber stack) is part
-  of the scope — a trait backing only SegQueue is not a trait.
+  of the scope — a trait backing only SegQueue is not a trait. **Rung ladder, acceptance tests and
+  hour estimates: `plan/reclaim_ladder.md`.**
 - `EventCount` — lock-free blocking handoff. `Parker` is 1:1 and cannot express "N consumers parked
   on one ring, wake one"; `Condvar` needs the mutex; `Semaphore` takes its `Mutex<State>` even when
   the waiter list is empty. Pack {epoch | waiter-count} in one word so notify is a single `fetch_add`
