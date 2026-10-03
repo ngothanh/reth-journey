@@ -6,7 +6,7 @@
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
 > **Current position**: refcount built, proven unsound, and benched. Reclamation is the open problem.
-> **Remaining**: **≈ 109 h** across 6 steps
+> **Remaining**: **≈ 115 h** across 6 steps
 > **Not counted here**: the blog. It is an output of finished work, not part of the build.
 > **Source research**: `notes/smr_inventory.md` (192 mechanisms from folly / crossbeam-epoch / haphazard / the literature) · `notes/folly_gap_analysis.md`
 
@@ -34,7 +34,7 @@ In the tree today: 9 passing tests, 5 loom models, the refcount and the ordered 
 |---|---|---|---|---:|
 | **1** | **Define the problem** | the `Reclaim` trait and its safety documentation. No scheme, no registry. All signature questions are settled below — this step writes them down and proves they compile. | A contract with no implementor and no client is unfalsifiable | 4 h |
 | **2** | **Integrate with SegQueue** | `Leak` (the trivial implementor) · `SegQueue<T, R: Reclaim>` · the protect-source restructure · a Treiber stack as a second client | Integrable and not SegQueue-shaped — but nothing yet reclaims anything | 13 h |
-| **3** | **Implement the schemes** | the shared registry + `Domain` (10 h) · hazard pointers (14 h) · epoch **including its native typed API** (38 h) | Two schemes exist behind one interface and have never been compared | 62 h |
+| **3** | **Implement the schemes** | the shared registry + `Domain` (10 h) · hazard pointers (14 h) · epoch **including its native typed API** (38 h) · a **Harris linked set** as that API's acceptance test (6 h) | Two schemes exist behind one interface and have never been compared | 68 h |
 | **4** | **Bench the reclamation axis** | `Leak` / `Hazard` / `Epoch` / `Mutex<VecDeque>` / real `crossbeam`, identical queue code | Reclamation is now isolated. Any remaining gap to crossbeam is **layout** or **crossbeam's own scheme** — and neither has been built | 8 h |
 | **5** | **The crossbeam approach** | layout A, a global index, reclamation held fixed (7 h) · crossbeam-exact: block cursor + per-slot `WRITE`/`READ`/`DESTROY` bits (11 h) | Everything is built; nothing has been compared head to head | 18 h |
 | **6** | **Final bench — which wins, and why** | the full matrix, one variable per comparison, and the written argument for the winner | — endpoint | 4 h |
@@ -208,13 +208,32 @@ Breakdown of the 38 h: reclamation core — three-generation cycle, bags, advanc
 20 h; `Atomic`/`Owned`/`Shared` + tagging + the CAS family, 12 h; `Pointable` (unsized and
 `[MaybeUninit<T>]` payloads, which is what the bags need), 6 h.
 
-**Open: the typed API has no consumer in this plan.** SegQueue goes through the trait and
-never touches it; tagging's real use is a mark bit on `next` for logical deletion, which is
-the skiplist, and the skiplist is later. Cheapest way to give it one now is a **Harris
-lock-free linked set (~6 h)**, which is also the direct precursor to the skiplist and which
-exercises three things nothing else here does: pointer tagging, marked-pointer CAS, and
-hand-over-hand traversal holding two shields at once — the last of which is the acceptance
-test for growable shields. Not scheduled; decide separately.
+### The typed API's acceptance test: a Harris linked set (6 h, scheduled)
+
+SegQueue goes through the trait and never touches the typed API, so without a consumer the
+pointer types would ship untested until the skiplist. A **Harris (2001) lock-free linked
+set** is the cheapest one that exercises all of it, and it is the direct precursor to the
+skiplist — a skiplist is Harris's list at several levels.
+
+What it tests that nothing else in this plan does:
+
+| Mechanism | Why only this client reaches it |
+|---|---|
+| pointer tagging | logical deletion sets a **mark bit in the node's `next` pointer**; this is tagging's actual use, not a demo |
+| the tagged `compare_exchange` family | physical unlinking is a CAS on a pointer whose low bit is part of the value |
+| **two shields held at once** | traversal is hand-over-hand on `(pred, curr)` — the acceptance test for the growable-shield decision above |
+
+It also completes the contract's teaching surface, because the three clients end up with
+three *different* arguments for requirement (A):
+
+| Client | How (A) is satisfied |
+|---|---|
+| Treiber stack | the node is unlinked by the pop that removes it |
+| Harris set | **deferred** unlink — a node is logically deleted (marked) while still reachable, and may only be retired after it is *physically* unlinked |
+| SegQueue | never unlinked at all; (A) comes from the root set being `{head, tail}` |
+
+That middle row is the one worth having. "Mark now, retire later" is the case a contract
+stated only as "unlink before retire" gets wrong.
 
 Things to derive rather than copy:
 
