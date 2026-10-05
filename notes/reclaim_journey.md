@@ -318,3 +318,76 @@ second one, non-interference, had not been on the list. `retire_link` turns out
 to promise four things, not one: ownership, determinism, stability,
 non-interference, with stability and non-interference sharing one precisely
 bounded window, from `retire(p)` until `reclaim(p)` returns.
+
+---
+
+# Session 2026-10-05 (cont.) — C1.1, `Retire`
+
+## 14. Should `reclaim` have a default body?
+
+**First answer** — yes, `drop(Box::from_raw(ptr))`. It is the common case, and
+making every implementor restate it is noise.
+
+**What killed it** — the same argument that rejected `SegQueue<T, R = Leak>`.
+A default is silently wrong for exactly the consumers the overridable `reclaim`
+was designed for:
+
+```
+someone implements Retire for a pool-allocated page
+forgets to override reclaim
+the default runs Box::from_raw on memory the global allocator never handed out
+→ UB, on a reclaimer thread, minutes later
+```
+
+`bufpool` pages and P4 price levels are the two named consumers, and a `Box`
+default points a footgun at precisely their case. **A bad default is worse than
+no default, because it is silently wrong rather than loudly absent.**
+
+**Decided** — no default. Every implementor states its own deallocator.
+
+**Cost** — three lines per implementor, and it sidesteps the question of whether
+`Sized` belongs on the method or the trait: `Box::from_raw` in a default body
+does not compile, because `Self` in a trait is implicitly `?Sized`.
+
+## 15. A clean build is not evidence that a trait is sound
+
+**First answer** — the C1.1 gate was "`cargo build -p reclaim` clean", and the
+first version built clean with `trait Retire: Send`.
+
+**What killed it** — nothing in the compiler. The trait was missing `unsafe`,
+and **every exhibit written minutes earlier** — a shared `static` link eating
+the chain, a branching getter leaking the tail, an `UnsafeCell` swap dangling a
+stored pointer — was reachable by an implementor writing zero `unsafe`.
+
+`unsafe fn` the compiler enforces. `unsafe trait` is a judgement, and the litmus
+test is the only thing that catches it: *could a 100 %-safe impl break memory
+safety in code that never writes `unsafe`?*
+
+**Decided** — `pub unsafe trait Retire: Send`, with the implementor's
+obligations as the trait-level `# Safety` block and the caller's as `reclaim`'s.
+Keeping those two blocks apart is the same distinction as the trait keyword.
+
+**Cost** — none, but the gate was wrong. For anything with an `unsafe trait` in
+it, "compiles and tests pass" is not a gate; the litmus test has to be applied
+by hand.
+
+## 16. `retire_link` promises four things, not one
+
+Recorded because the fourth was not on the list when the review started.
+
+**First answer** — two properties: the link must belong to this object, and it
+must be the same link every call.
+
+**What killed it** — asking for an exhibit where the link's *address* moves. The
+answer reached for `UnsafeCell`, interior mutability being the only way to
+mutate through `&self`. Right mechanism, and it **splits in two**: mutating what
+*contains* the link moves its address, while mutating the link's *contents*
+corrupts the chain. One mechanism, two violations, two clauses.
+
+**Decided** — four properties: ownership, determinism, **stability**,
+**non-interference** — with the last two sharing one precisely bounded window,
+from `retire(p)` until `reclaim(p)` returns. Naming the window is what makes
+them statable rather than vague.
+
+**Cost** — none. The generalisable move is that an exhibit, not the clause,
+is the unit of work: writing the trace is what revealed there were two.

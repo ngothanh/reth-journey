@@ -1,7 +1,8 @@
-// The shim has no user until C2 (the intrusive retired list) — C1 is
-// deliberately concurrency-free. Drop the `allow` when C2 lands.
-mod retire;
+// `sync` re-exports the whole atomic set the later edits need; only `AtomicPtr`
+// has a user so far. Drop the `allow` once C2 uses the rest.
 #[allow(unused_imports)]
 mod sync;
 
-pub use retire::*;
+mod retire;
+
+pub use retire::{Retire, RetireLink};
