@@ -82,6 +82,8 @@ Segment `A` in your `SegQueue`, start to finish. Each step names who acts.
 | scheme | The policy that knows when the grace period is over. |
 | domain | One independent instance of a scheme with its own lists. |
 | exhibit | A numbered multi-thread trace that ends in a named failure. |
+| Treiber stack | The simplest lock-free stack: one atomic `head` pointing at a chain of nodes; push and pop are a CAS on `head`. First met in L2, drawn there. |
+| Harris list | A lock-free sorted linked list. Deleting a node first *marks* it, and unlinks it later. First met in L2, drawn there. |
 
 ---
 
@@ -90,14 +92,15 @@ Segment `A` in your `SegQueue`, start to finish. Each step names who acts.
 ### L0 — The whole picture
 - **Where on the map**: all of it.
 - **Input**: the map above; your own `seg_queue.rs`; the memory of the refcount bug.
-- **Teacher presents**: the map, walked once on your queue — nothing beyond what is written.
+- **Teacher presents**: the whole map, drawn and walked **in the session, by the teacher**, on
+  your own `SegQueue` — not handed over as reading.
 - **Questions**: (1) For each of the eight components, which layer is it in and who creates
   it? (2) In the ten steps, which ones run on the reader's thread and which on a different
   one? (3) Which two steps are separated by the grace period? (4) Which component in the
   table does `Leak` make pointless, and which does it still need?
 - **Output**: `notes/reclaim_model.md` §1–§3, in your own words — the eight components in one
-  sentence each, the layer diagram redrawn, the ten steps retold for a **Treiber stack node**
-  instead of a segment.
+  sentence each, the layer diagram redrawn, and the ten steps retold for a segment of your own
+  queue with the real field and function names from `seg_queue.rs` next to each step.
 - **Gate**: retell the life of one object, unaided, naming who acts at each step.
 - **Est**: 1 h
 
@@ -127,7 +130,8 @@ Every output here is a section of `notes/reclaim_model.md`. No compiled code.
 - **Where on the map**: `Root`, `RootRegistry`; steps 1, 4, 5, 7.
 - **Input**: §4; your `seg_queue.rs` as it is today, where `protect` goes through `cur.next`.
 - **Teacher presents**: a thread cannot invent a pointer — it loads one from an atomic. The
-  atomics it loads from *and protects through* are the roots.
+  atomics it loads from *and protects through* are the roots. Plus a drawing of a Treiber stack
+  and of a Harris list, since neither has been met before.
 - **Questions**: (1) `cur.next` is a field inside segment `cur`. If it is a root, what must be
   true of `cur` forever? (2) After the fix, `pop` still *reads* `cur.next` — why is reading it
   not the same as protecting through it? (3) What is the root set of a Treiber stack? (4) A
