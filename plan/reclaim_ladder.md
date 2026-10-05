@@ -240,6 +240,69 @@ growable per-thread record is cheap — folly's thread cache is exactly this —
 lock the skiplist out of using the crate later. The acceptance test for growth is any
 hand-over-hand traversal, which needs two guards at once.
 
+### `protect` retargets a held guard; it does not mint one (decided)
+
+Two shapes were on the table:
+
+```rust
+// A - the domain mints a guard, which IS the announcement
+let g = domain.protect(&node.next);
+
+// B - the guard is acquired once, then retargeted
+let mut g = domain.guard();
+let n = g.protect(&node.next);
+```
+
+**B.** The reason is not the acquisition count, it is that **A cannot express "stay protected
+across a retry".** Under A, re-protecting means minting a second guard, and both ways of doing
+that are wrong:
+
+- drop the old guard then mint the new one, which leaves an **unprotected window**. Under
+  epoch that is an `unpin`/`pin` pair with a gap, and anything carried across the boundary can
+  be freed inside it;
+- hold the old guard while minting the new one, which means **two live slots for one logical
+  cursor** - exactly the 2 -> 1 reduction Q3 was for.
+
+B has one slot and one pin held for the whole operation, with the announcement overwritten in
+place. The acquisition counts follow from that rather than motivating it: `pop`'s retry loop
+goes from N acquisitions to 1, and a Harris traversal of length N from N to 2. The *number of
+announcements* - and so the number of `SeqCst` fences under HP - is identical in both shapes.
+Only the registry bookkeeping differs.
+
+The three things the schemes disagree about, which is what forces the trait to B:
+
+| | a guard *is* | protects | acquiring one costs | protecting one pointer costs |
+|---|---|---|---|---|
+| Hazard | one slot you own in your record | **one** address | find a free slot, maybe grow | store + `SeqCst` fence + reload-and-compare, in a loop |
+| Epoch | a pin on your record | **everything** reachable while pinned | a re-entrant counter bump | a plain load |
+| Leak | nothing | everything, forever | nothing | a plain load |
+
+What B costs, and is accepted: one extra state to document - a guard that owns a slot but
+announces nothing, i.e. between `domain.guard()` and the first `protect`. `as_ref` on such a
+guard has to be defined.
+
+### Still open: what `protect` returns, and C9 decides it
+
+Raw `*mut T` leaves it to the caller not to retarget while a derived reference is live.
+`&'a T` borrowed from `&'a mut self` makes the borrow checker forbid that - but it also breaks
+the standard hand-over-hand advance, which does not re-protect `pred` (there is no atomic to
+re-protect it *from*) but **swaps the two guards** and retargets the freed one:
+
+```rust
+core::mem::swap(&mut gp, &mut gc);   // needs &mut gc ...
+let curr = gc.protect(&curr.next);   // ... but `curr` is still borrowed from gc
+```
+
+haphazard ties `protect` to `&'l mut self` and inherits exactly this consequence. So the
+question is a real trade and not a free safety win. **Write C1 with the signature that looks
+right and let C9 refute it**; a `trybuild` compile-fail test pins whichever way it lands.
+
+### Blog beat
+
+A vs B is the clearest "the two schemes disagree about what a guard *is*" moment in the whole
+build - hazard is per-address, epoch is per-thread - and the argument lands without any
+measurement. Keep it for the reclamation series.
+
 ### Three more, decided (two against the obvious answer)
 
 **`Domain` is a cheaply-clonable handle, not a global static and not a lifetime.**
@@ -403,6 +466,14 @@ one trait, with identical queue code, reclamation becomes the only variable.
 
 Arms: `Leak` · `Hazard` · `Epoch` · `Mutex<VecDeque>` · real `crossbeam_queue::SegQueue`.
 Shape: N producers → 1 consumer, N ∈ {1, 2, 4, 8} — the shape both real callers have.
+
+One more arm, to settle the abstraction question with a number instead of an argument:
+**`Epoch` through the `Reclaim` trait vs `Epoch` through its native API**, identical queue,
+identical scheme, the only difference being whether the calls cross the trait. Prediction to
+seal: indistinguishable, inside noise, because every call monomorphises and inlines. If that
+holds, the trait is free and the question is closed for the rest of the plan. If it does not,
+the gap names a place where the trait's shape costs a load or loses an optimisation - which is
+worth more than the argument was.
 
 Seal the prediction first. The open question: the last measurement went `7.7 → 77.8 → 105.9 →
 104.9` ns against crossbeam's flat `13.8 → 16.7`. If `Epoch` lands near crossbeam, reclamation
