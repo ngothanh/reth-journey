@@ -50,7 +50,7 @@
 //! 2. **256+ core machines with NUMA** — `yield_now()` may reschedule the waiter onto a far node,
 //!    making the next CAS retry cost ~100 ns (cross-socket cache miss) instead of ~10 ns. The
 //!    spin band should *widen* (SPIN_LIMIT≥8, burst up to 256 PAUSEs) to amortize the cross-socket
-//!    cost when the holder is co-located, and the yield rung should be gated on a NUMA-distance
+//!    cost when the holder is co-located, and the yield step should be gated on a NUMA-distance
 //!    hint to avoid the far-node trap.
 //! 3. **RISC-V `Zihintpause` adoption** — if `spin_loop()` lowers to a no-op on a target without
 //!    Zihintpause, every PAUSE in the burst is ~1 cycle of pure pipeline pressure with no SMT

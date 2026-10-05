@@ -4306,9 +4306,9 @@
   "meta": "-n",
   "tag": "T3",
   "category": "noun",
-  "en_meaning": "rung, level (e.g. SeqCst level)",
+  "en_meaning": "level, tier (e.g. SeqCst level)",
   "de_example": "Es gibt eine dritte **Stufe**, `SeqCst`, für den Fall, dass die Frage nicht lautet „sieht dieser Thread die Daten jenes Threads\", sondern „sind sich alle Threads über die Reihenfolge von Stores auf *verschiedene* Atomics einig\".",
-  "en_example": "There's a third **rung**, `SeqCst`, for when the question isn't \"does this thread see that thread's data\" but \"do all threads agree on the order of stores to *different* atomics\"."
+  "en_example": "There's a third **level**, `SeqCst`, for when the question isn't \"does this thread see that thread's data\" but \"do all threads agree on the order of stores to *different* atomics\"."
  },
  {
   "headword": "stören",

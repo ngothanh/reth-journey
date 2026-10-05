@@ -136,7 +136,7 @@ wall you position yourself, not a gate glued to an op — was the only tool.
 
 ![Which side is the data on: same side, an ordering on the op (this ring); opposite side, a fence (the SeqLock); a total order across several atomics, SeqCst](../img/en/tbl_near_far.png)
 
-There's a third rung, `SeqCst`, for when the question isn't "does this thread see that
+There's a third level, `SeqCst`, for when the question isn't "does this thread see that
 thread's data" but "do all threads agree on the order of stores to *different*
 atomics". The ring never asks it. Each hand-off is one atomic, one direction. Every
 ordering above was placed by an argument. So was the all-`Relaxed` version — the

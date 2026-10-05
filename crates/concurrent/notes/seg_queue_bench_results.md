@@ -105,7 +105,7 @@ Two separate spin sites, and **only the first belongs to the queue**:
   oversubscription at 8 threads on an 8-thread host. Next step is to pin threads
   (or drop to 3P/3C) before drawing any conclusion — an unpinned 8-thread run on
   a heterogeneous-core laptop may simply not be a measurable configuration.
-- Re-run this whole file at each rung of the reclamation ladder (R1 refcount,
+- Re-run this whole file at each step of the reclamation ladder (R1 refcount,
   R2 hazard pointers, R3 epoch). The harness now has backoff on both sides, so
   those numbers are comparable to Round 2 — **not** to Round 1.
 - Keep `uncontended` as the tripwire: it must not move when only concurrency

@@ -36,7 +36,7 @@
 //!   cargo +nightly miri test -p concurrent --lib seg_queue
 //! ```
 //!
-//! That flag is also the acceptance test for the next rungs: once R1/R2/R3 frees
+//! That flag is also the acceptance test for the next steps: once R1/R2/R3 frees
 //! segments, **dropping `-Zmiri-ignore-leaks` is the proof that it works**.
 
 use crate::CachePadded;
