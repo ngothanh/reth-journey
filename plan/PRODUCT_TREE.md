@@ -34,10 +34,10 @@ Four operating laws:
    library", that is leverage to get something runnable early.
 3. **Borrow first, write later — when writing it blocks the acceptance test.** E.g. `rayon` in P1 v2,
    swapped for the hand-written thread pool once `runtime-thread-per-core` exists in P4.
-4. **Every rung is measured, not asserted.** Keep the old plan's two-track discipline: a
+4. **Every step is measured, not asserted.** Keep the old plan's two-track discipline: a
    **back-of-envelope prediction first** (what the hardware cost model says this should cost), then the
-   **measured number** (ns / cycles / allocations), then reconcile the gap. A rung is only "done" when
-   you can state the wall in numbers — that is what makes the next rung necessary rather than optional.
+   **measured number** (ns / cycles / allocations), then reconcile the gap. A step is only "done" when
+   you can state the wall in numbers — that is what makes the next step necessary rather than optional.
    Notes land in `notes/*.md`.
 
 ---
@@ -61,11 +61,11 @@ Those five axes are exactly the five you named — and they **do not overlap**.
 
 ## 2. The maturity ladder — the spine of the work
 
-Every rung ends at a concrete, **measurable wall**. That wall is the reason the next rung exists.
+Every step ends at a concrete, **measurable wall**. That wall is the reason the next step exists.
 
 ### P1 — `ethdb`
 
-| Rung | What you build | The wall that forces the next rung |
+| Step | What you build | The wall that forces the next step |
 |---|---|---|
 | v0 | `HashMap` state + MPT rebuilt **entirely** every block | Correct, but every block re-hashes the whole state — unusable |
 | v0.5 | `HashBuilder` (sorted stream) + `PrefixSet` + `TrieWalker` → touch only changed subtries | Fast, but everything is gone on restart |
@@ -75,7 +75,7 @@ Every rung ends at a concrete, **measurable wall**. That wall is the reason the 
 
 ### P2 — `exec-vm`
 
-| Rung | What you build | The wall |
+| Step | What you build | The wall |
 |---|---|---|
 | v0 | Interpreter `match`-loop, no gas | Runs a few opcodes then diverges — no gas means no Ethereum semantics |
 | v0.5 | Gas + journal/revert + `Host` trait wired into P1 | Correct but dispatch-bound, one branch per opcode |
@@ -84,7 +84,7 @@ Every rung ends at a concrete, **measurable wall**. That wall is the reason the 
 
 ### P3 — `eth-node`
 
-| Rung | What you build | The wall |
+| Step | What you build | The wall |
 |---|---|---|
 | v0 | Pull blocks over RPC, no p2p | You depend on someone else's node — that is not a node |
 | v0.5 | RLPx + ECIES handshake + discv4 + `eth/68`, header sync | Headers work, bodies/state stall; serial sync is far too slow |
@@ -93,7 +93,7 @@ Every rung ends at a concrete, **measurable wall**. That wall is the reason the 
 
 ### P4 — `matching-engine`
 
-| Rung | What you build | The wall |
+| Step | What you build | The wall |
 |---|---|---|
 | v0 | `BTreeMap<Price, VecDeque<Order>>`, allocate freely, synchronous | Logic is right, latency is ragged — allocation and cache misses show up immediately |
 | v0.5 | Intrusive linked list per price level + object pool + **zero-alloc apply loop** | Cross-thread contention and false sharing become the ceiling |
@@ -106,7 +106,7 @@ Every rung ends at a concrete, **measurable wall**. That wall is the reason the 
 
 ### P5 — `perp-dex-core`
 
-| Rung | What you build | The wall |
+| Step | What you build | The wall |
 |---|---|---|
 | v0 | Single node, in-memory: matching + oracle-mark + risk + liquidation + ledger | Lose the node, lose everything |
 | v0.5 | WAL + deterministic replay (single PRNG seed, integer-only money math) | It comes back up, but it is still a single point of failure |
@@ -305,34 +305,34 @@ The "From old plan" column points at `reference/WNNN.md` — that is where the d
 (mental model, contract, named pitfalls, paper drill, back-of-envelope cost model). Look it up when you
 reach the component; do not schedule from it.
 
-### The rung ritual — what replaces the calendar
+### The step ritual — what replaces the calendar
 
 The three spaced-repetition systems (`concept_cadence.md`, `rebuild_ladder.md`,
 `reference/.rework/PAPER_DRILLS.md`) stay, but they were **triggered by the calendar** — Sunday Rebuild
 Day, per-week cadence slots, per-Build drills. Removing weeks removed the trigger, and spaced
 repetition with no trigger is just a list of good intentions.
 
-**New trigger: the rung boundary.** Every rung in §2 opens and closes with a fixed ritual. Rungs arrive
+**New trigger: the step boundary.** Every step in §2 opens and closes with a fixed ritual. Steps arrive
 irregularly, which is fine — spacing needs to be *reliable*, not *uniform*.
 
-**Opening a rung:**
-1. List the components the rung needs (the named files).
+**Opening a step:**
+1. List the components the step needs (the named files).
 2. 🧮 **Paper drill per component, before writing it** — by hand, on paper: the byte/memory layout, the
    happens-before diagram, the failure interleaving. Same drills as `PAPER_DRILLS.md`, now keyed to
    components instead of weeks.
-3. **Back-of-envelope prediction** for the rung's wall (Law 4): what should this cost, per the hardware
+3. **Back-of-envelope prediction** for the step's wall (Law 4): what should this cost, per the hardware
    cost model?
-4. Open `concept_cadence.md`, mark which concepts this rung exercises. **This is the rep.**
+4. Open `concept_cadence.md`, mark which concepts this step exercises. **This is the rep.**
 
-**Closing a rung:**
+**Closing a step:**
 5. Measure. Reconcile prediction vs reality in `notes/`. The gap *is* the finding.
 6. 🔁 **One Rebuild Day.** Pick the artifact from `rebuild_ladder.md` with the **oldest last-rebuild
    date whose rep count is still under target** (APEX 4, CORE 3) and rebuild it from a blank file. One
    artifact, one session — not a whole day of ceremony.
 7. **Drought check.** Scan `concept_cadence.md` for any concept untouched across the last **three**
-   rungs. If one has gone cold, the next rung's Rebuild Day picks an artifact that exercises it.
+   steps. If one has gone cold, the next step's Rebuild Day picks an artifact that exercises it.
 
-Rung count across the plan is ~22, so this fires roughly every 3–6 weeks at 30 h/wk — close to the old
+Step count across the plan is ~22, so this fires roughly every 3–6 weeks at 30 h/wk — close to the old
 weekly-to-monthly spacing, and now driven by something that actually happens.
 
 ---
@@ -525,7 +525,7 @@ progression, `SimpleEncode`, and the Pin examples. `cargo test --workspace --all
 ⬜ P1 not started.
 
 > **On writing:** blog posts are an *output* of finished work, not an input to it. Nothing here is
-> scheduled around them. When a product reaches a rung worth writing about, the implementation
+> scheduled around them. When a product reaches a step worth writing about, the implementation
 > conversation plus the measurement notes are the raw material — the post gets designed then, not now.
 
 ---
