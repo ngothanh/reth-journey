@@ -352,21 +352,32 @@ What B costs, and is accepted: one extra state to document - a guard that owns a
 announces nothing, i.e. between `domain.guard()` and the first `protect`. `as_ref` on such a
 guard has to be defined.
 
-### Still open: what `protect` returns, and C9 decides it
+### `protect` returns a raw pointer (decided — the coverage sweep settled it)
+
+This was parked for C9 to refute under `trybuild`. It did not need to be: `swap` is a **CORE**
+row (inventory 1054) and it is incompatible with the alternative.
 
 Raw `*mut T` leaves it to the caller not to retarget while a derived reference is live.
-`&'a T` borrowed from `&'a mut self` makes the borrow checker forbid that - but it also breaks
-the standard hand-over-hand advance, which does not re-protect `pred` (there is no atomic to
-re-protect it *from*) but **swaps the two guards** and retargets the freed one:
+`&'a T` borrowed from `&'a mut self` makes the borrow checker forbid that — a real safety win,
+and the thing the inventory singles out as haphazard's one advantage over folly and P1121
+(1283: "its lifetime-based protection scoping statically prevents use-after-reset, which
+neither folly nor P1121 can express"). But it breaks the standard hand-over-hand advance, which
+does not re-protect `pred` (there is no atomic to re-protect it *from*) but **swaps the two
+guards** and retargets the freed one:
 
 ```rust
 core::mem::swap(&mut gp, &mut gc);   // needs &mut gc ...
 let curr = gc.protect(&curr.next);   // ... but `curr` is still borrowed from gc
 ```
 
-haphazard ties `protect` to `&'l mut self` and inherits exactly this consequence. So the
-question is a real trade and not a free safety win. **Write C1 with the signature that looks
-right and let C9 refute it**; a `trybuild` compile-fail test pins whichever way it lands.
+The swap needs `&mut gc` while `curr` is still borrowed from it. haphazard ties `protect` to
+`&'l mut self` and inherits exactly this. So: **raw pointer, and `try_protect` becomes a safe
+`fn`** — announcing an address pins it and nothing more, so the whole unsafe surface collapses
+into the dereference. That is a strictly smaller contract than the alternative bought.
+
+What is given up, recorded so it is a trade and not an oversight: nothing stops a caller
+retargeting a guard while holding a pointer derived from its previous announcement. Miri in a
+client catches it; the type system will not.
 
 ### `try_protect` is the only required method; `protect` is a default (decided)
 
