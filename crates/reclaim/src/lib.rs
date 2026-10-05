@@ -1,14 +1,4 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+// The shim has no user until C2 (the intrusive retired list) — C1 is
+// deliberately concurrency-free. Drop the `allow` when C2 lands.
+#[allow(unused_imports)]
+mod sync;

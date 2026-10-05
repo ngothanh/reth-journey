@@ -26,6 +26,7 @@ eth-rlp = { path = "crates/eth-rlp" }
 concurrent = { path = "crates/concurrent" }
 backpressure = { path = "crates/backpressure" }
 bufpool = { path = "crates/bufpool" }
+reclaim = { path = "crates/reclaim" }
 
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 trybuild = "1.0"

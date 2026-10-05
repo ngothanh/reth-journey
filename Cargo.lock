@@ -1248,6 +1248,9 @@ dependencies = [
 [[package]]
 name = "reclaim"
 version = "0.1.0"
+dependencies = [
+ "loom",
+]
 
 [[package]]
 name = "redox_syscall"

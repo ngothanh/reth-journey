@@ -9,5 +9,8 @@ repository.workspace = true
 
 [dependencies]
 
+[target.'cfg(loom)'.dependencies]
+loom = "0.7.2"
+
 [lints]
 workspace = true
