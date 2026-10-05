@@ -264,6 +264,38 @@ something loom can refute.
 The deliverable is the safety documentation, because that is the load-bearing part and the
 part most libraries get wrong.
 
+### C1 in seven pieces, each of which compiles
+
+Written down here rather than left in conversation, because the first version of this
+breakdown put `declare_root` in C1.2 — and `declare_root` takes `&self` on `Domain`, which
+does not exist until C1.3. A breakdown that lives only in chat drifts without anyone noticing.
+
+| | Piece | Where | Depends on | Est |
+|---|---|---|---|---:|
+| **C1.1** | `RetireLink` · `unsafe trait Retire` | `retire.rs` | — | 1 h |
+| **C1.2** | `Root<T>` · `Root::assume_root` · the accessors | `root.rs` | — | 0.5 h |
+| **C1.3** | `unsafe trait Reclaim` · `Domain<R>` · **`Domain::declare_root`** · `remove_root` | `lib.rs`, `domain.rs` | C1.2 | 2 h |
+| **C1.4** | `trait Guard` — `try_protect`, `as_ref`, `swap`, the three states | `lib.rs` | C1.3 | 1 h |
+| **C1.5** | `Leak` — the trivial implementor; first thing that runs | `leak.rs` | C1.3, C1.4 | 1 h |
+| **C1.6** | the `# Safety` blocks, polished into rustdoc | all | C1.1–C1.5 | 1 h |
+| **C1.7** | the Treiber-`pop` doc-test | `lib.rs` | C1.5 | 0.5 h |
+
+`declare_root` is C1.3, not C1.2, because `&self` is the domain — and that `&self` is the
+*whole* difference between the two constructors:
+
+```rust
+impl<R: Reclaim> Domain<R> {
+    pub unsafe fn declare_root<T>(&self, src: &AtomicPtr<T>) -> Root<T> { .. }
+    //                            ^^^^^ registers with this domain → the debug walk sees it
+}
+impl<T> Root<T> {
+    pub unsafe fn assume_root(src: &AtomicPtr<T>) -> Self { .. }
+    //            no self → registers nowhere → the caller owes (A) unaided
+}
+```
+
+Rough contract notes come before C1.3; the polished rustdoc is C1.6.
+
 ### What the docs must state
 
 An SMR scheme's safety argument has two halves, and a scheme supplies only one:

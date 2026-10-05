@@ -391,3 +391,21 @@ them statable rather than vague.
 
 **Cost** — none. The generalisable move is that an exhibit, not the clause,
 is the unit of work: writing the trace is what revealed there were two.
+
+## 17. A breakdown that lives only in conversation drifts
+
+**First answer** — C1 was split into seven pieces in conversation, with
+**C1.2 = `Root<T>` + `declare_root`**, and the split was never written down.
+
+**What killed it** — `declare_root` takes `&self` on `Domain`, and `Domain` is
+C1.3. So C1.2 could not contain it, and the code written for C1.2 had only
+`assume_root` in it. From the outside that reads as the `declare_root` concept
+having quietly vanished — it had not (it is in the plan in three places), but
+nothing checkable said so.
+
+**Decided** — the seven pieces live in the plan with their dependencies, and
+their hours are asserted against C1's 7 h row. `declare_root` is C1.3.
+
+**Cost** — none in hours. The lesson is the same one as entry 8: **a plan that
+exists only in conversation cannot be audited.** The sub-step split was exactly
+the kind of thing that felt too small to write down.
