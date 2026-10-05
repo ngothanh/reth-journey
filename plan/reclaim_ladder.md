@@ -6,10 +6,9 @@
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
 > **Current position**: refcount built, proven unsound, and benched. Reclamation is the open problem.
-> **Before this ladder**: `plan/reclaim_modeling.md` — seven sessions, ≈ 8 h, that build the
-> *model* (the race, the two halves, roots, guards, grace detection, bounded garbage) before
-> more code gets written. This ladder assumes that model is already held; the C1 sessions kept
-> stalling because it was not.
+> **Before and through C1**: `plan/reclaim_modeling.md` — the map, then twelve lessons (15 h:
+> ≈ 8 h of model, then C1's own 7 h as core types and behaviour). This ladder assumes the
+> model is already held; the C1 sessions kept stalling because it was not.
 >
 > **Remaining**: **≈ 171 h** across 6 steps — was 116 h before the inventory audits
 > (+35.5 h from the not-ported audit, +12.5 h from the 192-row coverage sweep, +4 h for declared roots, +3 h for the journal;
@@ -269,48 +268,13 @@ something loom can refute.
 The deliverable is the safety documentation, because that is the load-bearing part and the
 part most libraries get wrong.
 
-### C1 in eight pieces — one finishable idea each
+### How C1 is taught and cut
 
-Two corrections already folded in. The first version of this breakdown lived only in
-conversation and put `declare_root` in C1.2, which cannot hold it. The second version wrote it
-down but still split **roots across two pieces**, so working on roots meant half of them were
-somewhere else — a decomposition by *smallest compilable unit* rather than by *idea*. For
-learning, the second is the one that matters: a piece should finish a concept.
-
-The dependency that forced the split was not real either. `declare_root` does not need a whole
-`Domain<R>`; it needs a **list of root addresses**, and that list is scheme-independent. So
-`RootRegistry` is a plain non-generic struct, roots finish inside C1.2, and `Domain<R>` later
-just owns a registry and forwards to it — the client-facing API stays
-`domain.declare_root(&self.head)` exactly as recorded below.
-
-| | Piece | Finishes | Where | Est |
-|---|---|---|---|---:|
-| **C1.1** | `RetireLink` · `unsafe trait Retire` | **the object side** | `retire.rs` | 1 h |
-| **C1.2a** | `Root<T>` · `assume_root` · accessors | — | `root.rs` | 0.5 h |
-| **C1.2b** | `RootRegistry` · `declare_root` · `remove_root` · the debug walk hook | **roots, completely** | `root.rs` | 1 h |
-| **C1.3** | `unsafe trait Reclaim` — `guard()`, `retire()` | the scheme contract | `lib.rs` | 1 h |
-| **C1.4** | `trait Guard` — `try_protect`, `as_ref`, `swap`, three states | the reader surface | `lib.rs` | 1 h |
-| **C1.5** | `Domain<R>` — `Arc<R>`, `global()`, owns the registry, forwards `declare_root` | the handle | `domain.rs` | 0.5 h |
-| **C1.6** | `Leak` — the trivial implementor; first thing that runs | **it executes** | `leak.rs` | 1 h |
-| **C1.7** | `# Safety` blocks polished · the Treiber-`pop` doc-test | the contract | all | 1 h |
-
-Note `Domain<R>` dropped to 0.5 h and moved *after* the traits: once the registry exists, the
-domain is an `Arc` wrapper plus a forwarding method. The two constructors still differ exactly
-by who registers:
-
-```rust
-impl<R: Reclaim> Domain<R> {
-    pub unsafe fn declare_root<T>(&self, src: &AtomicPtr<T>) -> Root<T> {
-        self.roots.declare(src)   // C1.5 forwards to C1.2b's registry
-    }   //  ^^^^^ registers with this domain → the debug walk sees it
-}
-impl<T> Root<T> {
-    pub unsafe fn assume_root(src: &AtomicPtr<T>) -> Self { .. }
-    //            no self → registers nowhere → the caller owes (A) unaided
-}
-```
-
-Rough contract notes come before C1.3; the polished rustdoc is C1.7.
+C1 is not worked from this file. `plan/reclaim_modeling.md` is the teaching plan: a map of the
+whole crate, five model lessons (L1–L5, ≈ 8 h with the map) and six build lessons (L6–L11,
+the 7 h of C1), ordered model → core types → behaviour. Each lesson has an Input and an
+Output, and no component is split across lessons — two earlier breakdowns failed on exactly
+that, one by living only in conversation and one by cutting on the smallest compilable unit.
 
 ### What the docs must state
 
