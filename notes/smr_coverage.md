@@ -24,7 +24,7 @@ before/after, not scope) · **skip** · **decision** (deliberately different, wi
 | 71 | CORE | `Epoch-based reclamation (EBR)` | port C6 |  |
 | 76 | CORE | `crossbeam-epoch (Rust EBR)` | port C6 | the mirror target |
 | 81 | CORE | `QSBR (quiescent-state-based reclamation)` | family out | QSBR — needs a quiescent state the clients do not have |
-| 86 | CORE | `RCU (read-copy-update)` | family out | RCU — unbounded garbage; a blocking reader stalls the whole domain |
+| 86 | CORE | `RCU (read-copy-update)` | family out | RCU — raised and declined on merits (see the plan's *RCU, specifically*): same ERA cell as epoch, read side unmeasurable without `membarrier`, unbounded garbage and blocking progress. `synchronize_rcu` survives as C4's `cleanup()`. Triggers: a read-mostly pointer with a named consumer, or a move to Linux |
 | 91 | CORE | `Hazard eras (HE)` | family out | hazard eras |
 | 96 | CORE | `Interval-based reclamation (IBR / 2GEIBR)` | family out | IBR / 2GEIBR |
 | 101 | CORE | `Hyaline / Hyaline-1 / Hyaline-S / Hyaline-1S (reserve-to-free)` | family out | Hyaline |
@@ -33,7 +33,7 @@ before/after, not scope) · **skip** · **decision** (deliberately different, wi
 | 116 | CORE | `The ERA theorem (Sheffi & Petrank impossibility result)` | **ADD** docs | **the ERA theorem.** No scheme gets Ease of integration + Robustness + Applicability — at most two. EBR/RCU take integration+applicability, HP/HE take integration+robustness, VBR/NBR take robustness+applicability. This is the one-paragraph answer to *why does each scheme have exactly one glaring weakness*, and it belongs in step 1's docs. 0 h |
 | 123 | IMPORTANT | `Split / deferred reference counting (DRC, update coalescing, immediate RC)` | family out | split / deferred refcounting |
 | 128 | IMPORTANT | `folly::atomic_shared_ptr` | family out | `folly::atomic_shared_ptr` |
-| 133 | IMPORTANT | `arc_swap 'debt' slots (Rust ArcSwap)` | family out | `arc_swap` debt slots |
+| 133 | IMPORTANT | `arc_swap 'debt' slots (Rust ArcSwap)` | family out | `arc_swap` debt slots — the Rust answer for the read-mostly case, and RCU's first revisit trigger. Its own artifact if it lands, not a `Reclaim` implementor |
 | 138 | IMPORTANT | `Pass-the-buck (Herlihy, Luchangco, Martin, Moir)` | family out | **pass-the-buck** — the ancestor of Hyaline's reserve-to-free; named here because the old out-of-scope list omitted it |
 | 143 | IMPORTANT | `Asymmetric thread fence (membarrier-based; folly asymmetric_thread_fence_light/heavy)` | port C5 | asymmetric fence interface; `membarrier` impl skipped |
 | 148 | IMPORTANT | `folly hazptr_obj_cohort` | port C11 | cohorts |

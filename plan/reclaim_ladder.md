@@ -127,7 +127,7 @@ set is the skiplist's precursor so it belongs next to it.
 | **C1** | Crate skeleton and **the three traits**, plus `Leak`. No concurrency anywhere. | `cargo build` · a doc-test using `Leak` · the safety docs from step 1 are written here, not later | 4 h |
 | **C2** | **Intrusive retired list, sharded.** `RetireLink { next: AtomicPtr<()> }` on the object; `Retired` is the type-erased `(ptr, reclaim_fn)` pair that `Retire::reclaim` monomorphises into. **8 shard heads** chosen by hashing the object address with the low 8 bits discarded (allocator alignment makes them non-random), and a **batch push** that accumulates ~20 objects locally and pushes the run with one CAS plus one count add. | single-threaded: push N objects, drain, assert each object's **custom** `reclaim()` ran exactly once — a pooled object must go back to the pool, not through `Box` · shard distribution is even across a realistic allocation trace · **a contended retire bench showing the shard win**, because one list head is a CAS hot spot and that is the only reason the shards exist | 8 h |
 | **C3** | **The registry.** Append-only immortal list of per-thread records, `claim`/`release`, hand-back on thread exit. **Generic over the record payload**, because C5 stores addresses in it and C6 stores an epoch. | a declaration is visible from another thread · release clears stale payload (a leftover would be a permanent false positive for whoever reuses the record) · 64 sequential threads do **not** create 64 records | 4 h |
-| **C4** | **`Domain<R>`** — `Arc` handle, `global()`, owns the registry + retired list + reclamation threshold. Plus **two triggers, not one** — a count trigger and a **time trigger** — and the two things that decide *who pays* for a reclamation round: an **offload reclaimer** (a thread plus a channel, so the round is not charged to whichever thread happened to cross the threshold) and, for the inline fallback, a **recursion flattener** — a `thread_local` queue, because reclaiming objects can retire more objects, cross the threshold again, and recurse until the stack is gone. | two independent domains cannot see each other's records · a dropped domain asserts its retired list is empty · a loom model builds a `Domain` inside `loom::model` and never touches `global()` · **a nested-retire test that overflows the stack without the flattener and passes with it** · offload on and off produce identical reclamation, different latency owners · **a slow retirer — below the count threshold forever — still has its garbage freed, which only the time trigger delivers** · **the retired count is signed**: a round zeroes it then subtracts what it reclaimed while others add, so it legitimately goes negative, and an unsigned counter would wrap into a huge value and trigger runaway reclamation (a test drives the count negative) | 10.5 h |
+| **C4** | **`Domain<R>`** — `Arc` handle, `global()`, owns the registry + retired list + reclamation threshold. Plus **two triggers, not one** — a count trigger and a **time trigger** — and the two things that decide *who pays* for a reclamation round: an **offload reclaimer** (a thread plus a channel, so the round is not charged to whichever thread happened to cross the threshold) and, for the inline fallback, a **recursion flattener** — a `thread_local` queue, because reclaiming objects can retire more objects, cross the threshold again, and recurse until the stack is gone. | two independent domains cannot see each other's records · a dropped domain asserts its retired list is empty · a loom model builds a `Domain` inside `loom::model` and never touches `global()` · `cleanup()` is `synchronize_rcu()` under another name and the executor is `call_rcu()`'s async half — say so in the docs, it is the whole of what RCU contributes here · **a nested-retire test that overflows the stack without the flattener and passes with it** · offload on and off produce identical reclamation, different latency owners · **a slow retirer — below the count threshold forever — still has its garbage freed, which only the time trigger delivers** · **the retired count is signed**: a round zeroes it then subtracts what it reclaimed while others add, so it legitimately goes negative, and an unsigned counter would wrap into a huge value and trigger runaway reclamation (a test drives the count negative) | 10.5 h |
 | **C5** | **Hazard pointers.** In four landable pieces: announce + validate (loom first), then the **hashed guarded set**, then the scan, then batching against the threshold. The guarded set is not an optimisation — step 1's reason #2 for a scheme-owned retire list *is* O(R + H), and a linear scan per retired object delivers O(R × H), the complexity that argument rejected. Also the **light/heavy fence interface**: `light()`/`heavy()` as named operations, with `light() = full fence` on every platform without `membarrier`. Same codegen as a bare fence here; it names the seam and lets a Linux run show the real win. | loom on the announce/validate handoff — store/load, so loom is trustworthy here · **both negative controls**: always-protected stalls reclamation, never-protected produces a Miri UAF in a client · Miri clean · **a scan-cost measurement at R ∈ {100, 1000} × H ∈ {8, 64} showing O(R + H), not O(R × H)** | 18 h |
 | **C6** | **Epoch core.** `AtomicEpoch` and the generation rule, then re-entrant `pin`/`unpin` with the pin counter, then bags, then `try_advance` + `collect`. | **build it with TWO generations first and let loom produce the counterexample**, then go to three — the whole point of the step is why two is not enough · loom on pin/unpin nesting · Miri | 20 h |
 | **C7** | **Epoch's typed API.** `Atomic<T>` / `Owned<T>` / `Shared<'g, T>` / `Pointable`, pointer tagging, the full `compare_exchange` family. | `trybuild` compile-fail tests (already a dev-dependency) proving `Shared<'g, T>` cannot outlive its guard · tag round-trips at every alignment · `Pointable` for `[MaybeUninit<T>]` — **not** for the bags, which are `[Deferred; 64]`, a fixed array needing no `Pointable`; the real consumer is a variable-length allocation, i.e. the skiplist's tower, so this is the one part of C7 with no consumer until then | 18 h |
@@ -835,6 +835,42 @@ Deliberately out of scope, recorded in `notes/smr_inventory.md` so it is a decis
 oversight: QSBR, RCU, hazard eras / IBR, Hyaline, Crystalline, and the optimistic-access family.
 VBR is the interesting one — the only family that drops requirement (A) entirely, paying for it
 with a type-preserving allocator and a version word per mutable field.
+
+### RCU, specifically — out, and why (decided)
+
+Raised and declined on its merits rather than on hours, because it is the one excluded family
+with an obvious claim to a place here.
+
+1. **It occupies the same cell of the ERA lattice as epoch.** Integration + applicability, not
+   robustness. The five techniques above were chosen to *span* the lattice; a second scheme in
+   epoch's cell adds an arm to step 4 that isolates nothing, and step 4's design rule is one
+   variable per comparison.
+2. **Its headline property is unmeasurable on this machine.** RCU exists for a read side that
+   costs ~zero — inventory 86: "Linux non-preemptible RCU: nothing at all; folly: ~5 ns with
+   asymmetric fences." Userspace has no preemption-disabled section and `membarrier` is
+   unavailable on macOS/aarch64, which is already why C5 ports the fence *interface* and skips
+   the implementation. The read side would end up a real fence or an epoch-shaped store:
+   indistinguishable from epoch, with strictly worse garbage.
+3. **Its failure mode is the one these products are built to not have.** Inventory 86: garbage
+   **unbounded**, progress **blocking** — one stalled reader delays every deferred callback in
+   the domain, with no bound. The bounded-garbage guarantee is the headline comparison in the
+   inventory ("bounded when protected by hazard pointers, unbounded when protected by RCU"),
+   and it is the reason C5 exists at all.
+
+**What is taken from RCU anyway, because it costs nothing:** `synchronize_rcu()` *is* C4's
+`cleanup()` — block until every pre-existing reader is gone, so everything currently
+reclaimable is provably gone on return — and `call_rcu()`'s async half is C4's offload
+executor. The interface ideas arrive without the scheme.
+
+**Revisit triggers**, either of which reopens this:
+
+- **A read-mostly pointer with a named consumer appears** — a routing table, a config snapshot,
+  P3's peer set, P5's validator set: read a thousand times per write, which is RCU's actual
+  shape. In Rust the answer there is `arc_swap`-style debt slots (inventory 133, IMPORTANT), and
+  it belongs in **its own artifact, not as a `Reclaim` implementor** — the same reasoning that
+  puts 5b outside the trait.
+- **The project moves to Linux**, `membarrier` becomes available, and RCU's read side can
+  actually be ~0 — at which point the comparison means something.
 
 ---
 
