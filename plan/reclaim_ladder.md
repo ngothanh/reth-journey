@@ -16,7 +16,8 @@
 
 ## Where we are
 
-Spent ≈ **15 h** on implementation (approximate — from `notes/seg_queue_build_log.md`):
+Spent ≈ **15 h** on implementation (approximate — reconstructed from the commit history;
+there is no build log for that period):
 
 | Done | What it bought |
 |---|---|
@@ -561,7 +562,15 @@ Falls out of it: **Q3's acceptance gets a mechanical check.** Q3 rests on an arg
 protecting through `&self.head` rather than `&A.next`; with declared roots the argument becomes
 `declare_root(&self.head)`, `declare_root(&self.tail)`, and an assert.
 
-### Blog beat
+### Blog beats
+
+The C1 contract work produced a standalone piece's worth of material, captured as
+it happened in `notes/07_unsafe_traits.md`: `unsafe fn` vs `unsafe trait` and the litmus
+test · impl-vs-exhibit, and why every exhibit is a pre-written loom or Miri test ·
+deriving clauses from the proof you cannot finish · the four properties hiding in one
+getter · and the closing move, that a clause no tool can enforce is a design backlog
+item rather than documentation. Working title: *What an `unsafe` trait actually
+promises*.
 
 A vs B is the clearest "the two schemes disagree about what a guard *is*" moment in the whole
 build - hazard is per-address, epoch is per-thread - and the argument lands without any
