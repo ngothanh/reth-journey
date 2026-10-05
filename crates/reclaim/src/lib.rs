@@ -4,5 +4,7 @@
 mod sync;
 
 mod retire;
+mod root;
 
 pub use retire::{Retire, RetireLink};
+pub use root::Root;
