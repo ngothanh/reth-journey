@@ -6,10 +6,14 @@
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
 > **Current position**: refcount built, proven unsound, and benched. Reclamation is the open problem.
-> **Remaining**: **≈ 168 h** across 6 steps — was 116 h before the inventory audits
-> (+35.5 h from the not-ported audit, +12.5 h from the 192-row coverage sweep, +4 h for declared roots;
+> **Remaining**: **≈ 171 h** across 6 steps — was 116 h before the inventory audits
+> (+35.5 h from the not-ported audit, +12.5 h from the 192-row coverage sweep, +4 h for declared roots, +3 h for the journal;
 > full disposition of every inventory row: `notes/smr_coverage.md`)
-> **Not counted here**: the blog. It is an output of finished work, not part of the build.
+> **The blog**: the *writing* is an output of finished work and is not counted here. The
+> **capture is not** — the series answers *how*, not *what*, so the decisions, their reasons,
+> the trade-offs and the turns that were wrong have to be recorded as they happen. A finished
+> crate cannot be read backwards into them. Every edit closes by appending to
+> `notes/reclaim_journey.md`; that is budgeted (+3 h, below).
 > **Source research**: `notes/smr_inventory.md` (192 mechanisms from folly / crossbeam-epoch / haphazard / the literature) · `notes/folly_gap_analysis.md`
 
 ---
@@ -70,7 +74,8 @@ two sections after this one.
 | 16 | **step 4** bench the reclamation axis | C5, C6, Q4 | 11 h | 146 |
 | 17 | **5a** layout A — global index | step 4 | 7 h | 153 |
 | 18 | **5b** crossbeam-exact — DESTROY bit | 5a | 11 h | 164 |
-| 19 | **step 6** final bench: which wins, and why | 5b | 4 h | **168** |
+| 19 | **step 6** final bench: which wins, and why | 5b | 4 h | 168 |
+| — | **the journal** — ~10 min appended at the close of each of the 19 edits | all | 3 h | **171** |
 
 Three things this ordering buys that a different one would not:
 
@@ -888,4 +893,8 @@ executor. The interface ideas arrive without the scheme.
 - **EventCount**, and the `CachePadded` / `Backoff` corrections — `concurrent`, not SegQueue.
   Independent work, scheduled in `PRODUCT_TREE.md` §9.
 - The remaining folly gaps — `notes/folly_gap_analysis.md`, each picked up with its own artifact.
-- The blog. An output of finished work, not part of the build.
+- The blog **prose**. An output of finished work.
+  The **journal** is not: `notes/reclaim_journey.md` is appended to as part of closing each
+  edit, because the route is the thing the series is about and the near-misses leave no trace
+  in the code. `notes/07_unsafe_traits.md` is the same knowledge distilled by topic; the
+  journal holds the order it arrived in, and which first answers were wrong.
