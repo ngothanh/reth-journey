@@ -1,4 +1,4 @@
-use crate::sync::AtomicPtr;
+use crate::sync::*;
 
 pub struct RetireLink {
     next: AtomicPtr<()>,
