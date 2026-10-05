@@ -444,18 +444,21 @@ reassuring, not proof.
 
 | Milestone | Cumulative | Elapsed |
 |---|---:|---|
-| SegQueue + `reclaim` done *(the 116 h in `plan/reclaim_ladder.md`)* | 116 h | ~1 month |
-| `concurrent` + `time` done | 272 h | ~2 months |
-| **P4 v0.5 — sub-µs allocation-free book + first merged PRs** ⭐ **first public artifact** | 492 h | **~3.8 months** |
-| **P1 `ethdb` v2** — mainnet state root on your own storage engine | 1282 h | ~10 months |
-| **P2 `exec-vm` v1.5** — self-contained block replay | 1802 h | ~14 months |
-| **P4 v1.5** — thread-per-core, kernel bypass, measured p99 | 2412 h | ~18.5 months |
-| **P3 `eth-node` v1.5** — holds mainnet tip *(cuttable)* | 3012 h | ~23 months |
-| **P5 `perp-dex-core` v1.5** — replicated, BFT | 4062 h | ~31 months |
+| SegQueue + `reclaim` done *(the 149.5 h in `plan/reclaim_ladder.md`)* | 149.5 h | ~1.2 months |
+| `concurrent` + `time` done | 305.5 h | ~2.3 months |
+| **P4 v0.5 — sub-µs allocation-free book + first merged PRs** ⭐ **first public artifact** | 525.5 h | **~4.1 months** |
+| **P1 `ethdb` v2** — mainnet state root on your own storage engine | 1315.5 h | ~10.3 months |
+| **P2 `exec-vm` v1.5** — self-contained block replay | 1835.5 h | ~14.3 months |
+| **P4 v1.5** — thread-per-core, kernel bypass, measured p99 | 2445.5 h | ~18.8 months |
+| **P3 `eth-node` v1.5** — holds mainnet tip *(cuttable)* | 3045.5 h | ~23.3 months |
+| **P5 `perp-dex-core` v1.5** — replicated, BFT | 4095.5 h | ~31.3 months |
 
 Cutting P3 (§7) removes ~600 h and pulls P5 to ~26 months. The `concurrent` row grew
-180 → 272 h when the `reclaim` crate, EventCount and the two corrections were scheduled;
-every row below it shifted by the same ~92 h.
+180 → 272 h when the `reclaim` crate, EventCount and the two corrections were scheduled, then
+272 → 305.5 h when the SMR inventory audit put link counting, the offload executor, the
+sharded lists, the hashed guarded set, the fence interface and cohorts back in scope
+(`plan/reclaim_ladder.md`, *What is ported, and what is not*); every row below it shifted by
+the same ~92 h and then by a further 33.5 h.
 
 ### How much to trust this
 
@@ -502,8 +505,8 @@ progression, `SimpleEncode`, and the Pin examples. `cargo test --workspace --all
   must be swappable behind one interface for the A/B bench to isolate reclamation from layout, and
   because `concurrent` (SegQueue, skiplist) and `bufpool` both consume it. Contract and the
   192-mechanism source inventory: `notes/smr_inventory.md`. A second client (Treiber stack) is part
-  of the scope — a trait backing only SegQueue is not a trait. **Rung ladder, acceptance tests and
-  hour estimates: `plan/reclaim_ladder.md`, which is now the single plan for all remaining SegQueue work (116 h, implementation only) including the crossbeam layout and DESTROY-bit steps.**
+  of the scope — a trait backing only SegQueue is not a trait. **Step ladder, acceptance tests and
+  hour estimates: `plan/reclaim_ladder.md`, which is now the single plan for all remaining SegQueue work (149.5 h, implementation only) including link counting, the crossbeam layout and the DESTROY-bit steps.**
 - `EventCount` — lock-free blocking handoff. `Parker` is 1:1 and cannot express "N consumers parked
   on one ring, wake one"; `Condvar` needs the mutex; `Semaphore` takes its `Mutex<State>` even when
   the waiter list is empty. Pack {epoch | waiter-count} in one word so notify is a single `fetch_add`

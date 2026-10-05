@@ -6,7 +6,8 @@
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
 > **Current position**: refcount built, proven unsound, and benched. Reclamation is the open problem.
-> **Remaining**: **≈ 116 h** across 6 steps
+> **Remaining**: **≈ 149.5 h** across 6 steps — was 116 h before the inventory audit
+> (see *What is ported, and what is not* below; +33.5 h, none of it optional)
 > **Not counted here**: the blog. It is an output of finished work, not part of the build.
 > **Source research**: `notes/smr_inventory.md` (192 mechanisms from folly / crossbeam-epoch / haphazard / the literature) · `notes/folly_gap_analysis.md`
 
@@ -34,16 +35,16 @@ In the tree today: 9 passing tests, 5 loom models, the refcount and the ordered 
 |---|---|---|---|---:|
 | **1** | **Define the problem** | the `Reclaim` trait and its safety documentation. No scheme, no registry. All signature questions are settled below — this step writes them down and proves they compile. | A contract with no implementor and no client is unfalsifiable | 4 h |
 | **2** | **Integrate with SegQueue** | `Leak` (the trivial implementor) · `SegQueue<T, R: Reclaim>` · the protect-source restructure · a Treiber stack as a second client | Integrable and not SegQueue-shaped — but nothing yet reclaims anything | 14 h |
-| **3** | **Implement the schemes** | the shared registry + `Domain` (10 h) · hazard pointers (14 h) · epoch **including its native typed API** (38 h) · a **Harris linked set** as that API's acceptance test (6 h) | Two schemes exist behind one interface and have never been compared | 68 h |
-| **4** | **Bench the reclamation axis** | `Leak` / `Hazard` / `Epoch` / `Mutex<VecDeque>` / real `crossbeam`, identical queue code | Reclamation is now isolated. Any remaining gap to crossbeam is **layout** or **crossbeam's own scheme** — and neither has been built | 8 h |
+| **3** | **Implement the schemes** | the shared registry + `Domain` (20.5 h) · hazard pointers (18 h) · **link counting** (10 h) · **cohorts** (6 h) · epoch **including its native typed API** (38 h) · a **Harris linked set** as that API's acceptance test (6 h) | Two schemes exist behind one interface and have never been compared | 98.5 h |
+| **4** | **Bench the reclamation axis** | `Leak` / `Hazard` / `Epoch` / `Mutex<VecDeque>` / real `crossbeam`, identical queue code — **throughput *and* the retire-call latency distribution** | Reclamation is now isolated. Any remaining gap to crossbeam is **layout** or **crossbeam's own scheme** — and neither has been built | 11 h |
 | **5** | **The crossbeam approach** | layout A, a global index, reclamation held fixed (7 h) · crossbeam-exact: block cursor + per-slot `WRITE`/`READ`/`DESTROY` bits (11 h) | Everything is built; nothing has been compared head to head | 18 h |
 | **6** | **Final bench — which wins, and why** | the full matrix, one variable per comparison, and the written argument for the winner | — endpoint | 4 h |
 
 ---
 
-## The full sequence — 17 edits, in dependency order
+## The full sequence — 19 edits, in dependency order
 
-The one table to work from. `C*` are `reclaim`-crate edits, `Q*` are `seg_queue.rs` edits;
+The one table to work from — **19 edits**. `C*` are `reclaim`-crate edits, `Q*` are `seg_queue.rs` edits;
 they interleave because `Q2` cannot land before the traits exist. Detail for each is in the
 two sections after this one.
 
@@ -53,19 +54,21 @@ two sections after this one.
 | 2 | **Q1** loss-detecting loom model, against today's code | — | 1.5 h | 5.5 |
 | 3 | **Q2** trait integration under `Leak`; refcount deleted | C1 | 4 h | 9.5 |
 | 4 | **Q3** protect-source restructure → root set `{head, tail}` | Q1, Q2 | 2.5 h | 12 |
-| 5 | **C2** intrusive retired list | C1 | 3 h | 15 |
-| 6 | **C3** registry — immortal per-thread records | C2 | 4 h | 19 |
-| 7 | **C4** `Domain<R>` | C3 | 3 h | 22 |
-| 8 | **C5** hazard pointers | C4 | 14 h | 36 |
-| 9 | **C8** Treiber stack — second client | C5 | 5 h | 41 |
-| 10 | **Q4** bench arms wired | Q3, C5 | 1 h | 42 |
-| 11 | **C6** epoch core — two generations, then three | C4 | 20 h | 62 |
-| 12 | **C7** epoch typed API | C6 | 18 h | 80 |
-| 13 | **C9** Harris linked set — third client | C7 | 6 h | 86 |
-| 14 | **step 4** bench the reclamation axis | C5, C6, Q4 | 8 h | 94 |
-| 15 | **5a** layout A — global index | step 4 | 7 h | 101 |
-| 16 | **5b** crossbeam-exact — DESTROY bit | 5a | 11 h | 112 |
-| 17 | **step 6** final bench: which wins, and why | 5b | 4 h | **116** |
+| 5 | **C2** intrusive retired list — **sharded**, batch push | C1 | 8 h | 20 |
+| 6 | **C3** registry — immortal per-thread records | C2 | 4 h | 24 |
+| 7 | **C4** `Domain<R>` — **+ offload executor, + recursion flattener** | C3 | 8.5 h | 32.5 |
+| 8 | **C5** hazard pointers — **+ hashed guarded set, + fence interface** | C4 | 18 h | 50.5 |
+| 9 | **C10** link counting — protect a child through its parent | C5 | 10 h | 60.5 |
+| 10 | **C11** cohorts — per-structure retired lists, teardown | C4, C10 | 6 h | 66.5 |
+| 11 | **C8** Treiber stack — second client | C5 | 5 h | 71.5 |
+| 12 | **Q4** bench arms wired | Q3, C5 | 1 h | 72.5 |
+| 13 | **C6** epoch core — two generations, then three | C4 | 20 h | 92.5 |
+| 14 | **C7** epoch typed API | C6 | 18 h | 110.5 |
+| 15 | **C9** Harris linked set — third client, and C10's real test | C7, C10 | 6 h | 116.5 |
+| 16 | **step 4** bench the reclamation axis | C5, C6, Q4 | 11 h | 127.5 |
+| 17 | **5a** layout A — global index | step 4 | 7 h | 134.5 |
+| 18 | **5b** crossbeam-exact — DESTROY bit | 5a | 11 h | 145.5 |
+| 19 | **step 6** final bench: which wins, and why | 5b | 4 h | **149.5** |
 
 Three things this ordering buys that a different one would not:
 
@@ -94,10 +97,15 @@ crates/reclaim/
   src/lib.rs        Reclaim · Guard · Retire · RetireLink        C1
   src/sync.rs       the loom shim (mirrors seg_queue's mod sync)  C1
   src/leak.rs       Leak                                          C1
-  src/retire.rs     intrusive retired list, type-erased Retired   C2
+  src/retire.rs     retired list: 8 shards, batch push, Retired   C2
   src/registry.rs   immortal per-thread records, claim/release    C3
   src/domain.rs     Domain<R> (Arc handle) + global()             C4
+  src/reclaimer.rs  offload thread + inline recursion flattener   C4
+  src/fence.rs      light/heavy asymmetric fence interface        C5
   src/hazard.rs     announce addresses                            C5
+  src/guarded.rs    hashed guarded set, O(R + H) matching         C5
+  src/linked.rs     link counting: packed {link|ref}, unlink      C10
+  src/cohort.rs     per-structure retired list, teardown          C11
   src/epoch/
     mod.rs          the Reclaim impl                              C6
     epoch.rs        AtomicEpoch, the 3-generation rule            C6
@@ -115,14 +123,16 @@ set is the skiplist's precursor so it belongs next to it.
 | # | Edit | Acceptance test | Est |
 |---|---|---|---:|
 | **C1** | Crate skeleton and **the three traits**, plus `Leak`. No concurrency anywhere. | `cargo build` · a doc-test using `Leak` · the safety docs from step 1 are written here, not later | 4 h |
-| **C2** | **Intrusive retired list.** `RetireLink { next: AtomicPtr<()> }` on the object; `Retired` is the type-erased `(ptr, reclaim_fn)` pair that `Retire::reclaim` monomorphises into. | single-threaded: push N objects, drain, assert each object's **custom** `reclaim()` ran exactly once — a pooled object must go back to the pool, not through `Box` | 3 h |
+| **C2** | **Intrusive retired list, sharded.** `RetireLink { next: AtomicPtr<()> }` on the object; `Retired` is the type-erased `(ptr, reclaim_fn)` pair that `Retire::reclaim` monomorphises into. **8 shard heads** chosen by hashing the object address with the low 8 bits discarded (allocator alignment makes them non-random), and a **batch push** that accumulates ~20 objects locally and pushes the run with one CAS plus one count add. | single-threaded: push N objects, drain, assert each object's **custom** `reclaim()` ran exactly once — a pooled object must go back to the pool, not through `Box` · shard distribution is even across a realistic allocation trace · **a contended retire bench showing the shard win**, because one list head is a CAS hot spot and that is the only reason the shards exist | 8 h |
 | **C3** | **The registry.** Append-only immortal list of per-thread records, `claim`/`release`, hand-back on thread exit. **Generic over the record payload**, because C5 stores addresses in it and C6 stores an epoch. | a declaration is visible from another thread · release clears stale payload (a leftover would be a permanent false positive for whoever reuses the record) · 64 sequential threads do **not** create 64 records | 4 h |
-| **C4** | **`Domain<R>`** — `Arc` handle, `global()`, owns the registry + retired list + reclamation threshold. | two independent domains cannot see each other's records · a dropped domain asserts its retired list is empty · a loom model builds a `Domain` inside `loom::model` and never touches `global()` | 3 h |
-| **C5** | **Hazard pointers.** In three landable pieces: announce + validate (loom first), then the scan, then batching against the threshold. | loom on the announce/validate handoff — store/load, so loom is trustworthy here · **both negative controls**: always-protected stalls reclamation, never-protected produces a Miri UAF in a client · Miri clean | 14 h |
+| **C4** | **`Domain<R>`** — `Arc` handle, `global()`, owns the registry + retired list + reclamation threshold. Plus the two things that decide *who pays* for a reclamation round: an **offload reclaimer** (a thread plus a channel, so the round is not charged to whichever thread happened to cross the threshold) and, for the inline fallback, a **recursion flattener** — a `thread_local` queue, because reclaiming objects can retire more objects, cross the threshold again, and recurse until the stack is gone. | two independent domains cannot see each other's records · a dropped domain asserts its retired list is empty · a loom model builds a `Domain` inside `loom::model` and never touches `global()` · **a nested-retire test that overflows the stack without the flattener and passes with it** · offload on and off produce identical reclamation, different latency owners | 8.5 h |
+| **C5** | **Hazard pointers.** In four landable pieces: announce + validate (loom first), then the **hashed guarded set**, then the scan, then batching against the threshold. The guarded set is not an optimisation — step 1's reason #2 for a scheme-owned retire list *is* O(R + H), and a linear scan per retired object delivers O(R × H), the complexity that argument rejected. Also the **light/heavy fence interface**: `light()`/`heavy()` as named operations, with `light() = full fence` on every platform without `membarrier`. Same codegen as a bare fence here; it names the seam and lets a Linux run show the real win. | loom on the announce/validate handoff — store/load, so loom is trustworthy here · **both negative controls**: always-protected stalls reclamation, never-protected produces a Miri UAF in a client · Miri clean · **a scan-cost measurement at R ∈ {100, 1000} × H ∈ {8, 64} showing O(R + H), not O(R × H)** | 18 h |
 | **C6** | **Epoch core.** `AtomicEpoch` and the generation rule, then re-entrant `pin`/`unpin` with the pin counter, then bags, then `try_advance` + `collect`. | **build it with TWO generations first and let loom produce the counterexample**, then go to three — the whole point of the step is why two is not enough · loom on pin/unpin nesting · Miri | 20 h |
 | **C7** | **Epoch's typed API.** `Atomic<T>` / `Owned<T>` / `Shared<'g, T>` / `Pointable`, pointer tagging, the full `compare_exchange` family. | `trybuild` compile-fail tests (already a dev-dependency) proving `Shared<'g, T>` cannot outlive its guard · tag round-trips at every alignment · `Pointable` for `[MaybeUninit<T>]`, which is what the bags need | 18 h |
 | **C8** | **Treiber stack** in `concurrent`, on the trait. Second *client*. | its own loom models · runs against `Leak`, `Hazard` and `Epoch` unchanged — that is the test of the trait, not of the stack | 5 h |
-| **C9** | **Harris linked set** in `concurrent`, on the typed API. Third client. | loom with **two guards held at once** (hand-over-hand on `pred`/`curr`) · a node marked but not yet physically unlinked must **not** be retired — the deferred-unlink case · Miri | 6 h |
+| **C9** | **Harris linked set** in `concurrent`, on the typed API. Third client, and C10's real acceptance test — Harris is the *uncertain removal* case by construction. | loom with **two guards held at once** (hand-over-hand on `pred`/`curr`) · a node marked but not yet physically unlinked must **not** be retired — the deferred-unlink case · runs against link counting as well as the root-set argument · Miri | 6 h |
+| **C10** | **Link counting.** The mechanism that closes HP's actual limitation: *a hazard pointer on `A` does not protect `A->next`*. Two counters packed in one `AtomicU64` — link count (inbound from mutable paths) and ref count (inbound from immutable paths) — so "downgrade a mutable link to an immutable ref" is one CAS rather than a two-step window where the object looks unreferenced. `retire()` for certain removal, `unlink()` for uncertain. | a child reached through a protected parent is safe with **zero added reader cost** — that is the whole claim, so the reader path must be unchanged by a bench · **the `for_each_link` aliasing rule has its own Miri test**: each child pointer must be read *before* `f` is invoked on it and must never be touched after, because `f` may already have freed it · a chain of 10k immutable nodes frees in one pass, not 10k threshold rounds | 10 h |
+| **C11** | **Cohorts.** A per-structure retired list instead of objects spread across per-thread lists and mixed with unrelated garbage. Carries the `active_` flag and `shutdown_and_reclaim()`. | objects retired *during* teardown are reclaimed, not pushed onto a list nobody will drain — the postcondition is `!active() && list.is_empty()` · a few stragglers must not delay reclamation of a large run of link-counted objects, which is the locality claim and needs C10 to be measurable | 6 h |
 
 **C1 = step 1. C2–C4 = step 3's registry + `Domain` (10 h). C5 = hazard (14 h). C6 + C7 =
 epoch (38 h). C8 = step 2's second client (5 h). C9 = step 3's Harris set (6 h).**
@@ -140,17 +150,45 @@ epoch (38 h). C8 = step 2's second client (5 h). C9 = step 3's Harris set (6 h).
   trait that already has two clients and two implementors.
 - **C7 after C6.** The typed API's `Pointable` impl is what the bags allocate through, so the
   bags have to exist to know what it needs.
-- **C9 last.** It is the only client of C7, so it cannot be written earlier.
+- **C9 after C10.** Harris is *uncertain removal* by construction, which is link counting's
+  named case, so C9 is C10's acceptance test rather than an unrelated client. C9 is still the
+  only client of C7 and so still cannot be written before it.
+- **C10 after C5.** Link counting is an HP mechanism; it needs a working scan to be testable.
+- **C11 after C10.** Cohorts' locality claim is *about* link-counted objects — "a few missing
+  objects delaying the reclamation of large numbers of link-counted objects". Without C10 the
+  claim cannot be measured, only asserted.
 
-### What is deliberately *not* ported
+### What is ported, and what is not
 
-From `notes/smr_inventory.md`, marked `optional` or `skip` and skipped on purpose: folly's
-thread cache (`hazptr_tc`), cohorts and tagged retired lists, `hazptr_obj_linked`, asymmetric
-barriers (unavailable on macOS/aarch64), the sharded retired lists, `hazptr_local<M>`, the
-reclamation-offload executor; crossbeam's `sync::list`/`sync::queue`, `load_consume`,
-`crossbeam_sanitize`, and `no_std` support. Each is a named row in the inventory with its
-forcing pressure recorded, so a later decision to add one starts from a reason rather than a
-rediscovery.
+**This section replaces an earlier one that was wrong.** It claimed the omissions were rows
+`notes/smr_inventory.md` had marked `optional` or `skip`. Six of its seven items are marked
+**IMPORTANT**, one mechanism it omitted is marked **CORE** and was not listed at all, and two
+items it disclaimed are in fact built by this plan under different names. The audit below is
+the real record. The test applied is not *is it affordable* but **does the forcing pressure
+exist in this design** — and the hour cost of a yes is not an input.
+
+| Mechanism | Inventory | Decision | Why |
+|---|---|---|---|
+| hashed guarded set (`F14FastSet`) | **CORE** 352 | **port**, C5 | Was absent from the plan *and* from the old not-ported list. Step 1's reason #2 for a scheme-owned retire list is O(R + H); a linear scan is O(R × H), the complexity that argument rejected. haphazard has this bug and flags it on itself (1116: `BTreeSet`, so every pass allocates) |
+| sharded retired lists | **IMPORTANT** 454 | **port**, C2 | One list head is a CAS hot spot under many-thread retire; 8 shards cut it ~8×. Directly visible in step 4's 8-producer arm |
+| offload executor | **IMPORTANT** 479 | **port**, C4 | "Charging it to a random unlucky retire-er produces a huge tail-latency spike." Re-derived from first principles in design discussion before the row was re-read — which is what exposed the old section |
+| inline recursion flattener | OPTIONAL 596 | **port**, C4 | Near-mandatory, not optional: it exists *because* reclamation runs inline. Reclaim → retire → cross threshold → recurse → stack overflow. SegQueue triggers it, since freeing a segment drops its `T`s |
+| asymmetric fence **interface** | **IMPORTANT** 444, 464 | **port the interface**, C5; skip the impl | "The biggest single performance idea in folly's hazptr." The old reason — unavailable on macOS/aarch64 — is true of the `membarrier` *implementation*, not of the light/heavy *interface*. Porting the interface costs nothing here and makes the win measurable on Linux |
+| cohort batch push (`kThreshold = 20`) | **IMPORTANT** 509 | **port**, C2 | One shared-list CAS and one count add per 20 retires instead of per retire. Independent of the rest of cohorts |
+| cohorts: locality, `active_`, teardown | **IMPORTANT** 504, 514 | **port**, C11 | Row 504 names "the UnboundedQueue Segment case" — literally this structure. Teardown is a correctness path: objects retired *while* a cohort shuts down must be reclaimed, not listed for a drainer that will never come |
+| **link counting** (`hazptr_obj_linked`) | **IMPORTANT** 519, 529 | **port**, C10 | Reversed. This is not an optimisation — it is the mechanism that lifts hazard pointers' headline limitation, "a hazard pointer on `A` does not protect `A->next`", which is why HP applies to 3 of 18 structures in Singh's survey. Q3's root-set restructure substitutes for it **only where a root set exists**. `{head, tail}` is one for SegQueue; a skiplist traverses node pointers at every level and may have none. Deferring it would park the technique exactly where the committed roadmap needs it |
+| thread cache (`hazptr_tc`) | **IMPORTANT** 489, 494 | **defer — with a measurement, not a guess** | The only defer whose reason is technical rather than budgetary. Its pressure is "every holder construction is a CAS on the shared `avail_` list", i.e. acquisition is hot. **Shape B makes acquisition ~1 per operation** (see *`protect` retargets a held guard*), so the pressure does not exist in this design. Step 4 measures guard-acquisition cost directly; if it is invisible there, this becomes a decided skip with evidence behind it, and if it is not, port it |
+| `hazptr_local<M>` | OPTIONAL 616 | **skip** | The row argues this side: ~2 ns versus ~5 ns, bought with "it is unsafe for the current thread to construct any other holder-type objects while the current instance exists." Non-composability for 3 ns |
+| tagged-list locking, `cleanup_cohort_tag` | OPTIONAL 591, 621, 626 | **conditional** | Only needed if synchronous per-tag cleanup is ported, which nothing currently asks for. Genuinely optional, and the inventory agrees |
+| crossbeam `sync::list` | **IMPORTANT** 858 | **already built — it is C3** | The old section disclaimed it. "Intrusive lock-free participant registry" is C3's one-line description |
+| crossbeam `sync::queue` | **IMPORTANT** 873 | **already built** | C4's retired list plus C6's bags. Also disclaimed in error |
+| `load_consume` | OPTIONAL 920 | **skip** | Real on aarch64, where `Acquire` costs a `dmb ishld` and a dependent load is free — so the better reason than "optional" is that it is **disabled under Miri, loom and TSan**. An optimisation none of this project's verification tools can see is one this project cannot justify |
+| `crossbeam_sanitize`, `no_std` | SKIP 942, 947 | **skip** | No algorithmic content |
+| folly `mprotect` membarrier fallback | SKIP 658 | **skip** | TLB-shootdown trick for platforms without `membarrier`; the fence interface's `light() = full fence` fallback covers the same ground honestly |
+
+**Net: +33.5 h** — C2 3 → 8, C4 3 → 8.5, C5 14 → 18, C10 +10, C11 +6, step 4 8 → 11.
+One defer (the thread cache, ~5 h) with a measured trigger, and one conditional (tagged-list
+locking, ~4 h). Nothing is parked for want of hours.
 
 ---
 
@@ -296,6 +334,84 @@ let curr = gc.protect(&curr.next);   // ... but `curr` is still borrowed from gc
 haphazard ties `protect` to `&'l mut self` and inherits exactly this consequence. So the
 question is a real trade and not a free safety win. **Write C1 with the signature that looks
 right and let C9 refute it**; a `trybuild` compile-fail test pins whichever way it lands.
+
+### `try_protect` is the only required method; `protect` is a default (decided)
+
+The trait carries **no retry loop**. One required method:
+
+```rust
+fn try_protect<T>(&mut self, p: *mut T, src: &AtomicPtr<T>)
+    -> Result<*mut T, *mut T>;   // Ok(p) | Err(what src holds now)
+```
+
+One attempt: announce `p`, fence, re-read `src`. The caller passes the pointer **it already
+loaded**, so there is no redundant load and nothing to re-derive, and it absorbs the retry into
+the loop it was going to write anyway.
+
+A looping `protect` that hid the retry was rejected. The reason is not that nesting is slow:
+
+- **Both loops retry on the same condition** — `src` changed — and only the caller knows what
+  the pointer was *for*. The inner loop can only re-stabilise and hand back a value the
+  caller's CAS may immediately find stale, so its work is duplicated, **and duplicated in the
+  most expensive currency HP has**: every inner retry is a `SeqCst` fence establishing a fact
+  with a lifetime of zero instructions.
+- Cost composes by the wrong operator: nested is inner × outer, flat is inner + outer.
+- An unbounded spin inside a library call whose retry condition the caller can already observe
+  is the mistake already removed from `pop`.
+
+The convenience survives as a **provided method** with a default body over `try_protect`, so
+implementors write one method and nothing else, and a caller with no candidate yet (the start
+of an operation — "give me the current head, protected") still has it.
+
+### `Ok`/`Err` mean protectability, not freshness (decided)
+
+`Ok(p)`: `p` is protected and safe to dereference until this guard is retargeted or dropped.
+`Err(q)`: `p` could **not** be protected; `q` is what `src` held when that was determined,
+offered to save the caller a load. **`q` carries no promise of being current.**
+
+So epoch returns `Ok(p)` unconditionally and does **no** load — a pin already covers `p`
+whether or not `src` moved. HP's re-read stays, but it belongs to HP's own safety argument
+rather than being a service to the caller.
+
+The alternative — freshness in the contract, forcing epoch to re-read — was rejected on two
+grounds:
+
+1. **Freshness is not durable.** `Ok(p)` could only ever mean "`src` held `p` at some instant
+   after the announce"; by the time the caller acts it may be stale again. Any client that must
+   act on freshness has to re-check at the point of action, and for a mutating client that
+   re-check **is the CAS**. A guarantee nobody can rely on is not worth a load on epoch's
+   hottest path.
+2. **The client can do its own load, and Harris must tolerate staleness regardless.** Harris
+   reads `pred.next` itself and already restarts on an inconsistency, because a stale read is
+   possible between any load and any use no matter what `try_protect` promises.
+
+Note on the apparent precedent: folly's `try_protect(T*& ptr, const Atom<T*>& src)` and
+haphazard's `Err`-carries-the-new-value look like votes for freshness, but **both libraries are
+HP-only, and for HP the two contracts are indistinguishable** — HP must re-read for safety
+either way. They are not evidence.
+
+Falls out of this, and is assertable: **`retries == 0` under `Epoch`, `retries > 0` under
+`Hazard`.**
+
+### Scheme-agnostic means one source text, not one execution path (decided)
+
+C8's acceptance was "the Treiber stack runs against `Leak`, `Hazard` and `Epoch` unchanged".
+*Unchanged* means **one source text — no `cfg`, no scheme-specific branch in the client**. It
+never meant identical runtime control flow, and reading it that way would have cost epoch a
+load per protect to keep a test's shape tidy.
+
+So every client test splits in two:
+
+- **the generic body** carries the scheme-agnostic invariants: no lost nodes, no duplicates,
+  LIFO, Miri clean;
+- **three thin wrappers** carry outcomes that are specific per implementation — `Leak`:
+  reclaim count `== 0` and a monotonically growing retired chain; `Hazard`: `retries > 0` under
+  contention, at least one loom interleaving reaching the retry path, garbage bounded by the
+  threshold, both negative controls; `Epoch`: `retries == 0`, garbage bounded by three
+  generations, pin/unpin nesting.
+
+Asserting "epoch's `Err` path is dead" is a real claim about epoch that a uniform-control-flow
+test would have hidden.
 
 ### Blog beat
 
@@ -475,6 +591,18 @@ holds, the trait is free and the question is closed for the rest of the plan. If
 the gap names a place where the trait's shape costs a load or loses an optimisation - which is
 worth more than the argument was.
 
+**Two measurements, not one, because throughput cannot see the thing that matters.** A
+millisecond scan spike charged to one unlucky `retire` averages into "HP is a bit slower", so
+the mechanisms in C2/C4/C5 that exist to control it would be invisible here — neither
+justifiable nor, if omitted, detectable:
+
+1. **Retire-call latency distribution** — p99 and max, not just the mean. This is the arm that
+   prices the offload executor and the shards. Without it the plan has no measurement that
+   could ever have justified porting them.
+2. **Guard-acquisition cost, and acquisitions per operation.** This is the thread cache's
+   falsifier. Shape B should make acquisition ~1 per operation; if that holds and the cost is
+   invisible, `hazptr_tc` becomes a decided skip with evidence rather than a judgement call.
+
 Seal the prediction first. The open question: the last measurement went `7.7 → 77.8 → 105.9 →
 104.9` ns against crossbeam's flat `13.8 → 16.7`. If `Epoch` lands near crossbeam, reclamation
 was the whole story; if it stays 6× off, layout is implicated and step 5 becomes the interesting
@@ -551,6 +679,7 @@ Five families, which is the "lose no technique" goal made concrete:
 | Reference count inside the object | done | **proven unsound** |
 | RAII guard + three free conditions + ordered trailing cursor | done | **all three survive** |
 | Hazard pointers — announce *addresses* | step 3 | |
+| **Link counting** — make a child safe because its *parent* was protected | step 3, C10 | the mechanism that lifts HP's "3 of 18 structures" limit |
 | Epoch — announce *time* | step 3 | |
 | Per-slot cooperative hand-off (`DESTROY` bit) | step 5b | not a trait impl, on purpose |
 
