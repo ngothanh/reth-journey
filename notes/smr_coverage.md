@@ -126,7 +126,7 @@ before/after, not scope) · **skip** · **decision** (deliberately different, wi
 | 626 | OPTIONAL | `hazptr_domain::cleanup_cohort_tag(cohort) + list_match_tag / list_match_condition` | conditional | `cleanup_cohort_tag` — with tagged lists |
 | 631 | OPTIONAL | `acquire_link / acquire_ref versus acquire_link_safe / acquire_ref_safe` | port C10 | `acquire_link` vs `acquire_link_safe` |
 | 636 | OPTIONAL | `downgrade_retire_immutable_descendants / release_delete_immutable_descendants / release_retire_mutable_children + Worklist = small_vector<..., 2>` | port C10 | one-pass reclamation of long immutable chains — a 10k chain must not take 10k rounds |
-| 641 | OPTIONAL | `hazptr_root<T, Atom>` | defer | `hazptr_root<T>` — static-root links; with declared roots if that lands |
+| 641 | OPTIONAL | `hazptr_root<T, Atom>` | port C10 | `hazptr_root<T>` — a holder for a link from a static root. Declared roots landed, so this is its natural pairing: a declared root that owns a link |
 | 646 | OPTIONAL | `detail::Sleeper (bounded spin then kMinYieldingSleep)` | port C3 | back-off — reuse `concurrent::Backoff` |
 | 651 | OPTIONAL | `FOLLY_ALWAYS_INLINE / FOLLY_NOINLINE / FOLLY_LIKELY / FOLLY_UNLIKELY discipline` | skip | inline-attribute discipline — revisit only if a profile asks |
 | 658 | SKIP | `mprotectMembarrier() TLB-shootdown fallback` | skip | `mprotect` TLB-shootdown fallback |

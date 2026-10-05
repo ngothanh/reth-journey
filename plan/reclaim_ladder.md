@@ -6,8 +6,8 @@
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
 > **Current position**: refcount built, proven unsound, and benched. Reclamation is the open problem.
-> **Remaining**: **≈ 164 h** across 6 steps — was 116 h before the inventory audits
-> (+35.5 h from the not-ported audit, +12.5 h from the 192-row coverage sweep;
+> **Remaining**: **≈ 168 h** across 6 steps — was 116 h before the inventory audits
+> (+35.5 h from the not-ported audit, +12.5 h from the 192-row coverage sweep, +4 h for declared roots;
 > full disposition of every inventory row: `notes/smr_coverage.md`)
 > **Not counted here**: the blog. It is an output of finished work, not part of the build.
 > **Source research**: `notes/smr_inventory.md` (192 mechanisms from folly / crossbeam-epoch / haphazard / the literature) · `notes/folly_gap_analysis.md`
@@ -34,9 +34,9 @@ In the tree today: 9 passing tests, 5 loom models, the refcount and the ordered 
 
 | # | Step | Deliverable | Wall that forces the next step | Est |
 |---|---|---|---|---:|
-| **1** | **Define the problem** | the `Reclaim` trait and its safety documentation. No scheme, no registry. All signature questions are settled below — this step writes them down and proves they compile. | A contract with no implementor and no client is unfalsifiable | 6 h |
+| **1** | **Define the problem** | the `Reclaim` trait and its safety documentation. No scheme, no registry. All signature questions are settled below — this step writes them down and proves they compile. | A contract with no implementor and no client is unfalsifiable | 7 h |
 | **2** | **Integrate with SegQueue** | `Leak` (the trivial implementor) · `SegQueue<T, R: Reclaim>` · the protect-source restructure · a Treiber stack as a second client | Integrable and not SegQueue-shaped — but nothing yet reclaims anything | 14 h |
-| **3** | **Implement the schemes** | the shared registry + `Domain` (28.5 h) · hazard pointers (18 h) · **link counting** (10 h) · **cohorts** (6 h) · epoch **including its native typed API** (38 h) · a **Harris linked set** as that API's acceptance test (6 h) | Two schemes exist behind one interface and have never been compared | 111 h |
+| **3** | **Implement the schemes** | the shared registry + `Domain` (28.5 h) · link counting + the reachability walk (13 h) · hazard pointers (18 h) · **cohorts** (6 h) · epoch **including its native typed API** (38 h) · a **Harris linked set** as that API's acceptance test (6 h) | Two schemes exist behind one interface and have never been compared | 114 h |
 | **4** | **Bench the reclamation axis** | `Leak` / `Hazard` / `Epoch` / `Mutex<VecDeque>` / real `crossbeam`, identical queue code — **throughput *and* the retire-call latency distribution** | Reclamation is now isolated. Any remaining gap to crossbeam is **layout** or **crossbeam's own scheme** — and neither has been built | 11 h |
 | **5** | **The crossbeam approach** | layout A, a global index, reclamation held fixed (7 h) · crossbeam-exact: block cursor + per-slot `WRITE`/`READ`/`DESTROY` bits (11 h) | Everything is built; nothing has been compared head to head | 18 h |
 | **6** | **Final bench — which wins, and why** | the full matrix, one variable per comparison, and the written argument for the winner | — endpoint | 4 h |
@@ -51,25 +51,25 @@ two sections after this one.
 
 | Order | Edit | Depends on | Est | Cumulative |
 |---:|---|---|---:|---:|
-| 1 | **C1** traits + `Leak`, the safety docs, **filter / empty state / swap** | — | 6 h | 6 |
-| 2 | **Q1** loss-detecting loom model, against today's code | — | 1.5 h | 7.5 |
-| 3 | **Q2** trait integration under `Leak`; refcount deleted | C1 | 4 h | 11.5 |
-| 4 | **Q3** protect-source restructure → root set `{head, tail}` | Q1, Q2 | 2.5 h | 14 |
-| 5 | **C2** retired list — sharded, batch push, **double-retire detection** | C1 | 9 h | 23 |
-| 6 | **C3** registry — immortal **padded** per-thread records | C2 | 4.5 h | 27.5 |
-| 7 | **C4** `Domain<R>` — triggers, executor, flattener, **`cleanup`, teardown** | C3 | 15 h | 42.5 |
-| 8 | **C5** hazard pointers — hashed guarded set, fence interface | C4 | 18.5 h | 61 |
-| 9 | **C10** link counting — protect a child through its parent | C5 | 10 h | 71 |
-| 10 | **C11** cohorts — per-structure retired lists, teardown | C4, C10 | 6 h | 77 |
-| 11 | **C8** Treiber stack — second client | C5 | 5 h | 82 |
-| 12 | **Q4** bench arms wired | Q3, C5 | 1 h | 83 |
-| 13 | **C6** epoch core — two generations, then three, **+ `repin`/`flush`** | C4 | 23 h | 106 |
-| 14 | **C7** epoch typed API — **+ `fetch_or` tag ops** | C6 | 19 h | 125 |
-| 15 | **C9** Harris linked set — third client, and C10's real test | C7, C10 | 6 h | 131 |
-| 16 | **step 4** bench the reclamation axis | C5, C6, Q4 | 11 h | 142 |
-| 17 | **5a** layout A — global index | step 4 | 7 h | 149 |
-| 18 | **5b** crossbeam-exact — DESTROY bit | 5a | 11 h | 160 |
-| 19 | **step 6** final bench: which wins, and why | 5b | 4 h | **164** |
+| 1 | **C1** traits + `Leak`, safety docs, filter / empty state / swap, **`Root<T>`** | — | 7 h | 7 |
+| 2 | **Q1** loss-detecting loom model, against today's code | — | 1.5 h | 8.5 |
+| 3 | **Q2** trait integration under `Leak`; refcount deleted | C1 | 4 h | 12.5 |
+| 4 | **Q3** protect-source restructure → **declared** root set `{head, tail}` | Q1, Q2 | 2.5 h | 15 |
+| 5 | **C2** retired list — sharded, batch push, **double-retire detection** | C1 | 9 h | 24 |
+| 6 | **C3** registry — immortal **padded** per-thread records | C2 | 4.5 h | 28.5 |
+| 7 | **C4** `Domain<R>` — triggers, executor, flattener, **`cleanup`, teardown** | C3 | 15 h | 43.5 |
+| 8 | **C5** hazard pointers — hashed guarded set, fence interface | C4 | 18.5 h | 62 |
+| 9 | **C10** link counting, **and the debug reachability walk** | C5 | 13 h | 75 |
+| 10 | **C11** cohorts — per-structure retired lists, teardown | C4, C10 | 6 h | 81 |
+| 11 | **C8** Treiber stack — second client | C5 | 5 h | 86 |
+| 12 | **Q4** bench arms wired | Q3, C5 | 1 h | 87 |
+| 13 | **C6** epoch core — two generations, then three, **+ `repin`/`flush`** | C4 | 23 h | 110 |
+| 14 | **C7** epoch typed API — **+ `fetch_or` tag ops** | C6 | 19 h | 129 |
+| 15 | **C9** Harris linked set — third client, and C10's real test | C7, C10 | 6 h | 135 |
+| 16 | **step 4** bench the reclamation axis | C5, C6, Q4 | 11 h | 146 |
+| 17 | **5a** layout A — global index | step 4 | 7 h | 153 |
+| 18 | **5b** crossbeam-exact — DESTROY bit | 5a | 11 h | 164 |
+| 19 | **step 6** final bench: which wins, and why | 5b | 4 h | **168** |
 
 Three things this ordering buys that a different one would not:
 
@@ -133,7 +133,7 @@ set is the skiplist's precursor so it belongs next to it.
 | **C7** | **Epoch's typed API.** `Atomic<T>` / `Owned<T>` / `Shared<'g, T>` / `Pointable`, pointer tagging, the full `compare_exchange` family. | `trybuild` compile-fail tests (already a dev-dependency) proving `Shared<'g, T>` cannot outlive its guard · tag round-trips at every alignment · `Pointable` for `[MaybeUninit<T>]` — **not** for the bags, which are `[Deferred; 64]`, a fixed array needing no `Pointable`; the real consumer is a variable-length allocation, i.e. the skiplist's tower, so this is the one part of C7 with no consumer until then | 18 h |
 | **C8** | **Treiber stack** in `concurrent`, on the trait. Second *client*. | its own loom models · runs against `Leak`, `Hazard` and `Epoch` unchanged — that is the test of the trait, not of the stack | 5 h |
 | **C9** | **Harris linked set** in `concurrent`, on the typed API. Third client, and C10's real acceptance test — Harris is the *uncertain removal* case by construction. | loom with **two guards held at once** (hand-over-hand on `pred`/`curr`) · a node marked but not yet physically unlinked must **not** be retired — the deferred-unlink case · runs against link counting as well as the root-set argument · Miri | 6 h |
-| **C10** | **Link counting.** The mechanism that closes HP's actual limitation: *a hazard pointer on `A` does not protect `A->next`*. Two counters packed in one `AtomicU64` — link count (inbound from mutable paths) and ref count (inbound from immutable paths) — so "downgrade a mutable link to an immutable ref" is one CAS rather than a two-step window where the object looks unreferenced. `retire()` for certain removal, `unlink()` for uncertain. | a child reached through a protected parent is safe with **zero added reader cost** — that is the whole claim, so the reader path must be unchanged by a bench · **the `for_each_link` aliasing rule has its own Miri test**: each child pointer must be read *before* `f` is invoked on it and must never be touched after, because `f` may already have freed it · a chain of 10k immutable nodes frees in one pass, not 10k threshold rounds | 10 h |
+| **C10** | **Link counting**, and the **debug reachability walk** that `for_each_link` makes possible — `retire` walks the declared roots and asserts the retired object is unreachable. The mechanism that closes HP's actual limitation: *a hazard pointer on `A` does not protect `A->next`*. Two counters packed in one `AtomicU64` — link count (inbound from mutable paths) and ref count (inbound from immutable paths) — so "downgrade a mutable link to an immutable ref" is one CAS rather than a two-step window where the object looks unreferenced. `retire()` for certain removal, `unlink()` for uncertain. | a child reached through a protected parent is safe with **zero added reader cost** — that is the whole claim, so the reader path must be unchanged by a bench · **the `for_each_link` aliasing rule has its own Miri test**: each child pointer must be read *before* `f` is invoked on it and must never be touched after, because `f` may already have freed it · a chain of 10k immutable nodes frees in one pass, not 10k threshold rounds | 10 h |
 | **C11** | **Cohorts.** A per-structure retired list instead of objects spread across per-thread lists and mixed with unrelated garbage. Carries the `active_` flag and `shutdown_and_reclaim()`. | objects retired *during* teardown are reclaimed, not pushed onto a list nobody will drain — the postcondition is `!active() && list.is_empty()` · a few stragglers must not delay reclamation of a large run of link-counted objects, which is the locality claim and needs C10 to be measurable | 6 h |
 
 **C1 = step 1. C2–C4 = step 3's registry + `Domain` (10 h). C5 = hazard (14 h). C6 + C7 =
@@ -499,6 +499,67 @@ Falsifier, if it ever needs revisiting: name one representation that keeps intru
 zero-allocation for hazard **and** contiguous 64-object bags for epoch. folly and
 crossbeam-epoch, written by people who knew both schemes cold, converged on different
 representations.
+
+### Roots are declared, not documented (decided)
+
+Clause 6 of `retire`'s safety contract — requirement (A) — is the one clients get wrong, it is
+a global property of the whole structure, and it is uncheckable at the call site. folly,
+crossbeam-epoch, haphazard and P1121 all handle it the same way: prose, trusted. That is why
+this plan's own violation of it took 15 h and a proof to find, with the library never saying a
+word.
+
+So `try_protect` takes a **`Root<T>`**, not a bare `&AtomicPtr<T>`:
+
+```rust
+let head_root = domain.declare_root(&self.head);
+let tail_root = domain.declare_root(&self.tail);
+g.try_protect(p, &head_root)
+```
+
+The domain holds the roots' addresses, so under `cfg(debug_assertions)` `retire(p)` walks them,
+follows successors via C10's `for_each_link`, and asserts `p` is unreachable. Run that against
+the original SegQueue: `&cur.next` was a protect source, so it would have to be a root, and the
+retired segment is reachable from it forever — **the assert fires**. The bug becomes a test
+failure instead of a proof obligation.
+
+**Why the signature change is load-bearing and a test-only harness is not.** The obvious cheaper
+design is to let the client register its roots for the test and leave `try_protect` alone. It
+cannot work, and the reason *is* the bug: the original queue believed its roots were
+`{head, tail}` while actually protecting through `cur.next`. A check fed the *believed* set
+walks `head` and `tail`, finds the retired segment unreachable, and passes. **Any check that
+takes the root set on trust is blind to exactly this bug class.** The typed root is what makes
+the declared set equal the actual set.
+
+The inverse — *observing* protect sources at runtime rather than declaring them — fails
+differently: an observed address can point inside an object that is later freed, so the walk
+itself becomes a use-after-free. A declared root lives in storage the domain outlives, by
+contract. The signature change earns its keep twice.
+
+**Nothing is locked out.** A structure whose root set genuinely is not enumerable gets an
+unsafe constructor:
+
+```rust
+/// # Safety
+/// `src` must outlive the domain, and the caller takes on clause 6 by hand.
+pub unsafe fn assume_root(src: &AtomicPtr<T>) -> Root<T>
+```
+
+That is the documented-roots regime, available per call site with an `unsafe` and a comment
+instead of crate-wide by default. Checked is the default; the exception has to argue for itself.
+
+**Three limits, written down so a green assert never oversells itself:**
+
+1. It catches **permanent** reachability from a root, which is the common bug and this plan's
+   own. It does **not** catch resurrection — clause 6 is a claim about the future, and a walk
+   at retire time is a snapshot.
+2. `for_each_link` remains **trusted input**. A wrong successors function yields a silently
+   passing check, which is worse than none. Mitigated only in that C10 tests it independently.
+3. It is **debug-only**, trustworthy single-threaded and under loom, and makes no claim about
+   production. A walk under live concurrency can be wrong in both directions.
+
+Falls out of it: **Q3's acceptance gets a mechanical check.** Q3 rests on an argument about
+protecting through `&self.head` rather than `&A.next`; with declared roots the argument becomes
+`declare_root(&self.head)`, `declare_root(&self.tail)`, and an assert.
 
 ### Blog beat
 
