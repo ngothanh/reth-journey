@@ -153,59 +153,18 @@ pub unsafe trait Retire: Send {
 
 #[cfg(all(test, not(loom)))]
 mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
-
-    /// A retirable object whose `reclaim` is *not* a plain `Box` free — it
-    /// reports back first, which is the whole reason `reclaim` is overridable.
-    struct Node {
-        link: RetireLink,
-        reclaimed: Arc<AtomicUsize>,
-    }
-
-    unsafe impl Retire for Node {
-        fn retire_link(&self) -> &RetireLink {
-            &self.link
-        }
-
-        unsafe fn reclaim(ptr: *mut Self) {
-            let node = unsafe { Box::from_raw(ptr) };
-            node.reclaimed.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    fn node(counter: &Arc<AtomicUsize>) -> Box<Node> {
-        Box::new(Node { link: RetireLink::new(), reclaimed: Arc::clone(counter) })
-    }
-
-    #[test]
-    fn retire_link_is_deterministic_and_belongs_to_self() {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let n = node(&counter);
-
-        let first: *const RetireLink = n.retire_link();
-        let second: *const RetireLink = n.retire_link();
-        assert_eq!(first, second, "property 2: the same link on every call");
-        assert!(
-            core::ptr::eq(n.retire_link(), &n.link),
-            "property 1: the link is this object's own field"
-        );
-
-        unsafe { Node::reclaim(Box::into_raw(n)) };
-    }
-
-    #[test]
-    fn reclaim_runs_the_implementors_deallocator_exactly_once() {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let ptr = Box::into_raw(node(&counter));
-
-        unsafe { Node::reclaim(ptr) };
-
-        assert_eq!(
-            counter.load(Ordering::Relaxed),
-            1,
-            "property 5: the object's own reclaim ran, exactly once"
-        );
-    }
+    // TODO(you): the contract above has seven properties. Which of them can a
+    // single-threaded test actually catch, and what does each one's test look
+    // like? Write the exhibit first, then translate it.
+    //
+    //   1 ownership        — the link is self's own field
+    //   2 determinism      — the same link on every call
+    //   3 stability        — the address does not move in the retired window
+    //   4 non-interference — the contents are the scheme's in that window
+    //   5 it actually frees — the implementor's own reclaim ran, exactly once
+    //   6 no resurrection
+    //   7 no unwinding
+    //
+    // Two of these cannot be tested single-threaded. Say which, and why, in a
+    // comment — that answer is the start of C5's loom models.
 }

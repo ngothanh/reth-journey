@@ -6,6 +6,11 @@
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
 > **Current position**: refcount built, proven unsound, and benched. Reclamation is the open problem.
+> **Before this ladder**: `plan/reclaim_modeling.md` — seven sessions, ≈ 8 h, that build the
+> *model* (the race, the two halves, roots, guards, grace detection, bounded garbage) before
+> more code gets written. This ladder assumes that model is already held; the C1 sessions kept
+> stalling because it was not.
+>
 > **Remaining**: **≈ 171 h** across 6 steps — was 116 h before the inventory audits
 > (+35.5 h from the not-ported audit, +12.5 h from the 192-row coverage sweep, +4 h for declared roots, +3 h for the journal;
 > full disposition of every inventory row: `notes/smr_coverage.md`)

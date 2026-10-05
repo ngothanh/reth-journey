@@ -97,29 +97,12 @@ impl<T> Root<T> {
 
 #[cfg(all(test, not(loom)))]
 mod tests {
-    use super::*;
-    use core::ptr::null_mut;
-
-    #[test]
-    fn assume_root_names_the_atomic_it_was_given() {
-        let cell: AtomicPtr<u64> = AtomicPtr::new(null_mut());
-        let root = unsafe { Root::assume_root(&cell) };
-
-        assert!(core::ptr::eq(root.as_atomic(), &cell));
-        assert_eq!(root.addr(), &cell as *const _ as usize);
-    }
-
-    #[test]
-    fn root_is_copy_so_storing_one_costs_a_word() {
-        let cell: AtomicPtr<u64> = AtomicPtr::new(null_mut());
-        let root = unsafe { Root::assume_root(&cell) };
-        let copy = root;
-
-        assert_eq!(root.addr(), copy.addr(), "Copy, not moved");
-        assert_eq!(
-            core::mem::size_of::<Root<u64>>(),
-            core::mem::size_of::<usize>(),
-            "one word: it goes next to a tuned #[repr(C)] field"
-        );
-    }
+    // TODO(you): two things worth pinning here, and the second is the one that
+    // protects a tuned layout.
+    //
+    //   - assume_root names the atomic it was given (as_atomic / addr agree)
+    //   - size_of::<Root<T>>() == size_of::<usize>()
+    //
+    // The second is a real regression test, not a tautology: it is what breaks
+    // if Root ever grows a Drop, an Arc or a domain id.
 }

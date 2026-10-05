@@ -436,3 +436,31 @@ forces an awkward split is worth re-examining before accepting the split: here
 it dissolved under one question, *what does this function actually need?*
 Second, there is a difference between a decomposition that is correct and one
 that is **teachable**, and the first does not imply the second.
+
+## 19. The build ladder assumed a model that was not there
+
+**First answer** — go straight into C1 and let the design decisions arrive as
+they came up. Nine of them did get decided and recorded, and the code for C1.1
+and C1.2a is sound.
+
+**What killed it** — the sessions kept stalling on the *model*, not on Rust.
+"What is a root" and "what is a Domain" are modeling questions, and they arrived
+*after* code depending on the answers had been written. Three separate stalls in
+one session, each one a sign that the build ladder was being executed against a
+model that existed only in the plan document, not in the builder's head.
+
+**Decided** — `plan/reclaim_modeling.md`: seven sessions, ≈ 8 h, before any more
+of the crate. The race · the two halves · roots · what a guard is · how grace is
+detected · who owns the garbage · then the traits as *consequences* rather than
+decisions. Each session ends in an argument that can be defended and an exhibit
+that can be written, not in a file that compiles.
+
+**Cost** — ≈ 8 h, and it is not in the 171 h, which is implementation. Cheap
+against three stalls in one session.
+
+**Also decided, after being caught:** tests are the learner's work, not mine.
+The existing memory classes unit tests as scaffolding Claude writes directly —
+but the tests in `retire.rs` and `root.rs` were **exhibits turned into tests**,
+which is the specific skill being taught. Writing them removed the exercise.
+Both test modules are now a `TODO(you)` listing exactly which properties need
+covering, including the two that cannot be tested single-threaded.
