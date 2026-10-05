@@ -168,7 +168,7 @@ Every output here is a section of `notes/reclaim_model.md`. No compiled code.
 
 ### L4 — Who owns the garbage
 - **Where on the map**: `RetireLink`, `Retire`, the scheme's retired list; steps 6, 9, 10.
-- **Input**: §6; `crates/reclaim/src/retire.rs` (already written — read it now, not before).
+- **Input**: §6.
 - **Teacher presents**: retired objects of *different types* sit on one list; the list is made
   from links stored inside the objects themselves.
 - **Questions**: (1) If the list is one chain of mixed types, what type can `next` have?
@@ -202,13 +202,14 @@ Types, fields, constructors, and the tests of what each type guarantees. Innermo
 
 ### L6 — The object side
 - **Where on the map**: `RetireLink`, `Retire`.
-- **Input**: §7, §8; `retire.rs` as it stands — the trait and docs exist, the test module is a
-  `TODO(you)`.
+- **Input**: §7, §8; `retire.rs` as you first typed it — the struct and a private, safe
+  `trait Retire`. Everything else is written in this lesson.
 - **Questions**: (1) Of the seven properties in the trait's safety docs, which can a
   single-threaded test catch? (2) Which two cannot, and what tool will? (3) Why is
   `RetireLink::new` not `const fn`?
-- **Output**: `retire.rs` finished — a test type implementing `Retire` whose `reclaim` is not
-  a plain `Box` free, and one test per testable property, each written from its exhibit.
+- **Output**: `retire.rs` finished — `RetireLink` with its constructor, `Retire` with the right
+  visibility and safety keyword, the safety docs, a test type whose `reclaim` is not a plain
+  `Box` free, and one test per testable property, each written from its exhibit.
 - **Gate**: `cargo test -p reclaim` green; a comment naming the two untestable properties.
 - **Est**: 1 h
 
@@ -223,9 +224,7 @@ Types, fields, constructors, and the tests of what each type guarantees. Innermo
   "is exactly one word".
 - **Gate**: tests green; explain what breaks the size test.
 - **Est**: 0.5 h
-- **Open before this lesson**: `root.rs` currently holds a version I wrote. Either it is
-  reverted to your four lines and you type it here, or it is kept as given and this lesson
-  adds only `RootRegistry` and the tests. Your call.
+- **Starting point**: `root.rs` is your own four lines — the struct and nothing else.
 
 ### L8 — The scheme-side types
 - **Where on the map**: `Reclaim`, `Guard`, `Domain<R>`, `Leak`.
