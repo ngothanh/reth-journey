@@ -264,29 +264,40 @@ something loom can refute.
 The deliverable is the safety documentation, because that is the load-bearing part and the
 part most libraries get wrong.
 
-### C1 in seven pieces, each of which compiles
+### C1 in eight pieces — one finishable idea each
 
-Written down here rather than left in conversation, because the first version of this
-breakdown put `declare_root` in C1.2 — and `declare_root` takes `&self` on `Domain`, which
-does not exist until C1.3. A breakdown that lives only in chat drifts without anyone noticing.
+Two corrections already folded in. The first version of this breakdown lived only in
+conversation and put `declare_root` in C1.2, which cannot hold it. The second version wrote it
+down but still split **roots across two pieces**, so working on roots meant half of them were
+somewhere else — a decomposition by *smallest compilable unit* rather than by *idea*. For
+learning, the second is the one that matters: a piece should finish a concept.
 
-| | Piece | Where | Depends on | Est |
+The dependency that forced the split was not real either. `declare_root` does not need a whole
+`Domain<R>`; it needs a **list of root addresses**, and that list is scheme-independent. So
+`RootRegistry` is a plain non-generic struct, roots finish inside C1.2, and `Domain<R>` later
+just owns a registry and forwards to it — the client-facing API stays
+`domain.declare_root(&self.head)` exactly as recorded below.
+
+| | Piece | Finishes | Where | Est |
 |---|---|---|---|---:|
-| **C1.1** | `RetireLink` · `unsafe trait Retire` | `retire.rs` | — | 1 h |
-| **C1.2** | `Root<T>` · `Root::assume_root` · the accessors | `root.rs` | — | 0.5 h |
-| **C1.3** | `unsafe trait Reclaim` · `Domain<R>` · **`Domain::declare_root`** · `remove_root` | `lib.rs`, `domain.rs` | C1.2 | 2 h |
-| **C1.4** | `trait Guard` — `try_protect`, `as_ref`, `swap`, the three states | `lib.rs` | C1.3 | 1 h |
-| **C1.5** | `Leak` — the trivial implementor; first thing that runs | `leak.rs` | C1.3, C1.4 | 1 h |
-| **C1.6** | the `# Safety` blocks, polished into rustdoc | all | C1.1–C1.5 | 1 h |
-| **C1.7** | the Treiber-`pop` doc-test | `lib.rs` | C1.5 | 0.5 h |
+| **C1.1** | `RetireLink` · `unsafe trait Retire` | **the object side** | `retire.rs` | 1 h |
+| **C1.2a** | `Root<T>` · `assume_root` · accessors | — | `root.rs` | 0.5 h |
+| **C1.2b** | `RootRegistry` · `declare_root` · `remove_root` · the debug walk hook | **roots, completely** | `root.rs` | 1 h |
+| **C1.3** | `unsafe trait Reclaim` — `guard()`, `retire()` | the scheme contract | `lib.rs` | 1 h |
+| **C1.4** | `trait Guard` — `try_protect`, `as_ref`, `swap`, three states | the reader surface | `lib.rs` | 1 h |
+| **C1.5** | `Domain<R>` — `Arc<R>`, `global()`, owns the registry, forwards `declare_root` | the handle | `domain.rs` | 0.5 h |
+| **C1.6** | `Leak` — the trivial implementor; first thing that runs | **it executes** | `leak.rs` | 1 h |
+| **C1.7** | `# Safety` blocks polished · the Treiber-`pop` doc-test | the contract | all | 1 h |
 
-`declare_root` is C1.3, not C1.2, because `&self` is the domain — and that `&self` is the
-*whole* difference between the two constructors:
+Note `Domain<R>` dropped to 0.5 h and moved *after* the traits: once the registry exists, the
+domain is an `Arc` wrapper plus a forwarding method. The two constructors still differ exactly
+by who registers:
 
 ```rust
 impl<R: Reclaim> Domain<R> {
-    pub unsafe fn declare_root<T>(&self, src: &AtomicPtr<T>) -> Root<T> { .. }
-    //                            ^^^^^ registers with this domain → the debug walk sees it
+    pub unsafe fn declare_root<T>(&self, src: &AtomicPtr<T>) -> Root<T> {
+        self.roots.declare(src)   // C1.5 forwards to C1.2b's registry
+    }   //  ^^^^^ registers with this domain → the debug walk sees it
 }
 impl<T> Root<T> {
     pub unsafe fn assume_root(src: &AtomicPtr<T>) -> Self { .. }
@@ -294,7 +305,7 @@ impl<T> Root<T> {
 }
 ```
 
-Rough contract notes come before C1.3; the polished rustdoc is C1.6.
+Rough contract notes come before C1.3; the polished rustdoc is C1.7.
 
 ### What the docs must state
 

@@ -409,3 +409,30 @@ their hours are asserted against C1's 7 h row. `declare_root` is C1.3.
 **Cost** — none in hours. The lesson is the same one as entry 8: **a plan that
 exists only in conversation cannot be audited.** The sub-step split was exactly
 the kind of thing that felt too small to write down.
+
+## 18. Decompose by idea, not by smallest compilable unit
+
+**First answer** — C1 was split so each piece was the smallest thing that
+compiles on its own. `Root<T>` and its accessors in C1.2; `declare_root` in
+C1.3, because it takes `&self` on `Domain` and `Domain` did not exist yet.
+
+**What killed it** — working on roots meant half of roots was somewhere else.
+The split optimised for *compiles in isolation* when the property that matters
+for learning is **finishes one idea in one sitting**.
+
+And the dependency that forced it was not real. `declare_root` does not need a
+whole `Domain<R>` — it needs a **list of root addresses**, and that list is
+scheme-independent. A plain non-generic `RootRegistry` removes the dependency
+entirely, after which `Domain<R>` is an `Arc` wrapper with a forwarding method
+and drops from 2 h to 0.5 h.
+
+**Decided** — eight pieces, each finishing a concept: the object side, roots,
+the scheme contract, the reader surface, the handle, then something that
+executes. The client-facing API does not change — `domain.declare_root(&self.head)`
+is still what callers write.
+
+**Cost** — none in hours. Two generalisable points. First, a dependency that
+forces an awkward split is worth re-examining before accepting the split: here
+it dissolved under one question, *what does this function actually need?*
+Second, there is a difference between a decomposition that is correct and one
+that is **teachable**, and the first does not imply the second.
