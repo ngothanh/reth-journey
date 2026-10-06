@@ -86,3 +86,57 @@ Words:
   can finish. During it `A`'s memory is still alive and the scheme holds it.
 - With `Leak` the life stops after step 8: 9 never happens, so 10 never does, and memory grows.
 - The queue runs steps 1–6 the same way whatever the scheme. Only 9 and 10 differ.
+
+---
+
+## §4 The crash, and the two rules  (lesson L1)
+
+### The crash, step by step
+
+Two threads. `T1` is a reader in `pop`. `T2` is another `pop` that moves `head` and then
+tries to free the old segment `A`.
+
+```
+1. T1 gets the address of A.            head.load()
+2. T2 moves head from A to B.           head.compare_exchange(A, B)
+3. T2 checks A's counter. It is 0.      try_reclaim: A.ref_count
+4. T2 frees A.                          drop(Box::from_raw(A))
+5. T1 uses A.                           (*A).acquire_ref()  — writes into freed memory
+6. Crash: use-after-free.
+```
+
+Two facts make this possible:
+
+- Between line 1 and line 5, the address of A lives only in T1's own local variable. Nothing
+  shared has changed, so no other thread can know T1 has it. That is why the counter reads 0.
+- T1's first use of A is `acquire_ref`, which writes to a counter stored **inside A**. So the
+  act of saying "I am reading A" already needs A to be alive.
+
+### The two rules
+
+Freeing A is safe only when both are true.
+
+| | Rule | Who does it | How, in the queue |
+|---|---|---|---|
+| **Rule 1** — called (A) in the plan | No **new** reader can get A's address. | the **structure** (the queue) | it moves `head` away from A |
+| **Rule 2** — called (B) in the plan | Every reader who **already has** A's address has finished, before A is freed. | the **scheme** | it waits, then frees |
+
+In the crash above, Rule 1 held (line 2 moved `head`). **Rule 2 was broken**: T2 freed A
+while T1 still had its address.
+
+### What follows
+
+- The queue must **not free A itself**. It does not know who else has A's address.
+- The queue only says "I am done with A" and hands A to the scheme. That is `retire`.
+- The scheme waits until readers like T1 have finished, and only then frees A. That is
+  `reclaim`. The wait in between is the grace period.
+
+### Why the scheme cannot do Rule 1
+
+1. Making A unreachable means changing the structure's own pointers (here: moving `head`).
+2. How to change them correctly is the structure's own algorithm, different for a queue, a
+   stack and a list.
+3. The scheme only sees the addresses it is handed, so it has nothing to change.
+
+The scheme can **check** Rule 1 if it is told where readers start from (the roots — next
+lesson). It can never **make** Rule 1 true.
