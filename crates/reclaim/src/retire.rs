@@ -59,3 +59,84 @@ impl Default for RetireLink {
         RetireLink::new()
     }
 }
+
+#[cfg(all(test, not(loom)))]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// Plays the role of a segment. `drops` counts how many times a node was
+    /// really dropped, so a test can see whether `reclaim` freed it.
+    struct Node {
+        link: RetireLink,
+        data: u64,
+        drops: Arc<AtomicUsize>,
+    }
+
+    impl Node {
+        fn boxed(data: u64, drops: &Arc<AtomicUsize>) -> Box<Node> {
+            Box::new(Node {
+                link: RetireLink::new(),
+                data,
+                drops: Arc::clone(drops),
+            })
+        }
+    }
+
+    impl Drop for Node {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    unsafe impl Retirable for Node {
+        fn retire_link(&self) -> &RetireLink {
+            &self.link
+        }
+
+        unsafe fn reclaim(ptr: *mut Self) {
+            unsafe {
+                drop(Box::from_raw(ptr));
+            }
+        }
+    }
+
+    #[test]
+    fn a_new_link_is_not_in_the_pile() {
+        assert!(RetireLink::new().next.load(Ordering::Relaxed).is_null());
+        assert!(RetireLink::default().next.load(Ordering::Relaxed).is_null());
+    }
+
+    #[test]
+    fn retire_link_is_the_nodes_own_field() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let node = Node::boxed(16, &drops);
+
+        assert!(core::ptr::eq(node.retire_link(), &node.link));
+        assert_eq!(node.data, 16);
+    }
+
+    #[test]
+    fn retire_link_is_the_same_every_call() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let node = Node::boxed(16, &drops);
+
+        let first: *const RetireLink = node.retire_link();
+        let second: *const RetireLink = node.retire_link();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn reclaim_frees_the_node_once() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let ptr: *mut Node = Box::into_raw(Node::boxed(16, &drops));
+        assert_eq!(drops.load(Ordering::Relaxed), 0, "not freed yet");
+
+        unsafe {
+            Node::reclaim(ptr);
+        }
+
+        assert_eq!(drops.load(Ordering::Relaxed), 1, "freed exactly once");
+    }
+}
