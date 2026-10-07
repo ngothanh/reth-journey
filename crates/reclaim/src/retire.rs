@@ -4,7 +4,7 @@ pub struct RetireLink {
     next: AtomicPtr<()>,
 }
 
-trait Retire: Send {
+trait Retirable: Send {
     fn retire_link(&self) -> &RetireLink;
 
     unsafe fn reclaim(ptr: *mut Self);

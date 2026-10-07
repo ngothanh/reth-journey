@@ -1,6 +1,6 @@
 # `unsafe` traits and safety contracts
 
-Notes from writing `reclaim`'s `Retire` trait (C1.1). Companion to
+Notes from writing `reclaim`'s `Retirable` trait (C1.1). Companion to
 `04_traits.md`, which covered dispatch; this file is about what a trait
 *promises* and who is on the hook for it.
 
@@ -9,7 +9,7 @@ The worked example throughout:
 ```rust
 pub struct RetireLink { next: AtomicPtr<()> }
 
-pub unsafe trait Retire: Send {
+pub unsafe trait Retirable: Send {
     fn retire_link(&self) -> &RetireLink;
     unsafe fn reclaim(ptr: *mut Self);
 }
@@ -86,7 +86,7 @@ The second half kills the comfortable hand-wave. Without an offload executor you
 might tell yourself "it is probably the same thread anyway." With one, it
 provably never is.
 
-**Exhibit** — `Retire` without the `Send` bound, implemented for a type holding
+**Exhibit** — `Retirable` without the `Send` bound, implemented for a type holding
 an `Rc<U>`:
 
 ```
@@ -122,7 +122,7 @@ am done with this" (the domain's method); **`reclaim`** is "actually free it"
 
 Because `reclaim` takes no `self` it is an associated function, which is what
 lets the scheme hold a plain `(ptr, reclaim_fn)` pair and never need
-`dyn Retire` — monomorphisation turns `T::reclaim` into a function pointer at
+`dyn Retirable` — monomorphisation turns `T::reclaim` into a function pointer at
 the retire site.
 
 ---
@@ -223,7 +223,7 @@ It promises four things, each with its own exhibit.
 
 ```rust
 static SHARED: RetireLink = RetireLink::new();
-impl Retire for Node { fn retire_link(&self) -> &RetireLink { &SHARED } }  // zero unsafe
+impl Retirable for Node { fn retire_link(&self) -> &RetireLink { &SHARED } }  // zero unsafe
 ```
 
 ```
@@ -303,7 +303,7 @@ argument is one already settled elsewhere: `SegQueue<T, R = Leak>` was rejected
 because "someone writes `SegQueue<usize>` and silently gets an unbounded leak."
 
 ```
-someone implements Retire for a pool-allocated page
+someone implements Retirable for a pool-allocated page
 forgets to override reclaim
 the default runs Box::from_raw on memory the global allocator never handed out
 → UB, silently, on a reclaimer thread, minutes later
@@ -318,7 +318,7 @@ forcing every impl to restate it is noise.
 ## Blog seeds
 
 Candidate standalone piece: **"What an `unsafe` trait actually promises"** —
-sections 1, 2, 6 and 7 are the spine, with `Retire` as the single worked example
+sections 1, 2, 6 and 7 are the spine, with `Retirable` as the single worked example
 throughout. The rare content is §2 (impl vs exhibit, and exhibits as
 pre-written tests) and §6's closing move (an unenforceable clause is a design
 backlog item). Sections 3–5 and 8 are the concrete beats that keep it grounded.

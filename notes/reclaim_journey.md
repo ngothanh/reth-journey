@@ -221,7 +221,7 @@ announcement; Miri in a client catches it, the type system will not.
 
 ## 10. Is `retire` required per scheme, or provided over a shared list?
 
-**First answer** — asked the question as API placement, `Reclaim` vs
+**First answer** — asked the question as API placement, `Reclaimer` vs
 `Domain<R>`, which is nearly cosmetic once `Domain<R> = Arc<R>`.
 
 **What killed it** — the real question is underneath: the two schemes **do not
@@ -293,7 +293,7 @@ is the offload executor.
 
 **Cost** — none. And the interview answer is better than having built one.
 
-## 13. `Retire`'s five questions
+## 13. `Retirable`'s five questions
 
 Worked as a tutored sequence rather than a decision. Two beats worth keeping.
 
@@ -321,7 +321,7 @@ bounded window, from `retire(p)` until `reclaim(p)` returns.
 
 ---
 
-# Session 2026-10-05 (cont.) — C1.1, `Retire`
+# Session 2026-10-05 (cont.) — C1.1, `Retirable`
 
 ## 14. Should `reclaim` have a default body?
 
@@ -333,7 +333,7 @@ A default is silently wrong for exactly the consumers the overridable `reclaim`
 was designed for:
 
 ```
-someone implements Retire for a pool-allocated page
+someone implements Retirable for a pool-allocated page
 forgets to override reclaim
 the default runs Box::from_raw on memory the global allocator never handed out
 → UB, on a reclaimer thread, minutes later
@@ -352,7 +352,7 @@ does not compile, because `Self` in a trait is implicitly `?Sized`.
 ## 15. A clean build is not evidence that a trait is sound
 
 **First answer** — the C1.1 gate was "`cargo build -p reclaim` clean", and the
-first version built clean with `trait Retire: Send`.
+first version built clean with `trait Retirable: Send`.
 
 **What killed it** — nothing in the compiler. The trait was missing `unsafe`,
 and **every exhibit written minutes earlier** — a shared `static` link eating
@@ -363,7 +363,7 @@ stored pointer — was reachable by an implementor writing zero `unsafe`.
 test is the only thing that catches it: *could a 100 %-safe impl break memory
 safety in code that never writes `unsafe`?*
 
-**Decided** — `pub unsafe trait Retire: Send`, with the implementor's
+**Decided** — `pub unsafe trait Retirable: Send`, with the implementor's
 obligations as the trait-level `# Safety` block and the caller's as `reclaim`'s.
 Keeping those two blocks apart is the same distinction as the trait keyword.
 

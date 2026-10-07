@@ -28,12 +28,12 @@ lessons are for that.
 │   calls:  guard()   try_protect()   retire()                          │
 │                                                                       │
 │   ┌─ OBJECT ─ the thing that gets freed (a Segment, a Node) ────┐     │
-│   │   implements: Retire          contains: RetireLink          │     │
+│   │   implements: Retirable          contains: RetireLink          │     │
 │   └─────────────────────────────────────────────────────────────┘     │
 └───────────────────────────────┬───────────────────────────────────────┘
                                 │ calls into
 ┌─ SCHEME ─ Leak, later Hazard and Epoch ───────────────────────────────┐
-│   implements: Reclaim       hands out: a Guard                        │
+│   implements: Reclaimer       hands out: a Guard                        │
 │   owns: the retired list, and the decision of WHEN to free            │
 │   Domain = a cheap handle around one scheme + its RootRegistry        │
 └───────────────────────────────────────────────────────────────────────┘
@@ -43,11 +43,11 @@ lessons are for that.
 
 | Name | Kind | Layer | One sentence |
 |---|---|---|---|
-| `Retire` | unsafe trait | object | "I can be handed to a scheme: here is my link, here is how to free me." |
+| `Retirable` | unsafe trait | object | "I can be handed to a scheme: here is my link, here is how to free me." |
 | `RetireLink` | struct | object | A `next` pointer stored *inside* the object, so retired objects can be chained without allocating. |
 | `Root<T>` | struct | structure | The address of one atomic that readers start from. One word. |
 | `RootRegistry` | struct | scheme | The list of declared roots of one domain. Only does work in debug builds. |
-| `Reclaim` | unsafe trait | scheme | What every scheme offers: give me a guard, take this retired object. |
+| `Reclaimer` | unsafe trait | scheme | What every scheme offers: give me a guard, take this retired object. |
 | `Guard` | trait | scheme | What a reader holds while reading; it can be pointed at a new pointer. |
 | `Domain<R>` | struct | scheme | A cloneable handle to one scheme `R` plus its registry. The structure stores one. |
 | `Leak` | struct | scheme | The simplest scheme: accepts retired objects and never frees them. |
@@ -146,7 +146,7 @@ Every output here is a section of `notes/reclaim_model.md`. No compiled code.
 - **Est**: 1.5 h
 
 ### L3 — The guard, and how a scheme knows the wait is over
-- **Where on the map**: `Guard`, `Reclaim`; steps 3, 4, 8, 9.
+- **Where on the map**: `Guard`, `Reclaimer`; steps 3, 4, 8, 9.
 - **Input**: §4, §5.
 - **Teacher presents**: two ways a reader can tell the scheme it is reading — write down the
   *address* it is reading, or write down *when* it started. That is hazard pointers and epoch.
@@ -167,7 +167,7 @@ Every output here is a section of `notes/reclaim_model.md`. No compiled code.
   answer.
 
 ### L4 — Who owns the garbage
-- **Where on the map**: `RetireLink`, `Retire`, the scheme's retired list; steps 6, 9, 10.
+- **Where on the map**: `RetireLink`, `Retirable`, the scheme's retired list; steps 6, 9, 10.
 - **Input**: §6.
 - **Teacher presents**: retired objects of *different types* sit on one list; the list is made
   from links stored inside the objects themselves.
@@ -201,13 +201,13 @@ Every output here is a section of `notes/reclaim_model.md`. No compiled code.
 Types, fields, constructors, and the tests of what each type guarantees. Innermost first.
 
 ### L6 — The object side
-- **Where on the map**: `RetireLink`, `Retire`.
+- **Where on the map**: `RetireLink`, `Retirable`.
 - **Input**: §7, §8; `retire.rs` as you first typed it — the struct and a private, safe
-  `trait Retire`. Everything else is written in this lesson.
+  `trait Retirable`. Everything else is written in this lesson.
 - **Questions**: (1) Of the seven properties in the trait's safety docs, which can a
   single-threaded test catch? (2) Which two cannot, and what tool will? (3) Why is
   `RetireLink::new` not `const fn`?
-- **Output**: `retire.rs` finished — `RetireLink` with its constructor, `Retire` with the right
+- **Output**: `retire.rs` finished — `RetireLink` with its constructor, `Retirable` with the right
   visibility and safety keyword, the safety docs, a test type whose `reclaim` is not a plain
   `Box` free, and one test per testable property, each written from its exhibit.
 - **Gate**: `cargo test -p reclaim` green; a comment naming the two untestable properties.
@@ -227,12 +227,12 @@ Types, fields, constructors, and the tests of what each type guarantees. Innermo
 - **Starting point**: `root.rs` is your own four lines — the struct and nothing else.
 
 ### L8 — The scheme-side types
-- **Where on the map**: `Reclaim`, `Guard`, `Domain<R>`, `Leak`.
+- **Where on the map**: `Reclaimer`, `Guard`, `Domain<R>`, `Leak`.
 - **Input**: §6, §8.
 - **Questions**: (1) `Guard` is different per scheme — how does a trait say "each implementor
   brings its own guard type"? (2) What does `Domain<R>` contain, given it must be cheap to
   clone and must own a registry? (3) What fields does `Leak`'s guard need?
-- **Output**: `lib.rs` — `Reclaim` and `Guard` declared with every method signature from §8;
+- **Output**: `lib.rs` — `Reclaimer` and `Guard` declared with every method signature from §8;
   `domain.rs` — the `Domain<R>` struct and `new`; `leak.rs` — `Leak` and its guard as structs.
   It compiles; trait methods on `Leak` may be `todo!()`.
 - **Gate**: `cargo build -p reclaim` and the `--cfg loom` build both clean.
@@ -261,7 +261,7 @@ Types, fields, constructors, and the tests of what each type guarantees. Innermo
   (2) `protect` loops over `try_protect` — write it once, in the trait, so no scheme has to.
   Why does it not loop for `Leak`? (3) What are a guard's three states, and what does
   `as_ref` return in each? (4) What must `swap` leave unchanged?
-- **Output**: `Leak` implementing `Reclaim` in full; its guard implementing `Guard` —
+- **Output**: `Leak` implementing `Reclaimer` in full; its guard implementing `Guard` —
   `try_protect`, the provided `protect`, `as_ref`, `swap`; `retire` chaining objects through
   their links; tests — retired objects are never reclaimed, the chain grows, `swap` keeps both
   protections.
@@ -275,7 +275,7 @@ Types, fields, constructors, and the tests of what each type guarantees. Innermo
   clauses does a tool enforce, and which only review? (3) Write a Treiber `pop` against the
   trait — which of the ten steps does each line perform?
 - **Output**: the `# Safety` blocks for `retire`, `declare_root`, `assume_root`; a doc-test on
-  `Reclaim` that is a working Treiber `pop` on `Leak`; the journal entries for Stage 2–3.
+  `Reclaimer` that is a working Treiber `pop` on `Leak`; the journal entries for Stage 2–3.
 - **Gate**: `cargo test -p reclaim --doc` green. **C1 is done**; next is edit 2 in
   `plan/reclaim_ladder.md`.
 - **Est**: 1 h

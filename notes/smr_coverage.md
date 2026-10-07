@@ -33,7 +33,7 @@ before/after, not scope) · **skip** · **decision** (deliberately different, wi
 | 116 | CORE | `The ERA theorem (Sheffi & Petrank impossibility result)` | **ADD** docs | **the ERA theorem.** No scheme gets Ease of integration + Robustness + Applicability — at most two. EBR/RCU take integration+applicability, HP/HE take integration+robustness, VBR/NBR take robustness+applicability. This is the one-paragraph answer to *why does each scheme have exactly one glaring weakness*, and it belongs in step 1's docs. 0 h |
 | 123 | IMPORTANT | `Split / deferred reference counting (DRC, update coalescing, immediate RC)` | family out | split / deferred refcounting |
 | 128 | IMPORTANT | `folly::atomic_shared_ptr` | family out | `folly::atomic_shared_ptr` |
-| 133 | IMPORTANT | `arc_swap 'debt' slots (Rust ArcSwap)` | family out | `arc_swap` debt slots — the Rust answer for the read-mostly case, and RCU's first revisit trigger. Its own artifact if it lands, not a `Reclaim` implementor |
+| 133 | IMPORTANT | `arc_swap 'debt' slots (Rust ArcSwap)` | family out | `arc_swap` debt slots — the Rust answer for the read-mostly case, and RCU's first revisit trigger. Its own artifact if it lands, not a `Reclaimer` implementor |
 | 138 | IMPORTANT | `Pass-the-buck (Herlihy, Luchangco, Martin, Moir)` | family out | **pass-the-buck** — the ancestor of Hyaline's reserve-to-free; named here because the old out-of-scope list omitted it |
 | 143 | IMPORTANT | `Asymmetric thread fence (membarrier-based; folly asymmetric_thread_fence_light/heavy)` | port C5 | asymmetric fence interface; `membarrier` impl skipped |
 | 148 | IMPORTANT | `folly hazptr_obj_cohort` | port C11 | cohorts |
@@ -72,7 +72,7 @@ before/after, not scope) · **skip** · **decision** (deliberately different, wi
 | 352 | CORE | `load_hazptr_vals() → folly::F14FastSet<const void*>` | port C5 | hashed guarded set — found absent in the first audit |
 | 357 | CORE | `hazptr_obj<Atom> base: ReclaimFnPtr reclaim_, Obj* next_, uintptr_t cohort_tag_` | port C2/C11 | `Retired` + `RetireLink` + cohort tag word |
 | 362 | CORE | `next_(this) sentinel + pre_retire_check() / pre_retire_check_fail()` | **ADD** C2 | **double-retire detection.** `next = self` sentinel at construction; `retire` asserts it. The inventory's own suggested ladder puts this in stage 1. Turns `# Safety` clause 2 from an unchecked promise into a panic. Corroborated by 1096. **+1 h** |
-| 367 | CORE | `hazptr_obj_base<T, Atom, D>::retire(D deleter, hazptr_domain& domain) + set_reclaim()` | port C1/C2 | `Retire` trait + retire path |
+| 367 | CORE | `hazptr_obj_base<T, Atom, D>::retire(D deleter, hazptr_domain& domain) + set_reclaim()` | port C1/C2 | `Retirable` trait + retire path |
 | 372 | CORE | `hazptr_obj_list<Atom> (head, tail, count)` | port C2 | `(head, tail, count)` batch, spliced in one operation |
 | 377 | CORE | `hazptr_detail::linked_list<Node>` | port C2 | non-atomic list component |
 | 382 | CORE | `hazptr_detail::shared_head_only_list<Node, Atom> with kLockBit in head_, owner_ thread id, reentrance_` | port C2 | lock-free push, wait-free `pop_all` via exchange. Lock bit + reentrance only with tagged lists → conditional |
@@ -112,7 +112,7 @@ before/after, not scope) · **skip** · **decision** (deliberately different, wi
 | 556 | OPTIONAL | `Chunked hazptr load loop in load_hazptr_vals (constexpr size_t chunk_width = kNumShards; const void* ptrs[chunk_width])` | experiment | chunked hazard load loop — a step-4 before/after, not scope |
 | 561 | OPTIONAL | `asymmetric_thread_fence_heavy_fn::impl_ via sysMembarrierPrivateExpedited(), cached by sysMembarrierAvailableCached()` | skip | `membarrier` impl — unavailable on macOS/aarch64 |
 | 566 | OPTIONAL | `detail::hazptr_prefer_fence_light = kIsArchAArch64 && kIsLinux && !kIsSanitizeThread` | skip | `prefer_fence_light` — Linux/aarch64 only |
-| 571 | OPTIONAL | `hazptr_deleter<T, D> with specialization for std::default_delete<T>` | decision | `hazptr_deleter<T, D>` superseded by `Retire::reclaim` on the object's trait |
+| 571 | OPTIONAL | `hazptr_deleter<T, D> with specialization for std::default_delete<T>` | decision | `hazptr_deleter<T, D>` superseded by `Retirable::reclaim` on the object's trait |
 | 576 | OPTIONAL | `hazptr_domain::retire(T* obj, D reclaim) — nonintrusive, allocating` | skip | non-intrusive allocating retire. The escape hatch if a consumer cannot embed a `RetireLink`; none of the four named consumers needs it |
 | 581 | OPTIONAL | `list_walk_sharded + FOLLY_BUILTIN_PREFETCH(next, 0, 2)` | experiment | sharded walk + prefetch — step-4 before/after |
 | 586 | OPTIONAL | `extract_retired_objects() lock dance (check_lock() → pop_all(kAlsoLock) → push_unlock(empty) if nothing found)` | conditional | extract lock dance — with tagged lists |
@@ -199,7 +199,7 @@ before/after, not scope) · **skip** · **decision** (deliberately different, wi
 | 1064 | CORE | `try_protect over an arbitrary validating source, not just &AtomicPtr<T>` | conditional | validating source ≠ protected source. Trigger: a client that must validate against a different location than it protects. None does yet |
 | 1069 | CORE | `Batched retire (hazptr_obj_list / hazptr_domain_push_retired)` | port C2 | batched retire |
 | 1076 | IMPORTANT | `hazptr_prefer_fence_light + relaxed hazard store behind a light release fence` | skip | `prefer_fence_light` — Linux only |
-| 1081 | IMPORTANT | `Per-object runtime deleter (hazard_pointer_obj_base<T,D>::retire(D d) / hazptr_retire(obj, reclaim))` | decision | per-object **runtime** deleter. `Retire::reclaim` is type-level, which is enough only if the object carries whatever state its reclaim needs (a pool pointer, an arena handle). State that constraint in the trait docs |
+| 1081 | IMPORTANT | `Per-object runtime deleter (hazard_pointer_obj_base<T,D>::retire(D d) / hazptr_retire(obj, reclaim))` | decision | per-object **runtime** deleter. `Retirable::reclaim` is type-level, which is enough only if the object carries whatever state its reclaim needs (a pool pointer, an arena handle). State that constraint in the trait docs |
 | 1086 | IMPORTANT | `hazptr_obj_cohort + tagged retired lists + cleanup_cohort_tag + shutdown_and_reclaim (synchronous reclamation)` | port C11 | cohorts + synchronous reclamation |
 | 1091 | IMPORTANT | `hazptr_obj_linked / hazptr_obj_base_linked / hazptr_root — link and ref counting` | port C10 | link and ref counting |
 | 1096 | IMPORTANT | `Double-retire detection` | **ADD** C2 | double-retire detection — same as folly 362 |
