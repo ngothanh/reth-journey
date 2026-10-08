@@ -70,6 +70,7 @@ mod tests {
         needs_clone::<Domain<NotClone>>();
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     fn a_declared_root_is_in_the_domain_until_removed() {
         let domain = Domain::new(NotClone);
@@ -83,6 +84,7 @@ mod tests {
         assert!(!domain.inner.roots.contains(root.erase()));
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     fn two_domains_do_not_see_each_others_roots() {
         let first = Domain::new(NotClone);
@@ -96,6 +98,7 @@ mod tests {
         assert!(!second.inner.roots.contains(root.erase()));
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     fn a_clone_of_a_domain_sees_the_same_roots() {
         let domain = Domain::new(NotClone);

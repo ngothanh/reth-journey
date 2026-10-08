@@ -1,6 +1,9 @@
 use crate::sync::AtomicPtr;
+#[cfg(debug_assertions)]
 use std::ops::Not;
+#[cfg(debug_assertions)]
 use std::ptr;
+#[cfg(debug_assertions)]
 use std::sync::Mutex;
 
 /// A place that readers start from, declared as a root.
@@ -15,7 +18,12 @@ pub struct Root<T> {
 ///
 /// Roots of every type are kept together, so each is stored with its type
 /// erased. The debug check walks this list to see what each root holds.
+///
+/// Only that check reads the list, and the check runs only in a debug build.
+/// So in a release build the list is not there: this struct has no fields,
+/// takes no memory, and `declare` and `remove` do nothing.
 pub(crate) struct RootRegistry {
+    #[cfg(debug_assertions)]
     inner: Mutex<Vec<Root<()>>>,
 }
 
@@ -59,21 +67,34 @@ impl<T> Root<T> {
 impl RootRegistry {
     pub(crate) fn new() -> Self {
         Self {
+            #[cfg(debug_assertions)]
             inner: Mutex::new(Vec::new()),
         }
     }
 
+    // `declare` and `remove` exist in both builds, so `Domain` calls them the
+    // same way in both. In a release build their body is empty.
+
     pub(crate) fn declare(&self, root: Root<()>) {
+        #[cfg(debug_assertions)]
         self.inner.lock().unwrap().push(root);
+        #[cfg(not(debug_assertions))]
+        let _ = root;
     }
 
     pub(crate) fn remove(&self, root: Root<()>) {
+        #[cfg(debug_assertions)]
         self.inner
             .lock()
             .unwrap()
-            .retain(|x| ptr::eq(x.src, root.src).not())
+            .retain(|x| ptr::eq(x.src, root.src).not());
+        #[cfg(not(debug_assertions))]
+        let _ = root;
     }
 
+    /// Is this root in the list? Exists only in a debug build, because only
+    /// the debug check asks.
+    #[cfg(debug_assertions)]
     pub(crate) fn contains(&self, root: Root<()>) -> bool {
         self.inner
             .lock()
@@ -124,6 +145,7 @@ mod tests {
         assert_eq!(size_of::<Root<String>>(), size_of::<usize>());
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     fn a_declared_root_is_found() {
         let head: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
@@ -135,6 +157,7 @@ mod tests {
         assert!(registry.contains(root));
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     fn a_removed_root_is_not_found() {
         let head: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
@@ -147,6 +170,7 @@ mod tests {
         assert!(!registry.contains(root));
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     fn a_root_that_was_never_declared_is_not_found() {
         let head: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
@@ -160,6 +184,7 @@ mod tests {
         assert!(!registry.contains(tail_root));
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     fn removing_one_root_keeps_the_others() {
         let head: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
@@ -174,5 +199,11 @@ mod tests {
 
         assert!(!registry.contains(head_root));
         assert!(registry.contains(tail_root));
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn the_registry_takes_no_memory_in_a_release_build() {
+        assert_eq!(size_of::<RootRegistry>(), 0);
     }
 }
