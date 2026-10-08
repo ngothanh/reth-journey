@@ -1,7 +1,10 @@
+mod guard;
+mod reclaimer;
 mod retire;
 mod root;
 #[allow(unused_imports)]
 mod sync;
-mod guard;
 
+pub use guard::*;
+pub use reclaimer::*;
 pub use retire::*;
