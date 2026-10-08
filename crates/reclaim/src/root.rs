@@ -1,4 +1,6 @@
 use crate::sync::AtomicPtr;
+use std::ops::Not;
+use std::ptr;
 use std::sync::Mutex;
 
 /// A place that readers start from, declared as a root.
@@ -46,6 +48,12 @@ impl<T> Root<T> {
         // declared this root promised the place stays alive until it is removed.
         unsafe { &*self.src }
     }
+
+    pub(crate) fn erase(&self) -> Root<()> {
+        Root {
+            src: self.src.cast(),
+        }
+    }
 }
 
 impl RootRegistry {
@@ -54,11 +62,30 @@ impl RootRegistry {
             inner: Mutex::new(Vec::new()),
         }
     }
+
+    pub(crate) fn declare(&self, root: Root<()>) {
+        self.inner.lock().unwrap().push(root);
+    }
+
+    pub(crate) fn remove(&self, root: Root<()>) {
+        self.inner
+            .lock()
+            .unwrap()
+            .retain(|x| ptr::eq(x.src, root.src).not())
+    }
+
+    pub(crate) fn contains(&self, root: Root<()>) -> bool {
+        self.inner
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| ptr::eq(r.src, root.src))
+    }
 }
 
 #[cfg(all(test, not(loom)))]
 mod tests {
-    use crate::root::Root;
+    use crate::root::{Root, RootRegistry};
     use std::cell::Cell;
     use std::ptr;
     use std::sync::atomic::AtomicPtr;
@@ -95,5 +122,57 @@ mod tests {
     #[test]
     fn root_is_one_word() {
         assert_eq!(size_of::<Root<String>>(), size_of::<usize>());
+    }
+
+    #[test]
+    fn a_declared_root_is_found() {
+        let head: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
+        let root = Root::new(&head).erase();
+        let registry = RootRegistry::new();
+
+        registry.declare(root);
+
+        assert!(registry.contains(root));
+    }
+
+    #[test]
+    fn a_removed_root_is_not_found() {
+        let head: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
+        let root = Root::new(&head).erase();
+        let registry = RootRegistry::new();
+
+        registry.declare(root);
+        registry.remove(root);
+
+        assert!(!registry.contains(root));
+    }
+
+    #[test]
+    fn a_root_that_was_never_declared_is_not_found() {
+        let head: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
+        let tail: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
+        let head_root = Root::new(&head).erase();
+        let tail_root = Root::new(&tail).erase();
+        let registry = RootRegistry::new();
+
+        registry.declare(head_root);
+
+        assert!(!registry.contains(tail_root));
+    }
+
+    #[test]
+    fn removing_one_root_keeps_the_others() {
+        let head: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
+        let tail: AtomicPtr<u64> = AtomicPtr::new(ptr::null_mut());
+        let head_root = Root::new(&head).erase();
+        let tail_root = Root::new(&tail).erase();
+        let registry = RootRegistry::new();
+
+        registry.declare(head_root);
+        registry.declare(tail_root);
+        registry.remove(head_root);
+
+        assert!(!registry.contains(head_root));
+        assert!(registry.contains(tail_root));
     }
 }
