@@ -5,7 +5,7 @@ use core::ptr::null_mut;
 ///
 /// The field belongs to the object. The value in it belongs to the scheme.
 pub struct RetireLink {
-    next: AtomicPtr<()>,
+    pub(crate) next: AtomicPtr<RetireLink>,
 }
 
 /// An object that a scheme can take over and free later.

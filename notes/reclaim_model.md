@@ -499,8 +499,10 @@ structure, keeps the address of a field that no longer exists, and the debug che
 ### `Leak`
 
 The simplest scheme. Its guard holds nothing. `try_protect` returns `Ok` at once. `retire`
-chains the object into the pile through its link and never runs a round, so `reclaim` is never
-called. It exists so everything else can be built and tested before a real scheme does.
+does nothing: the object is never freed, so `reclaim` is never called and the scheme never has
+to find the object again. `Leak` keeps no pile. The pile is built in the build ladder's C2,
+where hazard pointers free from it. `Leak` exists so everything else can be built and tested
+before a real scheme does.
 
 ### Every `unsafe`, and the promise behind it
 

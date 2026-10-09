@@ -255,17 +255,20 @@ Types, fields, constructors, and the tests of what each type guarantees. Innermo
 - **Est**: 1 h
 
 ### L10 — `Leak`, the first scheme that runs
-- **Where on the map**: `Leak`, its guard; steps 3, 4, 6.
-- **Input**: L8, L9; §6.
+- **Where on the map**: `Leak`, its guard, `Domain`; steps 3, 4, 6 and the check in step 7.
+- **Input**: L8, L9; §6 and §8.
 - **Questions**: (1) What is the least `try_protect` can do for a scheme that never frees?
-  (2) `protect` loops over `try_protect` — write it once, in the trait, so no scheme has to.
-  Why does it not loop for `Leak`? (3) What are a guard's three states, and what does
-  `as_ref` return in each? (4) What must `swap` leave unchanged?
-- **Output**: `Leak` implementing `Reclaimer` in full; its guard implementing `Guard` —
-  `try_protect`, the provided `protect`, `as_ref`, `swap`; `retire` chaining objects through
-  their links; tests — retired objects are never reclaimed, the chain grows, `swap` keeps both
-  protections.
-- **Gate**: tests green; Miri clean with `-Zmiri-ignore-leaks`.
+  (2) `protect` loops over `try_protect`. Why does it not loop for `Leak`? (3) `Leak` never
+  frees. Does it need to keep the retired object anywhere? (4) The step-7 check: which thing
+  does it look at, the roots or the guards, and in which build does it run?
+- **Output**: `Leak::guard`; `Leak::retire`, which does nothing; `Domain::guard` and
+  `Domain::retire` passing the call on to the scheme; the step-7 check in `Domain::retire`
+  (debug build only); tests — an outside user can protect through a root, a retired object is
+  never reclaimed, retiring an object a root still holds stops the program in debug.
+- **Not here**: the pile and its push (C2, where a scheme frees from it); `as_ref` and `swap`
+  on the guard (listed in the model under "Not modelled yet").
+- **Gate**: tests green in debug and release; loom build passes; Miri clean with
+  `-Zmiri-ignore-leaks`.
 - **Est**: 2 h
 
 ### L11 — The contract, and a real client
