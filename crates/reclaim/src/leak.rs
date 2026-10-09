@@ -23,7 +23,7 @@ impl Default for Leak {
 }
 
 impl Guard for LeakGuard {
-    fn try_protect<T>(&mut self, addr: *mut T, root: &Root<T>) -> Result<*mut T, *mut T> {
+    fn try_protect<T>(&mut self, addr: *mut T, _root: &Root<T>) -> Result<*mut T, *mut T> {
         Ok(addr)
     }
 }
@@ -32,7 +32,7 @@ unsafe impl Reclaimer for Leak {
     type Guard = LeakGuard;
 
     fn guard(&self) -> Self::Guard {
-        todo!()
+        LeakGuard {}
     }
 
     unsafe fn retire<T: Retirable>(&self, obj: *mut T) {

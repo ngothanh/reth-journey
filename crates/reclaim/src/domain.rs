@@ -1,6 +1,6 @@
 use crate::root::RootRegistry;
 use crate::sync::AtomicPtr;
-use crate::Root;
+use crate::{Reclaimer, Retirable, Root};
 use std::sync::Arc;
 
 pub struct Domain<R> {
@@ -55,6 +55,33 @@ impl<R> Clone for Domain<R> {
         Domain {
             inner: self.inner.clone(),
         }
+    }
+}
+
+impl<R: Reclaimer> Domain<R> {
+    /// Gives a reader a guard from this domain's scheme.
+    ///
+    /// A reader takes one before it reads, and protects through a root with it.
+    pub fn guard(&self) -> R::Guard {
+        self.inner.scheme.guard()
+    }
+
+    /// Hands an object to this domain's scheme: "I am done with it."
+    ///
+    /// The object is not freed here. The scheme frees it later, when no
+    /// reader can still hold it.
+    ///
+    /// # Safety
+    ///
+    /// The caller promises:
+    ///
+    /// 1. No new reader can get the address of `obj` from any root.
+    /// 2. `obj` is handed to `retire` only once.
+    /// 3. The caller does not use `obj` after this call.
+    pub unsafe fn retire<T: Retirable>(&self, obj: *mut T) {
+        // SAFETY: `Reclaimer::retire` asks for the same three promises that
+        // this function asks of its own caller, and we pass `obj` on unchanged.
+        unsafe { self.inner.scheme.retire(obj) }
     }
 }
 
