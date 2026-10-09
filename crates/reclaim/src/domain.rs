@@ -1,7 +1,6 @@
 use crate::root::RootRegistry;
 use crate::sync::AtomicPtr;
 use crate::{Reclaimer, Retirable, Root};
-use std::ops::Not;
 use std::sync::Arc;
 
 pub struct Domain<R> {
@@ -82,7 +81,7 @@ impl<R: Reclaimer> Domain<R> {
     pub unsafe fn retire<T: Retirable>(&self, obj: *mut T) {
         #[cfg(debug_assertions)]
         assert!(
-            self.inner.roots.any_root_holds(obj.cast()).not(),
+            !self.inner.roots.any_root_holds(obj.cast()),
             "retire: a root still holds this object (Rule 1 is broken)"
         );
         // SAFETY: `Reclaimer::retire` asks for the same three promises that

@@ -1,4 +1,6 @@
-use crate::sync::{AtomicPtr, Ordering};
+use crate::sync::AtomicPtr;
+#[cfg(debug_assertions)]
+use crate::sync::Ordering;
 #[cfg(debug_assertions)]
 use std::ops::Not;
 #[cfg(debug_assertions)]
