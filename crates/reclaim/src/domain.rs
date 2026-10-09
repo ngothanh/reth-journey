@@ -1,6 +1,7 @@
 use crate::root::RootRegistry;
 use crate::sync::AtomicPtr;
 use crate::{Reclaimer, Retirable, Root};
+use std::ops::Not;
 use std::sync::Arc;
 
 pub struct Domain<R> {
@@ -79,6 +80,11 @@ impl<R: Reclaimer> Domain<R> {
     /// 2. `obj` is handed to `retire` only once.
     /// 3. The caller does not use `obj` after this call.
     pub unsafe fn retire<T: Retirable>(&self, obj: *mut T) {
+        #[cfg(debug_assertions)]
+        assert!(
+            self.inner.roots.any_root_holds(obj.cast()).not(),
+            "retire: a root still holds this object (Rule 1 is broken)"
+        );
         // SAFETY: `Reclaimer::retire` asks for the same three promises that
         // this function asks of its own caller, and we pass `obj` on unchanged.
         unsafe { self.inner.scheme.retire(obj) }
@@ -136,5 +142,83 @@ mod tests {
         let root = unsafe { domain.declare_root(&head) };
 
         assert!(copy.inner.roots.contains(root.erase()));
+    }
+
+    #[cfg(debug_assertions)]
+    mod retire_check {
+        use super::*;
+        use crate::{Leak, RetireLink};
+        use std::ptr::null_mut;
+
+        /// Plays the role of a segment.
+        struct Node {
+            link: RetireLink,
+        }
+
+        impl Node {
+            fn new_raw() -> *mut Node {
+                Box::into_raw(Box::new(Node {
+                    link: RetireLink::new(),
+                }))
+            }
+        }
+
+        unsafe impl Retirable for Node {
+            fn retire_link(&self) -> &RetireLink {
+                &self.link
+            }
+
+            unsafe fn reclaim(ptr: *mut Self) {
+                // SAFETY: the node was made with `Box::new`, and the caller
+                // promises nobody holds it any more.
+                unsafe { drop(Box::from_raw(ptr)) };
+            }
+        }
+
+        #[test]
+        fn retiring_an_object_no_root_holds_is_fine() {
+            let domain = Domain::new(Leak::new());
+            let node = Node::new_raw();
+            let head = AtomicPtr::new(node);
+            // SAFETY: `head` lives to the end of this test and is not moved.
+            let _root = unsafe { domain.declare_root(&head) };
+
+            // What a correct structure does: first move the root away...
+            head.store(null_mut(), crate::sync::Ordering::Release);
+            // ...then retire.
+            // SAFETY: no root holds the node now, it is retired once, and
+            // this test does not use it again.
+            unsafe { domain.retire(node) };
+        }
+
+        #[test]
+        #[should_panic(expected = "Rule 1 is broken")]
+        fn retiring_an_object_a_root_still_holds_panics() {
+            let domain = Domain::new(Leak::new());
+            let node = Node::new_raw();
+            let head = AtomicPtr::new(node);
+            // SAFETY: `head` lives to the end of this test and is not moved.
+            let _root = unsafe { domain.declare_root(&head) };
+
+            // The bug this check is for: `head` still holds the node.
+            // SAFETY: none. This call breaks the first promise on purpose;
+            // the check must stop it before the scheme sees the node.
+            unsafe { domain.retire(node) };
+        }
+
+        #[test]
+        fn a_removed_root_is_not_looked_at() {
+            let domain = Domain::new(Leak::new());
+            let node = Node::new_raw();
+            let head = AtomicPtr::new(node);
+            // SAFETY: `head` lives to the end of this test and is not moved.
+            let root = unsafe { domain.declare_root(&head) };
+
+            // The structure is being dropped: it removes its root first.
+            domain.remove_root(root);
+            // SAFETY: the root is gone, so no reader can reach the node
+            // through it. Retired once, not used again.
+            unsafe { domain.retire(node) };
+        }
     }
 }

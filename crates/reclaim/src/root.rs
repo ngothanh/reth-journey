@@ -1,4 +1,4 @@
-use crate::sync::AtomicPtr;
+use crate::sync::{AtomicPtr, Ordering};
 #[cfg(debug_assertions)]
 use std::ops::Not;
 #[cfg(debug_assertions)]
@@ -101,6 +101,15 @@ impl RootRegistry {
             .unwrap()
             .iter()
             .any(|r| ptr::eq(r.src, root.src))
+    }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn any_root_holds(&self, addr: *mut ()) -> bool {
+        self.inner.lock().unwrap().iter().any(|p| {
+            let a = addr.cast();
+            let b = p.ptr().load(Ordering::Acquire);
+            ptr::eq(a, b)
+        })
     }
 }
 
