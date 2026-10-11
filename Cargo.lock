@@ -410,6 +410,7 @@ dependencies = [
  "criterion",
  "crossbeam-queue",
  "loom",
+ "reclaim",
  "slab",
  "tokio",
  "trybuild",

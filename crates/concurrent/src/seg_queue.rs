@@ -40,6 +40,7 @@
 //! segments, **dropping `-Zmiri-ignore-leaks` is the proof that it works**.
 
 use crate::CachePadded;
+use reclaim::{Domain, Guard, Reclaimer, Retirable, RetireLink, Root};
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 
@@ -75,25 +76,38 @@ struct Segment<T> {
     slots: [Slot<T>; SEG_LEN],
     next: AtomicPtr<Segment<T>>,
     consumed: CachePadded<AtomicUsize>,
-    ref_count: CachePadded<AtomicUsize>,
     claimed: AtomicUsize,
+    link: RetireLink,
+}
+
+unsafe impl<T: Send> Retirable for Segment<T> {
+    fn retire_link(&self) -> &RetireLink {
+        &self.link
+    }
+
+    unsafe fn reclaim(ptr: *mut Self) {
+        // SAFETY:
+        // The caller promises:
+        // - `ptr` points to a live object of this type that was handed to `retire`;
+        // -  no reader holds the object anymore;
+        // - `reclaim` is called once for this object, and `ptr` is not used after.
+        unsafe { drop(Box::from_raw(ptr)) };
+    }
 }
 
 #[repr(C)]
-struct SegGuard<T> {
-    segment: *mut Segment<T>,
-}
-
-#[repr(C)]
-pub struct SegQueue<T> {
-    head: CachePadded<AtomicPtr<Segment<T>>>,
-    tail: CachePadded<AtomicPtr<Segment<T>>>,
+pub struct SegQueue<T, R: Reclaimer> {
+    head: Box<CachePadded<AtomicPtr<Segment<T>>>>,
+    tail: Box<CachePadded<AtomicPtr<Segment<T>>>>,
     reclaim: CachePadded<AtomicPtr<Segment<T>>>,
     reclaiming: CachePadded<AtomicBool>,
+    domain: Domain<R>,
+    head_root: Root<Segment<T>>,
+    tail_root: Root<Segment<T>>,
 }
 
-unsafe impl<T: Send> Send for SegQueue<T> {}
-unsafe impl<T: Send> Sync for SegQueue<T> {}
+unsafe impl<T: Send, R: Reclaimer + Send + Sync> Send for SegQueue<T, R> {}
+unsafe impl<T: Send, R: Reclaimer + Send + Sync> Sync for SegQueue<T, R> {}
 
 impl<T> Segment<T> {
     fn new() -> Self {
@@ -101,40 +115,9 @@ impl<T> Segment<T> {
             slots: std::array::from_fn(|_| Slot::new()),
             next: AtomicPtr::new(null_mut()),
             consumed: CachePadded::new(AtomicUsize::new(0)),
-            ref_count: CachePadded::new(AtomicUsize::new(0)),
             claimed: AtomicUsize::new(0),
+            link: RetireLink::new(),
         }
-    }
-
-    fn acquire_ref(&self) {
-        self.ref_count.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn release_ref(&self) -> usize {
-        self.ref_count.fetch_sub(1, Ordering::Release)
-    }
-}
-
-impl<T> SegGuard<T> {
-    fn acquire(seg: *mut Segment<T>) -> Self {
-        unsafe {
-            (*seg).acquire_ref();
-        }
-        SegGuard { segment: seg }
-    }
-
-    fn get(&self) -> &Segment<T> {
-        unsafe { &*self.segment }
-    }
-
-    fn as_ptr(&self) -> *mut Segment<T> {
-        self.segment
-    }
-}
-
-impl<T> Drop for SegGuard<T> {
-    fn drop(&mut self) {
-        self.get().release_ref();
     }
 }
 
@@ -166,37 +149,82 @@ impl<T> Slot<T> {
     }
 }
 
-impl<T> SegQueue<T> {
-    pub fn new() -> SegQueue<T> {
+impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
+    pub fn new(domain: Domain<R>) -> SegQueue<T, R> {
         let segment = Box::into_raw(Box::new(Segment::new()));
+        let head = Box::new(CachePadded::new(AtomicPtr::new(segment)));
+        let tail = Box::new(CachePadded::new(AtomicPtr::new(segment)));
+        let reclaim = CachePadded::new(AtomicPtr::new(segment));
+
+        // SAFETY: `declare_root` asks that the place keeps its address and
+        // stays alive until `remove_root`.
+        // - Same address: the place is on the heap, inside a `Box`. Moving the
+        //   queue copies only the address held by the `Box`; the place itself
+        //   does not move.
+        // - Alive: the queue owns the `Box` and never replaces it, so the place
+        //   is freed only when the queue is dropped, and `Drop` removes the
+        //   root before that.
+        let head_root = unsafe { domain.declare_root(&head) };
+
+        // SAFETY: same as for `head`: `tail` is in its own `Box`, owned by the
+        // queue, and `Drop` removes its root first.
+        let tail_root = unsafe { domain.declare_root(&tail) };
+
         SegQueue {
-            head: CachePadded::new(AtomicPtr::new(segment)),
-            tail: CachePadded::new(AtomicPtr::new(segment)),
-            reclaim: CachePadded::new(AtomicPtr::new(segment)),
+            head,
+            tail,
+            reclaim,
             reclaiming: CachePadded::new(AtomicBool::new(false)),
+            domain,
+            head_root,
+            tail_root,
         }
     }
 
     pub fn push(&self, value: T) {
-        let mut guard = SegGuard::acquire(self.tail.load(Ordering::Acquire));
+        let mut guard = self.domain.guard();
         loop {
-            let idx = guard.get().claimed.fetch_add(1, Ordering::Relaxed);
+            let ptr = guard.protect(&self.tail_root);
+
+            // SAFETY: opening `ptr` needs two things.
+            // - Not null: `tail` never holds null. `new` stores the first
+            //   segment in it, and `advance_tail` only ever stores a non-null
+            //   `next`.
+            // - Not freed: `ptr` came from `guard.protect`, so the scheme does
+            //   not free the segment while `guard` lives, and `guard` lives to
+            //   the end of this function.
+            let seg = unsafe { &*ptr };
+            let idx = seg.claimed.fetch_add(1, Ordering::Relaxed);
             if idx < SEG_LEN {
-                guard.get().slots[idx].write_value(value);
-                guard.get().slots[idx]
-                    .state
-                    .store(WRITTEN, Ordering::Release);
+                seg.slots[idx].write_value(value);
+                seg.slots[idx].state.store(WRITTEN, Ordering::Release);
                 return;
             }
-            guard = self.advance_tail(&guard);
+
+            // SAFETY: `ptr` came from `guard.protect` above and `guard` is
+            // still alive, which is what `advance_tail` asks of its caller.
+            unsafe { self.advance_tail(ptr) };
         }
     }
 
-    fn advance_tail(&self, guard: &SegGuard<T>) -> SegGuard<T> {
-        let mut next = guard.get().next.load(Ordering::Acquire);
+    /// Makes sure `tail` no longer holds the full segment `cur_tail_ptr`.
+    ///
+    /// It links a new segment after it if nobody has yet, then tries to move
+    /// `tail` forward. When it returns, `tail` has moved, by this thread or by
+    /// another one. The caller protects through `tail_root` again.
+    ///
+    /// # Safety
+    ///
+    /// The caller promises that `cur_tail_ptr` came from `Guard::protect` on
+    /// `tail_root`, and that the guard lives until this call returns.
+    unsafe fn advance_tail(&self, cur_tail_ptr: *mut Segment<T>) {
+        // SAFETY: the caller promises the segment is protected for this whole
+        // call. It is not null, because `tail` never holds null.
+        let cur_tail = unsafe { &*cur_tail_ptr };
+        let mut next = cur_tail.next.load(Ordering::Acquire);
         if next.is_null() {
             let raw = Box::into_raw(Box::new(Segment::new()));
-            match guard.get().next.compare_exchange(
+            match cur_tail.next.compare_exchange(
                 null_mut(),
                 raw,
                 Ordering::Release,
@@ -204,6 +232,9 @@ impl<T> SegQueue<T> {
             ) {
                 Ok(_) => next = raw,
                 Err(winner) => {
+                    // SAFETY: `raw` came from `Box::into_raw` a few lines
+                    // above. The exchange failed, so `raw` was never stored
+                    // anywhere and no other thread has seen it.
                     drop(unsafe { Box::from_raw(raw) });
                     next = winner;
                 }
@@ -211,8 +242,7 @@ impl<T> SegQueue<T> {
         }
         let _ =
             self.tail
-                .compare_exchange(guard.as_ptr(), next, Ordering::Release, Ordering::Relaxed);
-        SegGuard::acquire(next)
+                .compare_exchange(cur_tail_ptr, next, Ordering::Release, Ordering::Relaxed);
     }
 
     /// Free segments that can no longer be reached, oldest first.
@@ -256,60 +286,63 @@ impl<T> SegQueue<T> {
                 break;
             }
 
-            if s.ref_count.load(Ordering::Acquire) != 0 {
-                break;
-            }
             let next = s.next.load(Ordering::Acquire);
             if next.is_null() {
                 break;
             }
 
             self.reclaim.store(next, Ordering::Relaxed);
-            unsafe { drop(Box::from_raw(seg)) };
+            unsafe {
+                self.domain.retire(seg);
+            }
         }
 
         self.reclaiming.store(false, Ordering::Release);
     }
 
     pub fn pop(&self) -> Option<T> {
-        let mut guard = SegGuard::acquire(self.head.load(Ordering::Acquire));
-        let mut consuming = guard.get().consumed.load(Ordering::Relaxed);
+        let mut guard = self.domain.guard();
         loop {
+            let ptr = guard.protect(&self.head_root);
+            // SAFETY: opening `ptr` needs two things.
+            // - Not null: `head` never holds null. `new` stores the first
+            //   segment in it, and the exchange below stores `next` only
+            //   after checking that `next` is not null.
+            // - Not freed: `ptr` came from `guard.protect`, so the scheme does
+            //   not free the segment while `guard` lives, and `guard` lives to
+            //   the end of this function.
+            let seg = unsafe { &*ptr };
+            let consuming = seg.consumed.load(Ordering::Relaxed);
+
             if consuming >= SEG_LEN {
-                let next = guard.get().next.load(Ordering::Acquire);
+                let next = seg.next.load(Ordering::Acquire);
                 if next.is_null() {
                     return None;
                 }
-                let _ = self.head.compare_exchange(
-                    guard.as_ptr(),
-                    next,
-                    Ordering::Release,
-                    Ordering::Relaxed,
-                );
-                guard = SegGuard::acquire(next);
-                consuming = guard.get().consumed.load(Ordering::Relaxed);
+                let _ = self
+                    .head
+                    .compare_exchange(ptr, next, Ordering::Release, Ordering::Relaxed);
                 self.try_reclaim();
                 continue;
             }
 
-            let claimed = guard.get().claimed.load(Ordering::Relaxed);
+            let claimed = seg.claimed.load(Ordering::Relaxed);
             if claimed <= consuming {
                 return None;
             }
-            if guard.get().slots[consuming].state.load(Ordering::Acquire) != WRITTEN {
+            if seg.slots[consuming].state.load(Ordering::Acquire) != WRITTEN {
                 return None;
             }
-            match guard.get().consumed.compare_exchange(
+            match seg.consumed.compare_exchange(
                 consuming,
                 consuming + 1,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
                 Ok(idx) => {
-                    return Some(guard.get().slots[idx].read_existing_value());
+                    return Some(seg.slots[idx].read_existing_value());
                 }
-                Err(e) => {
-                    consuming = e;
+                Err(_) => {
                     continue;
                 }
             };
@@ -317,9 +350,17 @@ impl<T> SegQueue<T> {
     }
 }
 
+impl<T, R: Reclaimer> Drop for SegQueue<T, R> {
+    fn drop(&mut self) {
+        self.domain.remove_root(self.head_root);
+        self.domain.remove_root(self.tail_root);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::seg_queue::{SegQueue, SEG_LEN};
+    use reclaim::{Domain, Leak};
     use std::hint::spin_loop;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Barrier;
@@ -327,14 +368,14 @@ mod tests {
 
     #[test]
     fn test_push_pop() {
-        let queue = SegQueue::new();
+        let queue = SegQueue::new(Domain::new(Leak::new()));
         queue.push(1);
         assert_eq!(queue.pop(), Some(1));
     }
 
     #[test]
     fn test_auto_create_new_segment() {
-        let queue = SegQueue::new();
+        let queue = SegQueue::new(Domain::new(Leak::new()));
         for i in 0..SEG_LEN {
             queue.push(i);
         }
@@ -353,13 +394,13 @@ mod tests {
 
     #[test]
     fn test_pop_empty_queue() {
-        let queue = SegQueue::<i32>::new();
+        let queue = SegQueue::<i32, Leak>::new(Domain::new(Leak::new()));
         assert!(queue.pop().is_none());
     }
 
     #[test]
     fn test_push_pop_fifo() {
-        let queue = SegQueue::new();
+        let queue = SegQueue::new(Domain::new(Leak::new()));
         queue.push(1);
         queue.push(2);
 
@@ -369,7 +410,7 @@ mod tests {
 
     #[test]
     fn test_consumer_drain_index() {
-        let queue = SegQueue::new();
+        let queue = SegQueue::new(Domain::new(Leak::new()));
         queue.push(1);
         assert_eq!(queue.pop(), Some(1));
         assert_eq!(queue.pop(), None);
@@ -379,7 +420,7 @@ mod tests {
 
     #[test]
     fn fifo_through_edge() {
-        let queue = SegQueue::new();
+        let queue = SegQueue::new(Domain::new(Leak::new()));
 
         for i in 0..37 {
             queue.push(i);
@@ -405,7 +446,7 @@ mod tests {
 
     #[test]
     fn interleave_push_pop() {
-        let queue = SegQueue::new();
+        let queue = SegQueue::new(Domain::new(Leak::new()));
 
         for i in 0..100 {
             queue.push(i);
@@ -417,7 +458,7 @@ mod tests {
 
     #[test]
     fn consumer_index_drain() {
-        let queue = SegQueue::new();
+        let queue = SegQueue::new(Domain::new(Leak::new()));
         queue.push(1);
         assert_eq!(queue.pop(), Some(1));
         assert_eq!(queue.pop(), None);
@@ -436,7 +477,7 @@ mod tests {
         const PER_PRODUCER: usize = 50;
         const TOTAL: usize = PRODUCERS * PER_PRODUCER;
 
-        let queue = SegQueue::<usize>::new();
+        let queue = SegQueue::<usize, Leak>::new(Domain::new(Leak::new()));
         let barrier = Barrier::new(PRODUCERS + CONSUMERS);
         let popped = AtomicUsize::new(0);
 
@@ -511,11 +552,12 @@ mod tests {
 mod loom_tests {
     use crate::SegQueue;
     use loom::sync::Arc;
+    use reclaim::{Domain, Leak};
 
     #[test]
     fn one_producer_one_consumer() {
         loom::model(|| {
-            let queue = Arc::new(SegQueue::<usize>::new());
+            let queue = Arc::new(SegQueue::<usize, Leak>::new(Domain::new(Leak::new())));
 
             let producer = queue.clone();
             let handler = loom::thread::spawn(move || {
@@ -541,7 +583,7 @@ mod loom_tests {
     #[test]
     fn two_producers_claim_distinct_slots() {
         loom::model(|| {
-            let queue = Arc::new(SegQueue::<usize>::new());
+            let queue = Arc::new(SegQueue::<usize, Leak>::new(Domain::new(Leak::new())));
 
             let p1 = queue.clone();
             let h1 = loom::thread::spawn(move || p1.push(1));
@@ -564,7 +606,7 @@ mod loom_tests {
     #[test]
     fn two_consumers_take_one_value_once() {
         loom::model(|| {
-            let queue = Arc::new(SegQueue::<usize>::new());
+            let queue = Arc::new(SegQueue::<usize, Leak>::new(Domain::new(Leak::new())));
             queue.push(1);
 
             let c1 = queue.clone();
@@ -592,7 +634,7 @@ mod loom_tests {
     #[test]
     fn two_producers_race_to_install_next_segment() {
         loom::model(|| {
-            let queue = Arc::new(SegQueue::<usize>::new());
+            let queue = Arc::new(SegQueue::<usize, Leak>::new(Domain::new(Leak::new())));
             // Fill the first segment exactly (SEG_LEN == 2 under loom) so the next
             // two pushes both overflow.
             queue.push(10);
@@ -626,7 +668,7 @@ mod loom_tests {
     #[test]
     fn empty_pop_does_not_burn_the_slot() {
         loom::model(|| {
-            let queue = Arc::new(SegQueue::<usize>::new());
+            let queue = Arc::new(SegQueue::<usize, Leak>::new(Domain::new(Leak::new())));
 
             let p = queue.clone();
             let h = loom::thread::spawn(move || p.push(1));
@@ -659,7 +701,7 @@ mod loom_tests {
         let mut builder = loom::model::Builder::new();
         builder.preemption_bound = Some(2);
         builder.check(|| {
-            let queue = Arc::new(SegQueue::<usize>::new());
+            let queue = Arc::new(SegQueue::<usize, Leak>::new(Domain::new(Leak::new())));
             let p1 = queue.clone();
             let p2 = queue.clone();
 

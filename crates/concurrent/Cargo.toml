@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 atomic-wait = "1.1.0"
 slab = "0.4.12"
+reclaim = { path = "../reclaim" }
 
 [dev-dependencies]
 criterion.workspace = true

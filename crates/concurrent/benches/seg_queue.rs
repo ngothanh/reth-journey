@@ -68,6 +68,7 @@ use concurrent::{Backoff, SegQueue};
 use crossbeam_queue::SegQueue as CrossbeamSegQueue;
 use criterion::measurement::WallTime;
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, Criterion};
+use reclaim::{Domain, Leak};
 use std::collections::VecDeque;
 use std::hint::{black_box, spin_loop};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -83,9 +84,9 @@ trait Queue<T>: Send + Sync {
     fn pop(&self) -> Option<T>;
 }
 
-impl<T: Send> Queue<T> for SegQueue<T> {
+impl<T: Send> Queue<T> for SegQueue<T, Leak> {
     fn create() -> Self {
-        SegQueue::new()
+        SegQueue::new(Domain::new(Leak::new()))
     }
     fn push(&self, value: T) {
         SegQueue::push(self, value);
@@ -183,7 +184,7 @@ fn configure(g: &mut BenchmarkGroup<'_, WallTime>) {
 fn uncontended(c: &mut Criterion) {
     let mut g = c.benchmark_group("seg_queue_uncontended");
     configure(&mut g);
-    bench_uncontended::<SegQueue<usize>>(&mut g, "seg_queue");
+    bench_uncontended::<SegQueue<usize, Leak>>(&mut g, "seg_queue");
     bench_uncontended::<CrossbeamSegQueue<usize>>(&mut g, "crossbeam_segqueue");
     bench_uncontended::<MutexQueue<usize>>(&mut g, "mutex_vecdeque");
     g.finish();
@@ -212,7 +213,7 @@ fn spsc(c: &mut Criterion) {
     for policy in [Policy::Spin, Policy::Backoff, Policy::Yield] {
         let mut g = c.benchmark_group(format!("seg_queue_spsc_{}", policy.name()));
         configure(&mut g);
-        bench_spsc::<SegQueue<usize>>(&mut g, "seg_queue", policy);
+        bench_spsc::<SegQueue<usize, Leak>>(&mut g, "seg_queue", policy);
         bench_spsc::<MutexQueue<usize>>(&mut g, "mutex_vecdeque", policy);
         g.finish();
     }
@@ -271,7 +272,7 @@ fn mpmc(c: &mut Criterion) {
 fn mpmc_config(c: &mut Criterion, nprod: usize, ncon: usize, policy: Policy) {
     let mut g = c.benchmark_group(format!("seg_queue_mpmc_{nprod}p{ncon}c_{}", policy.name()));
     configure(&mut g);
-    bench_mpmc::<SegQueue<usize>>(&mut g, "seg_queue", nprod, ncon, policy);
+    bench_mpmc::<SegQueue<usize, Leak>>(&mut g, "seg_queue", nprod, ncon, policy);
     bench_mpmc::<CrossbeamSegQueue<usize>>(&mut g, "crossbeam_segqueue", nprod, ncon, policy);
     bench_mpmc::<MutexQueue<usize>>(&mut g, "mutex_vecdeque", nprod, ncon, policy);
     g.finish();
@@ -371,7 +372,7 @@ fn np1c(c: &mut Criterion) {
     for nprod in [1usize, 2, 4, 8] {
         let mut g = c.benchmark_group(format!("np1c_{nprod}p1c"));
         configure(&mut g);
-        bench_mpmc::<SegQueue<usize>>(&mut g, "seg_queue", nprod, 1, Policy::Backoff);
+        bench_mpmc::<SegQueue<usize, Leak>>(&mut g, "seg_queue", nprod, 1, Policy::Backoff);
         bench_mpmc::<CrossbeamSegQueue<usize>>(&mut g, "crossbeam_segqueue", nprod, 1, Policy::Backoff);
         bench_mpmc::<MutexQueue<usize>>(&mut g, "mutex_vecdeque", nprod, 1, Policy::Backoff);
         bench_np1c_mpsc(&mut g, "std_mpsc", nprod, Policy::Backoff);
