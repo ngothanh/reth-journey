@@ -5,12 +5,13 @@
 > **Bar**: (c) — both are Layer-1 substrate, so the two-track rule applies: a sealed numeric prediction *before* every measurement, then the measured number, then reconcile the gap
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
-> **Current position**: refcount built, proven unsound, and benched. Reclamation is the open problem.
+> **Current position**: **C1 is done** (2026-10-09) — the traits, `Root`, `Domain`, `Leak`, and a stack as a doc-test on `Reclaimer`. Next is edit 2, Q1.
 > **Before and through C1**: `plan/reclaim_modeling.md` — the map, then twelve lessons (15 h:
 > ≈ 8 h of model, then C1's own 7 h as core types and behaviour). This ladder assumes the
 > model is already held; the C1 sessions kept stalling because it was not.
 >
-> **Remaining**: **≈ 171 h** across 6 steps — was 116 h before the inventory audits
+> **Remaining**: **164 h planned, ≈ 205 h with modeling** — 18 edits; see "Honest totals" below.
+> The original total was **≈ 171 h** across 6 steps — was 116 h before the inventory audits
 > (+35.5 h from the not-ported audit, +12.5 h from the 192-row coverage sweep, +4 h for declared roots, +3 h for the journal;
 > full disposition of every inventory row: `notes/smr_coverage.md`)
 > **The blog**: the *writing* is an output of finished work and is not counted here. The
@@ -39,6 +40,47 @@ In the tree today: 9 passing tests, 5 loom models, the refcount and the ordered 
 
 ---
 
+## Honest totals (written 2026-10-09, at the close of C1)
+
+The hours in this file were written before anything was built, and they assume the model for
+each edit is already held. C1 showed that it is not free: C1 was planned at 7 h and needed 8 h
+of model lessons first (`plan/reclaim_modeling.md`, L0–L5). So there are three kinds of number,
+and they must not be mixed:
+
+| Kind | What it is | How far to trust it |
+|---|---|---|
+| **Planned** | the `Est` columns in this file | assumes the model exists; written before the build |
+| **Modeling on top** | an estimate, made 2026-10-09, of the model lessons each edit needs first | a guess |
+| **Measured** | C1 with its model took 7 calendar days (first commit 2026-10-03, last 2026-10-09) | real, but the hours worked on those days are not known |
+
+| | Planned | With modeling |
+|---|---:|---:|
+| Done — C1 (L0–L11) | 7 h | 15 h |
+| Left — 18 edits + the journal | 164 h | ≈ 205 h |
+| **Whole project** | **171 h** | **≈ 220 h** |
+
+Modeling on top, per edit (hours): Q1 0.5 · Q2 1 · Q3 0.5 · C2 3 · C3 2 · C4 4 · C5 5 ·
+C10 4 · C11 2 · C8 0.5 · Q4 0 · C6 6 · C7 5 · C9 2 · step 4 1 · 5a 2 · 5b 3 · step 6 0 —
+**≈ 42 h**. It is ~25 % here and was over 100 % for C1 because C1 carried the whole base
+model (the three roles, the two rules, roots, guards); later edits reuse it.
+
+**Calendar.** 15 planned hours took 7 calendar days. At that pace 164 h is ≈ 11 weeks and
+205 h is ≈ 14 weeks — the end falls around mid-January 2027. One data point stretched over
+18 edits: a size, not a date.
+
+**What can move it.** Longer: C1 had no concurrency and every later edit does; C5, C6 and C7
+are the least certain estimates. Shorter: the planned hours assume the learner types
+everything, and in C1 many tests and comments were delegated.
+
+**A natural stopping point** is the close of edit 8 (C5, hazard pointers): a queue that really
+frees memory. That is 55 h planned from here, ≈ 70 h with modeling.
+
+**Known gaps in this file.** The `reclaim` crate table gives C1 as 4 h where the sequence
+table gives 7 h; the other rows have not been cross-checked. The journal
+(`notes/reclaim_journey.md`) has no entries for C1 yet.
+
+---
+
 ## The six steps
 
 | # | Step | Deliverable | Wall that forces the next step | Est |
@@ -60,7 +102,7 @@ two sections after this one.
 
 | Order | Edit | Depends on | Est | Cumulative |
 |---:|---|---|---:|---:|
-| 1 | **C1** traits + `Leak`, safety docs, filter / empty state / swap, **`Root<T>`** | — | 7 h | 7 |
+| 1 | ✅ **C1** traits + `Leak`, safety docs, **`Root<T>`** — done 2026-10-09. (Filter / empty state / swap were moved out: the model lists them under "Not modelled yet"; they return with the first scheme that needs them.) | — | 7 h | 7 |
 | 2 | **Q1** loss-detecting loom model, against today's code | — | 1.5 h | 8.5 |
 | 3 | **Q2** trait integration under `Leak`; refcount deleted | C1 | 4 h | 12.5 |
 | 4 | **Q3** protect-source restructure → **declared** root set `{head, tail}` | Q1, Q2 | 2.5 h | 15 |
