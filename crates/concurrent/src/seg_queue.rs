@@ -640,4 +640,54 @@ mod loom_tests {
             assert_eq!(got, vec![1], "an empty pop swallowed the pushed value");
         })
     }
+
+    /// L6 — producers and consumers running together across a segment boundary.
+    /// Three values at SEG_LEN == 2, so the third lands in a second segment while
+    /// two consumers are popping. The question: is any pushed value lost, or
+    /// delivered twice?
+    ///
+    /// This is the regression harness for the protect-source restructure (Q3 in
+    /// `plan/reclaim_ladder.md`).
+    ///
+    /// The preemption bound: four threads plus main is too many orders for loom
+    /// to try them all — unbounded, and with a bound of 3, the run does not
+    /// finish in minutes. With a bound of 2 it takes about 25 s. So a green run
+    /// means "no value is lost in any order with at most two forced thread
+    /// switches", not "in any order".
+    #[test]
+    fn nothing_is_lost_across_a_boundary() {
+        let mut builder = loom::model::Builder::new();
+        builder.preemption_bound = Some(2);
+        builder.check(|| {
+            let queue = Arc::new(SegQueue::<usize>::new());
+            let p1 = queue.clone();
+            let p2 = queue.clone();
+
+            let h1 = loom::thread::spawn(move || {
+                p1.push(1);
+                p1.push(2)
+            });
+            let h2 = loom::thread::spawn(move || p2.push(3));
+
+            let c1 = queue.clone();
+            let c2 = queue.clone();
+            let h3 = loom::thread::spawn(move || c1.pop());
+            let h4 = loom::thread::spawn(move || c2.pop());
+
+            let mut got: Vec<usize> = [h3, h4]
+                .into_iter()
+                .map(|v| v.join().unwrap())
+                .flatten()
+                .collect();
+            h1.join().unwrap();
+            h2.join().unwrap();
+
+            while let Some(v) = queue.pop() {
+                got.push(v);
+            }
+
+            got.sort_unstable();
+            assert_eq!(got, vec![1, 2, 3], "a value was lost crossing the boundary");
+        })
+    }
 }
