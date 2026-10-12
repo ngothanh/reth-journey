@@ -464,3 +464,98 @@ but the tests in `retire.rs` and `root.rs` were **exhibits turned into tests**,
 which is the specific skill being taught. Writing them removed the exercise.
 Both test modules are now a `TODO(you)` listing exactly which properties need
 covering, including the two that cannot be tested single-threaded.
+
+---
+
+# Session 2026-10-11 — Q2: where a root's place has to live
+
+Two entries, one question asked twice. `declare_root` asks that the place
+"stays alive, and stays at the same address, until `remove_root`". Both wrong
+turns below satisfied a reading of that sentence and were rejected by Miri.
+
+## 20. The place as a plain field of the queue
+
+**First answer** — `SegQueue::new` built `head` as a local, declared the root on
+it, then moved it into the struct and returned the struct:
+
+```rust
+let head = CachePadded::new(AtomicPtr::new(segment));
+let head_root = unsafe { domain.declare_root(&head) };
+SegQueue { head, head_root, .. }
+```
+
+The `SAFETY` comment said "head is alive and stays at the same address at
+initial time". It compiled, and the builder could not see the problem by
+reading it.
+
+**What killed it** — Miri, on a 10-line copy of the same shape in the `reclaim`
+crate (a function that declares a root on a local and returns both):
+
+```
+Undefined Behavior: constructing invalid value of type &AtomicPtr<Node>:
+encountered a dangling reference (use-after-free)      reclaim/src/root.rs:59
+```
+
+Returning a value moves it. The place was alive the whole time; it was not at
+the same address. The root kept the address of `new`'s own memory. The same
+would happen at every later move of the queue (into an `Arc`, into a `Vec`),
+which is safe code the user is free to write.
+
+The confusion underneath: there are two addresses. The one `head` *holds* (a
+segment, on the heap, does not move) and the one *of* `head` (a field of the
+queue, moves with it). A root stores the second, because it must find whatever
+segment the place holds *now*.
+
+**Decided** — the place goes on the heap.
+
+**Cost** — one allocation per root, and `Drop` now has real work. It also
+showed that "alive" and "same address" are separate promises broken at separate
+moments: a move breaks the second while the queue lives; a `Drop` that forgets
+`remove_root` breaks the first after it dies, if the domain lives on.
+
+## 21. The place in a `Box`
+
+**First answer** — `head: Box<CachePadded<AtomicPtr<Segment<T>>>>`. Proposed by
+Claude as "the simplest form", with the argument: moving the queue copies only
+the address inside the `Box`; the place on the heap does not move.
+
+**What killed it** — Miri, default settings, in every test at the first `push`:
+
+```
+Undefined Behavior: trying to retag ... that tag does not exist in the borrow stack
+   reclaim/src/root.rs:59           Root::ptr, from protect, from push
+<tag> was created by a SharedReadWrite retag     root.rs:53          (declare_root)
+<tag> was later invalidated by a Unique retag    seg_queue.rs:175    (`tail,` moved into the struct)
+```
+
+The argument about the address was true and was not enough. A `Box` is an
+*exclusive* owner, like `&mut`: the compiler may assume nobody else reaches the
+memory while the `Box` is used. Miri models that as a list of permits per
+location. `declare_root` added the root's permit on top of the `Box`'s. Moving
+the `Box` into the struct is a use of the exclusive owner, and that removes
+every permit added after it. Nothing moved and nothing was freed; the root's
+*permission* ended.
+
+**The open part, measured.** Miri has two candidate rule sets, because Rust has
+not fixed the final one. Same test, same code:
+
+| Model | Result |
+|---|---|
+| Stacked Borrows (default) | rejects |
+| Tree Borrows (`-Zmiri-tree-borrows`) | accepts |
+
+So the honest statement is not "this is undefined behaviour" but "it is not
+decided whether this is allowed".
+
+**Decided** — hold the place as a raw address: `Box::into_raw(Box::new(..))`,
+freed by hand in `Drop` after `remove_root`. A raw address makes no exclusive
+claim, so both models accept it. It is the same way the queue already holds its
+segments, which many threads reach at once through `head`, `tail` and `next`.
+
+**Cost** — every access to `head`/`tail` goes through an `unsafe` deref (kept
+in two small private functions), and `Drop` must free two boxes in the right
+order. In one line: **a `Box` gives a stable address, not a shareable one.**
+
+**Also noted** — the normal tests passed 100 times out of 100 and all six loom
+tests passed with this code. Only Miri saw it. Loom checks orderings between
+threads, not who is allowed to use an address.

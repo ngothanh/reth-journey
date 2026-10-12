@@ -97,8 +97,8 @@ unsafe impl<T: Send> Retirable for Segment<T> {
 
 #[repr(C)]
 pub struct SegQueue<T, R: Reclaimer> {
-    head: Box<CachePadded<AtomicPtr<Segment<T>>>>,
-    tail: Box<CachePadded<AtomicPtr<Segment<T>>>>,
+    head: *mut CachePadded<AtomicPtr<Segment<T>>>,
+    tail: *mut CachePadded<AtomicPtr<Segment<T>>>,
     reclaim: CachePadded<AtomicPtr<Segment<T>>>,
     reclaiming: CachePadded<AtomicBool>,
     domain: Domain<R>,
@@ -150,10 +150,19 @@ impl<T> Slot<T> {
 }
 
 impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
+    fn head(&self) -> &AtomicPtr<Segment<T>> {
+        // SAFETY
+        unsafe { &(*self.head) }
+    }
+
+    fn tail(&self) -> &AtomicPtr<Segment<T>> {
+        //SAFETY
+        unsafe { &(*self.tail) }
+    }
     pub fn new(domain: Domain<R>) -> SegQueue<T, R> {
         let segment = Box::into_raw(Box::new(Segment::new()));
-        let head = Box::new(CachePadded::new(AtomicPtr::new(segment)));
-        let tail = Box::new(CachePadded::new(AtomicPtr::new(segment)));
+        let head = Box::into_raw(Box::new(CachePadded::new(AtomicPtr::new(segment))));
+        let tail = Box::into_raw(Box::new(CachePadded::new(AtomicPtr::new(segment))));
         let reclaim = CachePadded::new(AtomicPtr::new(segment));
 
         // SAFETY: `declare_root` asks that the place keeps its address and
@@ -164,11 +173,11 @@ impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
         // - Alive: the queue owns the `Box` and never replaces it, so the place
         //   is freed only when the queue is dropped, and `Drop` removes the
         //   root before that.
-        let head_root = unsafe { domain.declare_root(&head) };
+        let head_root = unsafe { domain.declare_root(&*head) };
 
         // SAFETY: same as for `head`: `tail` is in its own `Box`, owned by the
         // queue, and `Drop` removes its root first.
-        let tail_root = unsafe { domain.declare_root(&tail) };
+        let tail_root = unsafe { domain.declare_root(&*tail) };
 
         SegQueue {
             head,
@@ -241,7 +250,7 @@ impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
             }
         }
         let _ =
-            self.tail
+            self.tail()
                 .compare_exchange(cur_tail_ptr, next, Ordering::Release, Ordering::Relaxed);
     }
 
@@ -277,7 +286,7 @@ impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
 
         loop {
             let seg = self.reclaim.load(Ordering::Relaxed);
-            if seg == self.head.load(Ordering::Relaxed) {
+            if seg == self.head().load(Ordering::Relaxed) {
                 break;
             }
 
@@ -319,9 +328,9 @@ impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
                 if next.is_null() {
                     return None;
                 }
-                let _ = self
-                    .head
-                    .compare_exchange(ptr, next, Ordering::Release, Ordering::Relaxed);
+                let _ =
+                    self.head()
+                        .compare_exchange(ptr, next, Ordering::Release, Ordering::Relaxed);
                 self.try_reclaim();
                 continue;
             }
@@ -381,14 +390,14 @@ mod tests {
         }
 
         assert_eq!(
-            queue.head.load(Ordering::Relaxed),
-            queue.tail.load(Ordering::Relaxed)
+            queue.head().load(Ordering::Relaxed),
+            queue.tail().load(Ordering::Relaxed)
         );
 
         queue.push(10);
         assert_ne!(
-            queue.head.load(Ordering::Relaxed),
-            queue.tail.load(Ordering::Relaxed)
+            queue.head().load(Ordering::Relaxed),
+            queue.tail().load(Ordering::Relaxed)
         );
     }
 
