@@ -86,11 +86,13 @@ unsafe impl<T: Send> Retirable for Segment<T> {
     }
 
     unsafe fn reclaim(ptr: *mut Self) {
-        // SAFETY:
-        // The caller promises:
-        // - `ptr` points to a live object of this type that was handed to `retire`;
-        // -  no reader holds the object anymore;
-        // - `reclaim` is called once for this object, and `ptr` is not used after.
+        // SAFETY: `Box::from_raw` needs an address that came from a `Box` and
+        // that nobody else uses anymore.
+        // - From a `Box`: every segment is made with `Box::new`, in
+        //   `SegQueue::new` and in `advance_tail`.
+        // - Nobody else: the caller of `reclaim` promises that no reader holds
+        //   the segment, that `reclaim` is called once for it, and that `ptr`
+        //   is not used after wards.
         unsafe { drop(Box::from_raw(ptr)) };
     }
 }
@@ -130,6 +132,12 @@ impl<T> Slot<T> {
     }
 
     fn write_value(&self, value: T) {
+        // SAFETY (both builds): writing through the cell needs that no other
+        // thread reads or writes this slot at the same time.
+        // - No other writer: only `push` calls this, with an index it got from
+        //   `claimed.fetch_add`, and that hands out each index once.
+        // - No reader: a popper reads a slot only after it sees `WRITTEN`, and
+        //   `push` stores `WRITTEN` after this write.
         #[cfg(not(loom))]
         unsafe {
             (*self.value.get()).write(value);
@@ -139,6 +147,13 @@ impl<T> Slot<T> {
     }
 
     fn read_existing_value(&self) -> T {
+        // SAFETY (both builds): `assume_init_read` needs a slot that holds a
+        // value, and it must be read out only once.
+        // - Holds a value: only `pop` calls this, after it loaded `WRITTEN`
+        //   from this slot's `state` with `Acquire`, and `push` stores
+        //   `WRITTEN` with `Release` after writing the value.
+        // - Read once: `pop` calls this only when its exchange on `consumed`
+        //   succeeded for this index, and that succeeds for one thread.
         #[cfg(not(loom))]
         unsafe {
             (*self.value.get()).assume_init_read()
@@ -149,14 +164,18 @@ impl<T> Slot<T> {
     }
 }
 
-impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
+impl<T: Send, R: Reclaimer> SegQueue<T, R> {
     fn head(&self) -> &AtomicPtr<Segment<T>> {
-        // SAFETY
+        // SAFETY: opening `self.head` needs a live `AtomicPtr` behind it.
+        // The address came from `Box::into_raw` in `new` and is never changed.
+        // The place is freed only in `Drop`, which takes `&mut self`, so it
+        // cannot run while a `&self` call like this one is in progress.
         unsafe { &(*self.head) }
     }
 
     fn tail(&self) -> &AtomicPtr<Segment<T>> {
-        //SAFETY
+        // SAFETY: same as `head()`: from `Box::into_raw` in `new`, never
+        // changed, freed only in `Drop`.
         unsafe { &(*self.tail) }
     }
     pub fn new(domain: Domain<R>) -> SegQueue<T, R> {
@@ -165,18 +184,21 @@ impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
         let tail = Box::into_raw(Box::new(CachePadded::new(AtomicPtr::new(segment))));
         let reclaim = CachePadded::new(AtomicPtr::new(segment));
 
-        // SAFETY: `declare_root` asks that the place keeps its address and
-        // stays alive until `remove_root`.
-        // - Same address: the place is on the heap, inside a `Box`. Moving the
-        //   queue copies only the address held by the `Box`; the place itself
-        //   does not move.
-        // - Alive: the queue owns the `Box` and never replaces it, so the place
-        //   is freed only when the queue is dropped, and `Drop` removes the
-        //   root before that.
+        // SAFETY: two `unsafe` operations here.
+        // Opening `head`: it came from `Box::into_raw` two lines above.
+        // `declare_root` asks that the place keeps its address and stays alive
+        // until `remove_root`:
+        // - Same address: the place is on the heap. The queue holds only its
+        //   address, so moving the queue copies that address and the place
+        //   itself does not move. The address is raw, not a `Box`, so moving
+        //   the queue also does not cancel the root's right to use it.
+        // - Alive: the queue never frees or replaces the place while it
+        //   lives. `Drop` frees it, and removes the root before that.
         let head_root = unsafe { domain.declare_root(&*head) };
 
-        // SAFETY: same as for `head`: `tail` is in its own `Box`, owned by the
-        // queue, and `Drop` removes its root first.
+        // SAFETY: same as for `head`: `tail` is its own heap place from
+        // `Box::into_raw`, held by raw address, and `Drop` removes its root
+        // before freeing it.
         let tail_root = unsafe { domain.declare_root(&*tail) };
 
         SegQueue {
@@ -289,7 +311,18 @@ impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
             if seg == self.head().load(Ordering::Relaxed) {
                 break;
             }
+            if seg == self.tail().load(Ordering::Relaxed) {
+                break;
+            }
 
+            // SAFETY: opening `seg` needs two things.
+            // - Not null: `reclaim` starts at the first segment and is only
+            //   ever given a non-null `next` (checked below).
+            // - Not freed: a segment is retired only by the line at the end of
+            //   this loop, after `reclaim` has moved past it. Only the thread
+            //   that set `reclaiming` runs this loop, so the segment `reclaim`
+            //   holds has not been retired yet, and a scheme frees only what
+            //   was retired.
             let s = unsafe { &*seg };
             if s.consumed.load(Ordering::Relaxed) != SEG_LEN {
                 break;
@@ -301,6 +334,20 @@ impl<T: Send, R: Send + Sync + Reclaimer> SegQueue<T, R> {
             }
 
             self.reclaim.store(next, Ordering::Relaxed);
+            // SAFETY: the three promises of `retire`.
+            // 1. No root holds `seg`.
+            //    - `head`: checked at the top of this loop, and `head` only
+            //      moves forward, so it never comes back to `seg`.
+            //    - `tail`: checked at the top of this loop too. `tail` only
+            //      moves forward, so once it has left `seg` it never comes
+            //      back. It cannot be behind `seg` either: every earlier
+            //      segment was retired by this loop, so `tail` had already
+            //      left it.
+            // 2. Retired once: `reclaim` moved past `seg` on the line above
+            //    and only moves forward, and `reclaiming` lets one thread at a
+            //    time run this loop.
+            // 3. Not used after: `s`, the reference into `seg`, is not used
+            //    below this line.
             unsafe {
                 self.domain.retire(seg);
             }
@@ -363,6 +410,15 @@ impl<T, R: Reclaimer> Drop for SegQueue<T, R> {
     fn drop(&mut self) {
         self.domain.remove_root(self.head_root);
         self.domain.remove_root(self.tail_root);
+
+        //SAFETY: Box::from_raw needs 3 things:
+        // 1. the pointer is from Box::new (head is from it) and never be changed
+        // 2. drop runs exactly one
+        // 3. No one use head after the queue is dropped
+        unsafe { drop(Box::from_raw(self.head)) };
+
+        //SAFETY: The same with head
+        unsafe { drop(Box::from_raw(self.tail)) };
     }
 }
 

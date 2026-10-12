@@ -217,26 +217,3 @@ fn every_value_is_popped_exactly_once() {
 
     domain.remove_root(root);
 }
-
-/// EXPERIMENT, delete after reading Miri's report. It does in small what a
-/// constructor does when it declares a root on a local and then returns.
-fn make(domain: &Domain<Leak>) -> (AtomicPtr<Node>, Root<Node>) {
-    let head: AtomicPtr<Node> = AtomicPtr::new(null_mut());
-    // SAFETY: this is the claim under test: "`head` is alive and stays at the
-    // same address".
-    let root = unsafe { domain.declare_root(&head) };
-    (head, root)
-}
-
-#[test]
-#[ignore = "experiment: run it under Miri only"]
-fn a_root_declared_on_a_local_that_is_returned() {
-    let domain = Domain::new(Leak::new());
-    let (head, root) = make(&domain);
-
-    println!("the place is now at   {:p}", &head);
-
-    let mut guard = domain.guard();
-    let top = guard.protect(&root);
-    assert!(top.is_null());
-}
