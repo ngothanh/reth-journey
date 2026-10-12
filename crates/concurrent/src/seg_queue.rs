@@ -411,13 +411,19 @@ impl<T, R: Reclaimer> Drop for SegQueue<T, R> {
         self.domain.remove_root(self.head_root);
         self.domain.remove_root(self.tail_root);
 
-        //SAFETY: Box::from_raw needs 3 things:
-        // 1. the pointer is from Box::new (head is from it) and never be changed
-        // 2. drop runs exactly one
-        // 3. No one use head after the queue is dropped
+        // SAFETY: `Box::from_raw` needs three things.
+        // 1. The address came from a `Box`: `Box::into_raw` in `new`, and the
+        //    field is never changed.
+        // 2. It is freed once: `drop` runs once, and nothing else frees it.
+        // 3. Nobody uses the place afterwards. Two holders had its address:
+        //    - the queue's own methods, through `head()`: `drop` takes
+        //      `&mut self`, so no `push` or `pop` is running or can start;
+        //    - the domain, through the root: the two `remove_root` calls
+        //      above took the address out of its list. This is why the roots
+        //      are removed before the places are freed.
         unsafe { drop(Box::from_raw(self.head)) };
 
-        //SAFETY: The same with head
+        // SAFETY: same as for `head`, with `tail()` and `tail_root`.
         unsafe { drop(Box::from_raw(self.tail)) };
     }
 }
@@ -610,6 +616,56 @@ mod tests {
                 last_seq[p] = Some(seq);
             }
         }
+    }
+
+    /// Under `Leak` a retired segment is never freed, so the chain of
+    /// segments only grows.
+    ///
+    /// The queue forgets a segment once it has retired it: `head`, `tail` and
+    /// `reclaim` have all moved on. So the test saves the address of the first
+    /// segment before anything is pushed, and walks the chain from there at
+    /// the end.
+    ///
+    /// The walk opens segments that were retired. Run under Miri, that is
+    /// what gives the test its teeth: if a scheme had freed one of them, Miri
+    /// reports a use after free on that line.
+    #[test]
+    fn leak_keeps_every_retired_segment() {
+        // One value more than three full segments: the queue has to link a
+        // fourth segment and move past the first three.
+        const VALUES: usize = 3 * SEG_LEN + 1;
+
+        let queue = SegQueue::new(Domain::new(Leak::new()));
+        let first = queue.reclaim.load(Ordering::Relaxed);
+
+        for value in 0..VALUES {
+            queue.push(value);
+        }
+        for expected in 0..VALUES {
+            assert_eq!(queue.pop(), Some(expected));
+        }
+        assert_eq!(queue.pop(), None);
+
+        // The queue really moved on. Without this, the test would also pass
+        // for a queue that never retires anything.
+        let oldest_not_retired = queue.reclaim.load(Ordering::Relaxed);
+        assert_ne!(oldest_not_retired, first, "no segment was retired");
+
+        // Follow `next` from the first segment to the end of the chain.
+        let mut chain = Vec::new();
+        let mut seg = first;
+        while !seg.is_null() {
+            chain.push(seg);
+            // SAFETY: this is the claim under test. `Leak` never frees a
+            // retired segment, and the queue is still alive, so every segment
+            // from the first one on is still allocated.
+            seg = unsafe { (*seg).next.load(Ordering::Relaxed) };
+        }
+
+        // Four segments were made, and all four are still there.
+        assert_eq!(chain.len(), 4);
+        // The first three were retired: `reclaim` now holds the fourth.
+        assert_eq!(chain[3], oldest_not_retired);
     }
 }
 
