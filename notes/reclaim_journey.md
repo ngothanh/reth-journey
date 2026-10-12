@@ -559,3 +559,148 @@ order. In one line: **a `Box` gives a stable address, not a shareable one.**
 **Also noted** — the normal tests passed 100 times out of 100 and all six loom
 tests passed with this code. Only Miri saw it. Loom checks orderings between
 threads, not who is allowed to use an address.
+
+---
+
+# Session 2026-10-12 — Q2 closes, and takes Q3 with it
+
+Four entries. Entry 22 was decided on 2026-10-11 and is recorded here with the
+rest of the edit.
+
+## 22. Can the queue move to the scheme's guard first, and change how it protects later?
+
+**First answer** — the plan: yes. Q2 swaps `SegGuard` for the scheme's guard
+and keeps the old shape, where a thread that finds a segment full takes the
+next one from `cur.next`. Under `Leak` nothing is freed, so that is harmless.
+Q3 then changes the loops to protect only through `head` and `tail`. Two small
+edits, so a failure can only be one thing.
+
+**What killed it** — the signature written in C1:
+
+```rust
+fn try_protect<T>(&mut self, addr: *mut T, root: &Root<T>) -> Result<*mut T, *mut T>;
+```
+
+`protect` accepts a `Root` and nothing else. `next` is not a root, and it
+cannot be made one: a root is a place that stays alive until `remove_root`, and
+`next` lives inside a segment that gets retired. The old shape could not be
+typed at all. The plan had argued for this itself, in "Roots are declared, not
+documented": the typed root is what makes the declared set equal the actual
+set. Its Q2/Q3 split forgot that argument.
+
+**Decided** — one edit. After `push` or `pop` has moved `tail` or `head`
+forward, it goes back to the top of its loop and protects through the root
+again. `advance_tail` takes the protected segment and returns nothing. One
+guard per call instead of a new one per segment.
+
+**Cost** — the safety net of two separate edits. What replaced it is Q1: the
+loss-detecting loom model, written against the old code first, passed on the
+new shape (preemption bound 2). Planned 4 h + 2.5 h; the hours worked were not
+logged.
+
+## 23. When may the cursor retire a segment?
+
+**First answer** — the old conditions with the refcount line deleted: `head`
+has left the segment, every slot is consumed, and it has a `next`. The normal
+tests passed 100 runs out of 100. All six loom models passed, also with debug
+assertions switched on. Claude had said the first test run would be a surprise;
+it was not.
+
+**What killed it** — the debug check built in C1, in `concurrent_mpmc` under
+Miri:
+
+```
+thread panicked at crates/reclaim/src/domain.rs:83:
+retire: a root still holds this object (Rule 1 is broken)
+```
+
+The queue has two roots and the loop asked about one. `advance_tail` does two
+steps, and they cannot be swapped: link the next segment, then move `tail`.
+With `SEG_LEN = 2`:
+
+```
+pusher P:   fills A, finds it full, links B after A
+            ── paused before it moves tail ──                 tail = A
+popper C:   pops twice; pops a third time: A is used up, A.next is B
+            moves head to B, calls try_reclaim
+            A != head, all consumed, next exists → retire(A)  tail = A  ✗
+```
+
+A pusher that arrives now protects through `tail_root` and gets a segment that
+was already retired. Under `Leak` nothing happens. Under a scheme that frees,
+it is a use after free. In this interleaving the paused pusher held a count on
+A, so the old refcount check stopped the free; deleting the refcount is what
+exposed that nothing ever asked about `tail`.
+
+Only Miri reached it. The window is two neighbouring instructions, and no loom
+model has a popper that pops `SEG_LEN + 1` times against a pusher that fills a
+segment.
+
+**Decided** — the fix is on the retiring side, not in `advance_tail`:
+
+```rust
+if seg == self.tail().load(Ordering::Relaxed) {
+    break;
+}
+```
+
+Looking once is enough because `tail` only moves forward, and it is never
+behind the cursor: every earlier segment was retired only after `tail` left it.
+After the fix: Miri passes on 20 of 20 schedules of `concurrent_mpmc`.
+
+**Cost** — a segment may be retired one call later. And an open item: the fix
+is guarded by Miri's random schedules only; a loom model for it is not written.
+
+**Worth keeping** — the plan already had the sentence "the `reclaim` cursor
+stays — it is still how you know `tail` has also passed". The plan knew; the
+code did not; the check built two edits earlier is what noticed the difference.
+That is the case for declaring roots instead of documenting them.
+
+## 24. Was the flaky `concurrent_mpmc` a bad test or a bad queue?
+
+**First answer** — a test that fails now and then, on code that was about to be
+replaced anyway. Easy to wave through.
+
+**What killed it** — counting, before Q2 started. On the refcount code the
+test failed 6 runs in 40, always on the same assert ("consumer 1 saw producer 3
+out of order: seq 1816 before 1244"). With `try_reclaim` switched off: 0
+failures in 100. So the failures came from freeing.
+
+During Q2 the numbers moved the way that reading predicts:
+
+| State of the code | `concurrent_mpmc` |
+|---|---|
+| refcount, frees with `Box::from_raw` | 6 failures in 40 |
+| refcount check deleted, still frees with `Box::from_raw` | fails at once; also "value 63120 popped more than once" |
+| `retire` on `Leak` | 0 failures in 100, twice |
+
+The mechanism is a reading, not a measurement: a segment is freed while a
+thread still holds its address, the allocator hands the same address out again,
+and an exchange on `head` or `tail` succeeds on a segment that is not the one
+the thread saw.
+
+**Decided** — Q2 got an acceptance test the plan did not have: 100 runs out of
+100.
+
+**Cost** — none. Two things to keep: the Q1 loom model passed on the unsound
+refcount the whole time, so it does not see this bug; and "flaky" was the queue
+being wrong 15 % of the time.
+
+## 25. For which schemes may the queue cross threads?
+
+**First answer** — the lines that were already there, with the new parameter
+added: `unsafe impl<T: Send, R: Reclaimer> Send for SegQueue<T, R>`. Then a
+second try: `R: Send` for `Send`, `R: Sync` for `Sync`.
+
+**What killed it** — review, not a tool. The queue holds a `Domain<R>`, which
+is an `Arc` around the scheme, and an `Arc<X>` is `Send` or `Sync` only when
+`X` is both. Sending the queue to another thread while the caller keeps a clone
+of the domain puts the scheme in two threads at once. The compiler never checks
+an `unsafe impl`, and `Leak` is `Send + Sync`, so no test could fail.
+
+**Decided** — `R: Reclaimer + Send + Sync` on both lines.
+
+**Cost** — none. The same session also removed a line: `unsafe impl Send for
+Segment<T>` was not needed, because every field of a segment is already `Send`
+when `T` is. An `unsafe impl` that the compiler would have derived by itself is
+a promise nobody asked for.

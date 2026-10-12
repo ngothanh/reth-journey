@@ -5,12 +5,12 @@
 > **Bar**: (c) — both are Layer-1 substrate, so the two-track rule applies: a sealed numeric prediction *before* every measurement, then the measured number, then reconcile the gap
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
-> **Current position**: **C1 is done** (2026-10-09) — the traits, `Root`, `Domain`, `Leak`, and a stack as a doc-test on `Reclaimer`. Next is edit 2, Q1.
+> **Current position**: **edits 1–4 are done** (C1 2026-10-09 · Q1 2026-10-11 · Q2 and Q3 2026-10-12). The queue is `SegQueue<T, R: Reclaimer>` on the `reclaim` crate with `Leak`; the refcount and `SegGuard` are deleted. Q3 was merged into Q2 (see "What happened" under the Q table). Next is edit 5, C2.
 > **Before and through C1**: `plan/reclaim_modeling.md` — the map, then twelve lessons (15 h:
 > ≈ 8 h of model, then C1's own 7 h as core types and behaviour). This ladder assumes the
 > model is already held; the C1 sessions kept stalling because it was not.
 >
-> **Remaining**: **164 h planned, ≈ 205 h with modeling** — 18 edits; see "Honest totals" below.
+> **Remaining**: **156 h planned, ≈ 196 h with modeling** — 15 edits; see "Honest totals" below.
 > The original total was **≈ 171 h** across 6 steps — was 116 h before the inventory audits
 > (+35.5 h from the not-ported audit, +12.5 h from the 192-row coverage sweep, +4 h for declared roots, +3 h for the journal;
 > full disposition of every inventory row: `notes/smr_coverage.md`)
@@ -37,6 +37,11 @@ there is no build log for that period):
 
 In the tree today: 9 passing tests, 5 loom models, the refcount and the ordered walk.
 **Step 2 deletes the refcount** — its value is the proof, which is already banked.
+
+**Update 2026-10-12.** The queue half of step 2 is done. In the tree now: 10 passing tests,
+6 loom models, no refcount, and the ordered walk kept as the thing that calls `retire`. What
+is left of step 2 is the Treiber stack (C8); a first version of it, on `Leak` only, already
+exists as `crates/reclaim/tests/stack.rs`.
 
 ---
 
@@ -79,6 +84,30 @@ frees memory. That is 55 h planned from here, ≈ 70 h with modeling.
 table gives 7 h; the other rows have not been cross-checked. The journal
 (`notes/reclaim_journey.md`) has no entries for C1 yet.
 
+### Update 2026-10-12, at the close of Q2 + Q3
+
+| | Planned | With modeling |
+|---|---:|---:|
+| Done — C1, Q1, Q2, Q3 | 15 h | 25 h |
+| Left — 15 edits + the journal | 156 h | ≈ 196 h |
+
+Calendar: Q1 on 2026-10-11, Q2 + Q3 on 2026-10-11 and 2026-10-12. The hours worked on those
+days were not logged. The stopping point, the close of C5 (hazard pointers), is now 47 h
+planned from here, ≈ 61 h with modeling.
+
+**Gaps found while building Q2** (none of them has a row in this plan yet):
+
+- **`SegQueue`'s `Drop` does not free segments.** It removes the two roots and frees the two
+  root places. Segments still in the chain when the queue is dropped are leaked, and so are
+  the values still in their slots. The queue's own doc names "Miri without
+  `-Zmiri-ignore-leaks`" as the proof that a freeing scheme works; that cannot pass while
+  `Drop` leaks, so this has to land no later than C5.
+- **The `tail` hole has no loom model.** `try_reclaim` retired a segment `tail` still held
+  (journal entry 23). The fix is guarded only by Miri's random schedules. A model with one
+  pusher that fills a segment and one popper that pops `SEG_LEN + 1` times, run with debug
+  assertions on, would pin it.
+- **`try_reclaim` no longer reclaims.** It retires. The name is from the refcount stage.
+
 ---
 
 ## The six steps
@@ -103,9 +132,9 @@ two sections after this one.
 | Order | Edit | Depends on | Est | Cumulative |
 |---:|---|---|---:|---:|
 | 1 | ✅ **C1** traits + `Leak`, safety docs, **`Root<T>`** — done 2026-10-09. (Filter / empty state / swap were moved out: the model lists them under "Not modelled yet"; they return with the first scheme that needs them.) | — | 7 h | 7 |
-| 2 | **Q1** loss-detecting loom model, against today's code | — | 1.5 h | 8.5 |
-| 3 | **Q2** trait integration under `Leak`; refcount deleted | C1 | 4 h | 12.5 |
-| 4 | **Q3** protect-source restructure → **declared** root set `{head, tail}` | Q1, Q2 | 2.5 h | 15 |
+| 2 | ✅ **Q1** loss-detecting loom model, against today's code — done 2026-10-11. Runs with a preemption bound of 2; unbounded and bound 3 do not finish. | — | 1.5 h | 8.5 |
+| 3 | ✅ **Q2** trait integration under `Leak`; refcount deleted — done 2026-10-12 | C1 | 4 h | 12.5 |
+| 4 | ✅ **Q3** protect-source restructure → **declared** root set `{head, tail}` — done 2026-10-12, inside Q2: the `Guard` from C1 accepts only a `Root`, so there was no other way to write Q2 | Q1, Q2 | 2.5 h | 15 |
 | 5 | **C2** retired list — sharded, batch push, **double-retire detection** | C1 | 9 h | 24 |
 | 6 | **C3** registry — immortal **padded** per-thread records | C2 | 4.5 h | 28.5 |
 | 7 | **C4** `Domain<R>` — triggers, executor, flattener, **`cleanup`, teardown** | C3 | 15 h | 43.5 |
@@ -285,9 +314,9 @@ test run — there is no intermediate state where the queue is broken.
 
 | # | Edit | What it touches | Verified by | Est |
 |---|---|---|---|---:|
-| **Q1** | **A loss-detecting loom model, written against the CURRENT code.** 2 producers, 2 consumers, enough items to cross a boundary at `SEG_LEN = 2`; assert the multiset of popped values equals the pushed set. | new `loom_tests` entry | passes today — that is the point. It becomes the regression harness for Q3 | 1.5 h |
-| **Q2** | **Trait integration.** `SegGuard` (`:83`, `:118-139`) becomes the scheme's guard; `Segment::ref_count` (`:78`, `:104`) and `acquire_ref`/`release_ref` (`:109-115`) are deleted; `try_reclaim`'s refcount check (`:259`) becomes nothing and its `Box::from_raw` becomes `retire`. `SegQueue<T, R: Reclaimer>` stores its `Domain`. Scheme = `Leak`. | the struct defs, `SegGuard`, `try_reclaim` | 9 std + 5 loom + Q1 green · Miri clean with `-Zmiri-ignore-leaks` · **a test asserting the chain grows** | 4 h |
-| **Q3** | **The protect-source restructure.** `advance_tail`'s tail (`:215`) and `pop`'s advance (`:289`) stop protecting through `&cur.next` and protect through `&self.tail` / `&self.head`. Guards per thread 2 → 1. | `push`/`advance_tail`/`pop` only | Q1 must still pass — this is the FIFO question, and Q1 exists to answer it | 2.5 h |
+| ✅ **Q1** | **A loss-detecting loom model, written against the CURRENT code.** 2 producers, 2 consumers, enough items to cross a boundary at `SEG_LEN = 2`; assert the multiset of popped values equals the pushed set. | new `loom_tests` entry | passes today — that is the point. It becomes the regression harness for Q3 | 1.5 h |
+| ✅ **Q2** | **Trait integration.** `SegGuard` (`:83`, `:118-139`) becomes the scheme's guard; `Segment::ref_count` (`:78`, `:104`) and `acquire_ref`/`release_ref` (`:109-115`) are deleted; `try_reclaim`'s refcount check (`:259`) becomes nothing and its `Box::from_raw` becomes `retire`. `SegQueue<T, R: Reclaimer>` stores its `Domain`. Scheme = `Leak`. | the struct defs, `SegGuard`, `try_reclaim` | 9 std + 5 loom + Q1 green · Miri clean with `-Zmiri-ignore-leaks` · **a test asserting the chain grows** | 4 h |
+| ✅ **Q3** | **The protect-source restructure.** `advance_tail`'s tail (`:215`) and `pop`'s advance (`:289`) stop protecting through `&cur.next` and protect through `&self.tail` / `&self.head`. Guards per thread 2 → 1. | `push`/`advance_tail`/`pop` only | Q1 must still pass — this is the FIFO question, and Q1 exists to answer it | 2.5 h |
 | **Q4** | Bench arms for the new shape. `benches/seg_queue.rs` already has the `Queue<T>` trait and the N→1 scenarios; add one arm per scheme. | bench only | runs, numbers recorded against a sealed prediction | 1 h |
 
 Q1–Q4 is **9 h**; the Treiber stack is the other 5 h of step 2.
@@ -302,6 +331,28 @@ protecting through `&self.head` can return a *later* segment than `B` if another
 already advanced, and that is safe because a consumer only advances past a drained segment.
 That is an argument, not a measurement, and every later step builds on it. Q1 turns it into
 something loom can refute.
+
+**What happened (closed 2026-10-12).** Details and the wrong turns are in
+`notes/reclaim_journey.md`, entries 20–24.
+
+- **Q2 and Q3 could not be separate.** The paragraph above says protecting through `cur.next`
+  is harmless under `Leak`, so Q2 can keep it. But `try_protect` takes a `&Root<T>`, and `next`
+  is not a root. The old shape could not be written at all. This plan's own "Roots are
+  declared" section says the typed root is what makes the declared set equal the actual set;
+  it did exactly that, one edit earlier than planned. Q1 passed on the new shape.
+- **A root's place cannot be a field of the queue, and cannot be a `Box`.** A field moves
+  when `new` returns. A `Box` is rejected by Miri's default rules once the `Box` is moved
+  (its newer rule set accepts it; the question is not settled). The two places are on the
+  heap behind raw addresses, freed in `Drop` after `remove_root`.
+- **`try_reclaim` had to check `tail` as well as `head`.** The debug check from C1 caught it,
+  under Miri only. The line further down, "the `reclaim` cursor stays — it is still how you
+  know `tail` has also passed", was true of the plan and not of the code.
+- **One extra acceptance was added:** `concurrent_mpmc` passes 100 runs out of 100. It failed
+  6 runs in 40 on the refcount.
+
+At the close: 10 std tests (also in release) · `concurrent_mpmc` 100 of 100 · 6 loom models,
+also with debug assertions on · Miri clean with `-Zmiri-ignore-leaks`, and 20 of 20 schedules
+on `concurrent_mpmc` · the chain-grows test, with two negative controls.
 
 ---
 
@@ -363,6 +414,9 @@ Consequence, stated plainly: the ordered walk stops being load-bearing *for safe
 `reclaim` cursor stays — it is still how you know `tail` has also passed — but the
 front-to-back induction no longer carries the argument, because (A) now comes from the root
 set being `{head, tail}` and (B) from the scheme. `Box::from_raw` becomes `retire`.
+
+*(As built, 2026-10-12: the code did not check `tail` until the debug check caught it under
+Miri — journal entry 23. It does now.)*
 
 ### Guards are growable, not capped (decided)
 
@@ -576,6 +630,11 @@ let tail_root = domain.declare_root(&self.tail);
 g.try_protect(p, &head_root)
 ```
 
+*(As built, 2026-10-12: `declare_root` is `unsafe` — the caller promises the place stays
+alive and at the same address until `remove_root`. `&self.head` as a plain field breaks that
+promise the moment the queue is moved, so the queue keeps each place on the heap behind a raw
+address. Journal entries 20 and 21.)*
+
 The domain holds the roots' addresses, so under `cfg(debug_assertions)` `retire(p)` walks them,
 follows successors via C10's `for_each_link`, and asserts `p` is unreachable. Run that against
 the original SegQueue: `&cur.next` was a protect source, so it would have to be a root, and the
@@ -720,11 +779,11 @@ makes the contract legible.
 
 ### Acceptance
 
-- 9 std tests and 5 loom models green against `SegQueue<T, Leak>`
-- Miri clean with `-Zmiri-ignore-leaks`
-- a test asserting the chain **does** grow — `Leak` must be observably leaking, or the step
-  proved nothing
-- the Treiber stack passes its own loom models on the same trait
+- ✅ 9 std tests and 5 loom models green against `SegQueue<T, Leak>` — 2026-10-12, now 10 and 6
+- ✅ Miri clean with `-Zmiri-ignore-leaks` — 2026-10-12
+- ✅ a test asserting the chain **does** grow — `Leak` must be observably leaking, or the step
+  proved nothing — 2026-10-12, `leak_keeps_every_retired_segment`
+- the Treiber stack passes its own loom models on the same trait — open (C8)
 
 ---
 

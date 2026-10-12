@@ -13,31 +13,56 @@
 //! belongs to a sequence number the caller assigns), admission control (that is a
 //! soft cap the caller enforces), or durability.
 //!
-//! # Stage R0: segments are LEAKED, on purpose
+//! # Reclamation: the queue retires, a scheme frees
 //!
-//! There is no `Drop` impl and nothing ever calls `Box::from_raw` on a retired
-//! segment. **This is deliberate, not an oversight.** It isolates the queue
-//! mechanics from the safe-memory-reclamation problem, which is a much harder
-//! question attacked separately in the R1→R3 ladder (naive refcount, which fails;
-//! then hazard pointers; then epoch-based reclamation).
+//! The queue does not free its own segments. It is written against the
+//! `reclaim` crate, and the work is split between three roles:
 //!
-//! Two consequences to keep in mind while this stage stands:
+//! | Role | Here | Its job |
+//! |---|---|---|
+//! | object | `Segment<T>` | carries a `RetireLink` and says how it is freed (`Retirable`) |
+//! | structure | `SegQueue<T, R>` | declares its roots; hands a segment to `retire` once no root holds it |
+//! | scheme | `R: Reclaimer` | frees a retired segment once no reader's guard holds it |
 //!
-//! - **Memory grows with throughput, forever.** A `Segment<usize>` is roughly
-//!   536 B (32 slots × 16 B, plus `next` and the two cursors), so a segment is
-//!   retired every 32 pushes: ~16.8 MB/s leaked at 1M push/s, ~84 MB/s at 5M.
-//! - **Values still in the queue when it is dropped are never dropped either**,
-//!   since the slots holding them are never visited again.
+//! **Roots.** A root is a place a reader starts from. The queue has two, `head`
+//! and `tail`. They are declared in `new` and removed in `Drop`. A thread gets
+//! a segment's address in one way only: `guard.protect(&root)`. `next` is not a
+//! root, so after `push` or `pop` has moved `tail` or `head` forward, it goes
+//! back to the top of its loop and protects through the root again.
 //!
-//! Until reclamation lands, Miri must be run with `-Zmiri-ignore-leaks`:
+//! **Where the two places live.** A root keeps the address *of the place*, not
+//! the address the place holds, so the place must never move. A plain field of
+//! the queue moves every time the queue is moved. A `Box` does keep its content
+//! at one address, but it also claims to be the only way to reach that content,
+//! and Miri's default rules (Stacked Borrows) reject a root that is used after
+//! the `Box` was moved. So each place is on the heap and the queue holds its
+//! raw address: `Box::into_raw` in `new`, `Box::from_raw` in `Drop`, after the
+//! roots are removed.
+//!
+//! # With `Leak`, nothing is freed
+//!
+//! `Leak` is the only scheme so far, and its `retire` does nothing. So every
+//! segment the queue has ever made stays allocated. **This is deliberate, not
+//! an oversight.** It lets the queue be tested on the scheme's interface before
+//! a scheme that frees exists (hazard pointers first, then epochs).
+//!
+//! What follows from it while `Leak` is the scheme:
+//!
+//! - **Memory grows with throughput, forever.** A `Segment<usize>` is 896 B
+//!   (measured on aarch64, where `CachePadded` aligns to 128 B), and one is
+//!   retired every 32 pushes: ~28 MB/s at 1M push/s, ~140 MB/s at 5M.
+//! - **`Drop` does not free segments either.** It frees only the two places.
+//!   Segments still in the chain when the queue is dropped are leaked, and so
+//!   are the values still in their slots.
+//! - **Miri must be run with `-Zmiri-ignore-leaks`:**
 //!
 //! ```text
 //! MIRIFLAGS="-Zmiri-preemption-rate=0.5 -Zmiri-ignore-leaks" \
 //!   cargo +nightly miri test -p concurrent --lib seg_queue
 //! ```
 //!
-//! That flag is also the acceptance test for the next steps: once R1/R2/R3 frees
-//! segments, **dropping `-Zmiri-ignore-leaks` is the proof that it works**.
+//! That flag is also the acceptance test for the first scheme that frees:
+//! **dropping `-Zmiri-ignore-leaks` is the proof that it works**.
 
 use crate::CachePadded;
 use reclaim::{Domain, Guard, Reclaimer, Retirable, RetireLink, Root};
@@ -276,31 +301,38 @@ impl<T: Send, R: Reclaimer> SegQueue<T, R> {
                 .compare_exchange(cur_tail_ptr, next, Ordering::Release, Ordering::Relaxed);
     }
 
-    /// Free segments that can no longer be reached, oldest first.
+    /// Retires the segments the queue has finished with, oldest first.
     ///
-    /// Reclamation cannot be a per-guard decision. A guard holds only its own
-    /// pointer, and the chain is forward-only, so "has my predecessor been freed?"
-    /// is unanswerable from inside `Drop`. Instead the queue owns a cursor that
-    /// trails `head`, and freeing is a strictly ordered walk from the front:
+    /// `reclaim` is a cursor. It holds the oldest segment that was not retired
+    /// yet, and it trails `head`. This function moves it forward one segment at
+    /// a time and hands each segment it leaves to the scheme.
     ///
-    /// - the first segment ever allocated has **no predecessor**, so once `head` is
-    ///   past it and nobody holds it, *nothing* anywhere points to it — safe to free;
-    /// - freeing it destroys the only remaining pointer to its successor, which makes
-    ///   the successor safe in turn. Induction up the chain.
+    /// Nothing is freed here, and nothing here asks whether a reader still
+    /// holds the segment. A popper may still be reading a value out of it; that
+    /// popper holds a guard, and waiting for guards is the scheme's job. The
+    /// queue's job is the promises it makes to `retire`, and the loop exists to
+    /// keep the first two:
     ///
-    /// That ordering is what makes a count of zero trustworthy: once the predecessor
-    /// is gone, no thread can obtain a *new* pointer to this segment, so its count can
-    /// only fall. A count that can rise again makes "I was the last holder" a
-    /// statement about the present that gets acted on in the future.
+    /// - **No root holds the segment.** The queue has two roots, so the loop
+    ///   stops while `head` or `tail` still holds it. The `tail` check is the
+    ///   one that is easy to miss: `advance_tail` links the next segment first
+    ///   and moves `tail` second. Between those two steps the poppers can use
+    ///   the segment up and move `head` past it while `tail` still holds it.
+    /// - **Retired once.** `reclaiming` lets one thread at a time run the loop,
+    ///   and the cursor only moves forward.
     ///
-    /// Serialised by `reclaiming`, because the cursor itself would otherwise race:
-    /// two threads load the same `reclaim`, one frees it, the other then reads its
-    /// fields. Note the cost — this reintroduces a serialisation point, which is the
-    /// same trade the `Mutex<VecDeque>` baseline makes.
+    /// The two other checks: `consumed`, which is already implied (`head` leaves
+    /// a segment only after every slot was handed to a popper) and is kept as a
+    /// cheap second look; and `next`, which must exist because it is where the
+    /// cursor goes.
     ///
-    /// Cost of the ordering: one thread sitting on an old segment blocks reclamation
-    /// of *everything after it*, so memory grows until it lets go. That is the same
-    /// pathology epoch-based reclamation has with a thread parked inside a pin.
+    /// Stopping early loses nothing. The cursor keeps its position, and the next
+    /// `pop` that finishes a segment calls this function again.
+    ///
+    /// Costs. `reclaiming` is a point where threads meet, the same trade the
+    /// `Mutex<VecDeque>` baseline makes; a thread that finds it taken does not
+    /// wait, it returns. And a segment is retired only when a `pop` crosses a
+    /// boundary, so a queue that nobody pops retires nothing.
     fn try_reclaim(&self) {
         if self.reclaiming.swap(true, Ordering::Acquire) {
             return;
