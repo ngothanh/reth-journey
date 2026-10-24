@@ -1,6 +1,6 @@
 use crate::sync::AtomicPtr;
-use core::ptr::null_mut;
 use crate::sync::UnsafeCell;
+use core::ptr::null_mut;
 
 /// The link stored inside every retirable object.
 ///
@@ -59,13 +59,13 @@ impl RetireLink {
     }
 }
 
-//SAFETY: handing the link to another thread hands over only the number in obj.
+// SAFETY: handing the link to another thread hands over only the address in obj.
 // The object it points to stays where it is.
 // The other thread uses the number only to free that object,
 // and that is allowed, because the object is Send (Retirable: Send).
 unsafe impl Send for RetireLink {}
 
-//SAFETY:
+// SAFETY:
 // 1. next is atomic, so sharing it is safe on its own.
 // 2. obj and reclaim are written once, by the thread calling retire, and only before the exchange on head makes the link visible.
 // No second writer is possible, because retire promises the object is retired only once.
@@ -158,5 +158,10 @@ mod tests {
         }
 
         assert_eq!(drops.load(Ordering::Relaxed), 1, "freed exactly once");
+    }
+
+    #[test]
+    fn retire_link_is_3_words() {
+        assert_eq!(size_of::<RetireLink>(), 3 * size_of::<u64>());
     }
 }
