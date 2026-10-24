@@ -1,11 +1,14 @@
 use crate::sync::AtomicPtr;
 use core::ptr::null_mut;
+use crate::sync::UnsafeCell;
 
 /// The link stored inside every retirable object.
 ///
 /// The field belongs to the object. The value in it belongs to the scheme.
 pub struct RetireLink {
     pub(crate) next: AtomicPtr<RetireLink>,
+    obj: UnsafeCell<*mut ()>,
+    reclaim: UnsafeCell<Option<unsafe fn(*mut ())>>,
 }
 
 /// An object that a scheme can take over and free later.
@@ -50,9 +53,26 @@ impl RetireLink {
     pub fn new() -> Self {
         RetireLink {
             next: AtomicPtr::new(null_mut()),
+            obj: UnsafeCell::new(null_mut()),
+            reclaim: UnsafeCell::new(None),
         }
     }
 }
+
+//SAFETY: handing the link to another thread hands over only the number in obj.
+// The object it points to stays where it is.
+// The other thread uses the number only to free that object,
+// and that is allowed, because the object is Send (Retirable: Send).
+unsafe impl Send for RetireLink {}
+
+//SAFETY:
+// 1. next is atomic, so sharing it is safe on its own.
+// 2. obj and reclaim are written once, by the thread calling retire, and only before the exchange on head makes the link visible.
+// No second writer is possible, because retire promises the object is retired only once.
+// 3. They are read only by the thread that took the link out of the pile, and only after it took it out.
+// 4. The exchange (Release) and the take-out (Acquire) make the write in 2 visible to the read in 3.
+// 5. While the object is retired, the object itself does not touch the link (promise 3 of Retirable).
+unsafe impl Sync for RetireLink {}
 
 impl Default for RetireLink {
     fn default() -> Self {
