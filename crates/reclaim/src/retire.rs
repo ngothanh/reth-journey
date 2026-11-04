@@ -162,6 +162,6 @@ mod tests {
 
     #[test]
     fn retire_link_is_3_words() {
-        assert_eq!(size_of::<RetireLink>(), 3 * size_of::<u64>());
+        assert_eq!(size_of::<RetireLink>(), 3 * size_of::<usize>());
     }
 }
