@@ -755,3 +755,74 @@ missing ordering on a compare-exchange hand-off. Here it caught both. The
 difference is the shape: MPMC claimed a slot by CAS and wrote the data
 *after*; the pile writes the data *before* its `Release`. The negative control
 is still the only way to know which case you are in.
+
+## 27. A chain of retired objects: one exchange for many (L19)
+
+**Problem** — after sharding and padding (L18), sharing still cost ≈ 2× at
+2–4 threads and ≈ 8× at 8, against one pile per thread. Every retired object
+was one compare-exchange on a shared line.
+
+**Built** — `Chain { top, bottom }`, filled by one thread with
+`unsafe fn add` (check, write `obj`/`reclaim`, `link.next = top`, `top = link`;
+`bottom` set once by the first add). `RetiredList::push_chain` puts it on the
+pile with one exchange. folly does the same in `hazptr_domain::push_list`.
+
+**Wrong turns**
+
+- First `add` linked each new link *after* `top` (`top → new → old_next`),
+  so `bottom` stayed on the first link while later links hung below it.
+  `push_chain` writing `bottom.next = head` would have cut them off. Fixed to
+  stack order before any test ran: new link points at old top, becomes top.
+- First `add` skipped writing `obj`/`reclaim`: `free_all` would panic on
+  `None`, and the double-retire check could never fire (`add(a); add(a)` makes
+  `a.next = a`, a cycle).
+- `add` was a safe `fn` that dereferenced a raw pointer on "the caller
+  promises". A safe fn has no caller promise → `unsafe fn` with `# Safety`.
+
+**Orderings** — every write inside the chain is `Relaxed`: no other thread can
+reach a link before `push_chain`, and its `Release` exchange publishes all of
+them at once. `push_chain` is a safe fn: a `Chain` can only be filled by the
+unsafe `add`, so the promises were already made.
+
+**Why only the bottom link is rewritten on retry** — the links inside the
+chain point at each other and never change. Only the bottom points into the
+shared pile, which another thread may change between our load and our
+exchange. Negative controls on loom `two_chain_pushers_one_taker`:
+
+| Change | loom |
+|---|---|
+| `bottom.next` written once, before the loop | red: drops 2, expected 4 (a whole chain lost) |
+| exchange `Release` → `Relaxed` | red: causality violation |
+| as built | green |
+
+**One shard per chain, or split by object?** — one shard, picked from
+`chain.top`. Splitting would cost up to 8 exchanges and defeat the chain. It is
+allowed because nothing looks an object up by its shard: `take_all` takes all
+8. *Condition:* if a later step needs "every object of kind X is in one
+shard" (folly's tagged cohorts), chains must be split by shard.
+
+**Measured** (details in `benches/retired_list.rs`, ns per object, whole
+machine, 8 threads): one head 126, sharded 6.4, one head + chains 7.4,
+sharded + chains 0.85, control 0.76. Sharded + chains reaches the control at
+every thread count.
+
+**Prediction vs result** — predicted 2 ns everywhere ("one exchange per 20 is
+close to free"). Off by 3×+ for one head + chains at 8 threads: an exchange is
+cheap only when uncontended (≈ 0.6 ns); on one line with 8 threads it is
+≈ 125 ns, and a chain divides that by 20 (≈ 6.3 + 0.76 ≈ 7.0, measured 7.4).
+The 4-thread point does not fit the formula (2.0 predicted, 3.4 measured) and
+is left open. *Lesson:* sharding makes each exchange cheap; chains make them
+rare; it takes both.
+
+## C2 closed (2026-11-05)
+
+The pile is done: `RetireLink` (3 words), `RetiredList` (`push`, `push_chain`,
+`take_all`, `free_all`), `ShardedList` (8 shards, each on its own 128-byte
+line), `Chain`. Gates: std tests, loom (`two_push_one_taker`,
+`two_chain_pushers_one_taker`), Miri on `retire::tests`, every ordering and
+the retry rewrite with a red negative control, and a bench whose best pile
+matches the no-sharing control.
+
+Left open, not blocking C3: the 4-thread chain point; `concurrent_utils::
+CachePadded` is 64 bytes on x86_64 (should be 128, own commit); the threshold
+counter folly adds in `push_list` comes with the reclaim trigger.

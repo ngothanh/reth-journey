@@ -128,12 +128,68 @@
 //!   attacks the part that is left: fewer exchanges on a shared `head` means
 //!   fewer moments when two threads want the same line.
 //!
+//! ## L19: chains of 20 — prediction (written before the run, 2026-11-05)
+//!
+//! Each thread links its nodes into chains of `CHAIN_LEN` = 20 with
+//! `Chain::add` (private, no atomic read-modify-write), then puts each chain on
+//! the pile with ONE `push_chain` exchange. Timed: `add` + `push_chain`.
+//!
+//! | threads | one head + chains | sharded + chains |
+//! |---:|---:|---:|
+//! | 1 | 2 | 2 |
+//! | 8 | 2 | 2 |
+//!
+//! Reasoning: one exchange per 20 objects is close to free, so only the
+//! private link writes are left, ≈ 2 ns, whatever the thread count.
+//!
+//! ## L19: measured (2026-11-05, two runs)
+//!
+//! The three old groups did not move after `timed_pushes` started calling
+//! `push_many` (the default pushes one by one), so the harness change is clean.
+//!
+//! | threads | one head | sharded | control | one head + chains | sharded + chains |
+//! |---:|---:|---:|---:|---:|---:|
+//! | 1 | 2.2 – 2.3 | 2.2 – 2.3 | 2.2 – 2.3 | 1.5 – 1.7 | 1.6 – 1.7 |
+//! | 2 | 7.1 | 2.6 | 1.3 – 1.4 | 1.7 | 1.3 |
+//! | 4 | 16.0 – 16.1 | 2.5 | 1.2 – 1.3 | 3.4 | 1.3 |
+//! | 8 | 126 – 128 | 6.1 – 6.7 | 0.71 – 0.81 | 6.8 – 8.1 | 0.72 – 0.98 |
+//!
+//! What it says:
+//!
+//! - **Sharded + chains reaches the control** at every thread count. On this
+//!   machine, sharing the pile no longer costs anything measurable.
+//! - **One head + chains is wrong in the prediction by 3×+ at 8 threads.** The
+//!   prediction treated an exchange as "close to free". Uncontended it is; at
+//!   8 threads on one line it costs ≈ 125 ns (the `one head` column). A chain
+//!   divides that by 20, it does not remove it:
+//!
+//!   | threads | control + one head ÷ 20 | measured |
+//!   |---:|---:|---:|
+//!   | 2 | 1.3 + 7.1/20 ≈ 1.66 | 1.7 ✓ |
+//!   | 4 | 1.25 + 16/20 ≈ 2.0 | 3.4 ✗ (not explained) |
+//!   | 8 | 0.76 + 125/20 ≈ 7.0 | 6.8 – 8.1 ✓ |
+//!
+//!   Sharding makes each exchange cheap; chains make exchanges rare. It takes
+//!   both to reach the control.
+//! - **Chains help even at 1 thread:** 2.2 → 1.6 ns. The ≈ 0.6 ns difference
+//!   is about one uncontended exchange, paid 20× less often.
+//!
+//! Hardware numbers taken from this file (Apple M2, whole machine):
+//!
+//! | what | cost |
+//! |---|---|
+//! | exchange, no other thread on the line | ≈ 0.6 ns |
+//! | exchange, 8 threads on one line | ≈ 125 ns |
+//! | private link writes + double-retire check, per object | ≈ 1.5 ns |
+//!
 //! ## How it is measured
 //!
-//! - Only `push` is timed. Every node is allocated before the clock starts, and
+//! - Only pushing is timed (`push`, or `add` + `push_chain`). Every node is allocated before the clock starts, and
 //!   `take_all` + `free_all` run after it stops, so `malloc`/`free` are not in
 //!   the number.
-//! - All threads wait on a `Barrier`, then push their share into the same pile.
+//! - All threads wait on a `Barrier`, then push their share into the same pile,
+//!   in groups of `CHAIN_LEN` through `Pile::push_many`. Only the chain piles
+//!   use the groups; the others push one by one.
 //!   The clock runs from the barrier to the last `join`.
 //! - Criterion's "time" is wall time divided by the total number of pushes, so
 //!   it is the cost of one push **for the whole machine**. One thread sees
