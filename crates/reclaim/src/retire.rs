@@ -1,4 +1,5 @@
 use crate::sync::AtomicPtr;
+use crate::sync::Ordering;
 use crate::sync::UnsafeCell;
 use core::ptr::null_mut;
 
@@ -9,6 +10,11 @@ pub struct RetireLink {
     pub(crate) next: AtomicPtr<RetireLink>,
     obj: UnsafeCell<*mut ()>,
     reclaim: UnsafeCell<Option<unsafe fn(*mut ())>>,
+}
+
+/// The pile: retired objects waiting to be freed, chained through their links.
+pub(crate) struct RetiredList {
+    head: AtomicPtr<RetireLink>,
 }
 
 /// An object that a scheme can take over and free later.
@@ -59,9 +65,115 @@ impl RetireLink {
     }
 }
 
+/// Turns the type-free address back into a `*mut T` and frees it the way `T` says.
+///
+/// # Safety
+/// `obj` came from a `*mut T` handed to `push`, and the object can be freed now.
+unsafe fn reclaim_one<T: Retirable>(obj: *mut ()) {
+    // SAFETY: the caller promises `obj` came from a `*mut T` handed to
+    // `push`, so the cast gives back the same object, and that it can be
+    // freed now.
+    unsafe { T::reclaim(obj.cast::<T>()) }
+}
+
+impl RetiredList {
+    pub(crate) fn new() -> Self {
+        RetiredList {
+            head: AtomicPtr::new(null_mut()),
+        }
+    }
+
+    /// Takes every link out of the pile in one step. The caller now owns the
+    /// whole chain; the pile is empty.
+    pub(crate) fn take_all(&self) -> *mut RetireLink {
+        self.head.swap(null_mut(), Ordering::Acquire)
+    }
+
+    /// Puts one retired object on the pile.
+    ///
+    /// # Safety
+    ///
+    /// The caller promises:
+    ///
+    /// - `obj` points to a live object;
+    /// - `obj` is pushed only once, so it is not in any pile already;
+    /// - the caller does not use `obj` after this call.
+    pub(crate) unsafe fn push<T: Retirable>(&self, obj: *mut T) {
+        // SAFETY: the caller promises `obj` points to a live object.
+        let link: &RetireLink = unsafe { (*obj).retire_link() };
+        let link_ptr = link as *const RetireLink as *mut RetireLink;
+
+        // SAFETY: the link is not in the pile yet (the caller pushes `obj`
+        // only once), so no other thread can reach these two cells. They are
+        // written before the exchange below makes the link visible.
+        link.obj.with_mut(|p| unsafe { *p = obj.cast() });
+        link.reclaim
+            .with_mut(|p| unsafe { *p = Some(reclaim_one::<T>) });
+
+        let mut top = self.head.load(Ordering::Relaxed);
+        loop {
+            // Point the new link at the current top *before* the exchange:
+            // once `head` holds the link, another thread can take it.
+            link.next.store(top, Ordering::Relaxed);
+            match self.head.compare_exchange_weak(
+                top,
+                link_ptr,
+                Ordering::Release,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return,
+                Err(current) => top = current,
+            }
+        }
+    }
+
+    /// Frees every object in a chain that `take_all` handed out.
+    ///
+    /// # Safety
+    ///
+    /// The caller promises:
+    ///
+    /// - `link` is null, or the start of a chain that this thread got from
+    ///   `take_all`. No other thread has the chain, and it is not used after
+    ///   this call;
+    /// - no reader holds any object in the chain anymore, so every one of
+    ///   them can be freed now.
+    pub(crate) unsafe fn free_all(mut link: *mut RetireLink) {
+        while !link.is_null() {
+            // SAFETY: `link` is not null, and it is in the chain the caller
+            // owns. Its object is still alive: objects are freed only at the
+            // last step of this loop, one link at a time, after that link's
+            // `next` has been read.
+            let next = unsafe { (*link).next.load(Ordering::Relaxed) };
+
+            // SAFETY: the same link, still alive. Reading the two cells is
+            // safe because:
+            // 1. only this thread holds the chain, so nobody writes them now;
+            // 2. `push` wrote them before its `Release` exchange, and the
+            //    `Acquire` swap in `take_all` makes those writes visible here.
+            // Every link in a chain from `take_all` went through `push`, which
+            // set `reclaim` to `Some`, so `unwrap` cannot fail.
+            let obj = unsafe { (*link).obj.with(|p| *p) };
+            let reclaim = unsafe { (*link).reclaim.with(|p| *p).unwrap() };
+
+            // SAFETY:
+            // 1. `obj` and `reclaim` were written together by `push::<T>`:
+            //    `obj` is a `*mut T` with its type removed, and `reclaim` is
+            //    `reclaim_one::<T>` for that same `T`, so the cast back is right;
+            // 2. the caller promises no reader holds the object any more;
+            // 3. each link is in the chain once, so each object is freed once;
+            // 4. `next` was read above, and `link` is not used after this call
+            //    (the link was inside the object, so it is gone now).
+            unsafe { reclaim(obj) }
+
+            link = next;
+        }
+    }
+}
+
 // SAFETY: handing the link to another thread hands over only the address in obj.
 // The object it points to stays where it is.
-// The other thread uses the number only to free that object,
+// The other thread uses the address only to free that object,
 // and that is allowed, because the object is Send (Retirable: Send).
 unsafe impl Send for RetireLink {}
 
@@ -84,7 +196,7 @@ impl Default for RetireLink {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     /// Plays the role of a segment. `drops` counts how many times a node was
     /// really dropped, so a test can see whether `reclaim` freed it.
@@ -92,6 +204,37 @@ mod tests {
         link: RetireLink,
         data: u64,
         drops: Arc<AtomicUsize>,
+    }
+
+    /// An object that belongs to a pool: `reclaim` gives it back to the pool
+    /// instead of freeing it.
+    struct Pooled {
+        link: RetireLink,
+        pool: Arc<Mutex<Vec<PoolSlot>>>,
+    }
+
+    /// The address of one `Pooled` object sitting in the pool.
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+    struct PoolSlot(*mut Pooled);
+
+    // SAFETY: a slot is only an address. Moving it to another thread moves the
+    // address, not the object behind it, and the pool hands each address out
+    // through its `Mutex`.
+    unsafe impl Send for PoolSlot {}
+
+    unsafe impl Retirable for Pooled {
+        fn retire_link(&self) -> &RetireLink {
+            &self.link
+        }
+
+        unsafe fn reclaim(ptr: *mut Self) {
+            // SAFETY: the caller promises `ptr` points to a live `Pooled`.
+            // It is not dropped here: it goes back to the pool, which owns it
+            // from now on.
+            unsafe {
+                (*ptr).pool.lock().unwrap().push(PoolSlot(ptr));
+            }
+        }
     }
 
     impl Node {
@@ -163,5 +306,130 @@ mod tests {
     #[test]
     fn retire_link_is_3_words() {
         assert_eq!(size_of::<RetireLink>(), 3 * size_of::<usize>());
+    }
+
+    #[test]
+    fn a_new_pile_is_empty() {
+        assert!(RetiredList::new().head.load(Ordering::Relaxed).is_null());
+    }
+
+    #[test]
+    fn take_all_on_an_empty_pile_is_null() {
+        assert!(RetiredList::new().take_all().is_null());
+    }
+
+    #[test]
+    fn push_one_then_take_all_gives_its_link() {
+        let drop_counter = Arc::new(AtomicUsize::new(0));
+        let ptr = Box::into_raw(Node::boxed(16, &drop_counter));
+        let list = RetiredList::new();
+        unsafe { list.push(ptr) };
+        let link = unsafe { &raw mut (*ptr).link };
+        assert_eq!(list.take_all(), link);
+        assert_eq!(list.take_all(), null_mut());
+        unsafe {
+            drop(Box::from_raw(ptr));
+        }
+    }
+
+    #[test]
+    fn push_two_newest_is_on_top() {
+        let drop_counter = Arc::new(AtomicUsize::new(0));
+        let a = Box::into_raw(Node::boxed(1, &drop_counter));
+        let b = Box::into_raw(Node::boxed(2, &drop_counter));
+
+        let list = RetiredList::new();
+        unsafe { list.push(a) };
+        unsafe { list.push(b) };
+
+        let a_link = unsafe { &raw mut (*a).link };
+        let b_link = unsafe { &raw mut (*b).link };
+        assert_eq!(list.take_all(), b_link);
+        assert_eq!(unsafe { (*b_link).next.load(Ordering::Relaxed) }, a_link);
+        assert_eq!(
+            unsafe { (*a_link).next.load(Ordering::Relaxed) },
+            null_mut()
+        );
+
+        unsafe {
+            drop(Box::from_raw(a));
+            drop(Box::from_raw(b));
+        }
+    }
+
+    #[test]
+    fn free_all_on_null_does_nothing() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let ptr = Box::into_raw(Node::boxed(1, &drops));
+        let list = RetiredList::new();
+        unsafe { list.push(ptr) };
+
+        unsafe { RetiredList::free_all(null_mut()) };
+
+        assert_eq!(drops.load(Ordering::Relaxed), 0, "nothing was freed");
+        let chain = list.take_all();
+        assert_eq!(
+            chain,
+            unsafe { &raw mut (*ptr).link },
+            "the node is still in the pile"
+        );
+
+        unsafe { RetiredList::free_all(chain) };
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn free_all_frees_every_boxed_node() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let list = RetiredList::new();
+        for data in 0..3 {
+            let ptr = Box::into_raw(Node::boxed(data, &drops));
+            unsafe { list.push(ptr) };
+        }
+        assert_eq!(drops.load(Ordering::Relaxed), 0, "push frees nothing");
+
+        unsafe { RetiredList::free_all(list.take_all()) };
+
+        assert_eq!(drops.load(Ordering::Relaxed), 3, "each node freed once");
+        assert!(list.take_all().is_null(), "the pile is empty");
+    }
+
+    #[test]
+    fn each_kind_is_freed_its_own_way() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let pool: Arc<Mutex<Vec<PoolSlot>>> = Arc::new(Mutex::new(Vec::new()));
+        let pooled = || {
+            Box::into_raw(Box::new(Pooled {
+                link: RetireLink::new(),
+                pool: Arc::clone(&pool),
+            }))
+        };
+
+        let list = RetiredList::new();
+        let p1 = pooled();
+        let p2 = pooled();
+        // Mixed on purpose: Node, Pooled, Node, Pooled.
+        unsafe {
+            list.push(Box::into_raw(Node::boxed(1, &drops)));
+            list.push(p1);
+            list.push(Box::into_raw(Node::boxed(2, &drops)));
+            list.push(p2);
+        }
+
+        unsafe { RetiredList::free_all(list.take_all()) };
+
+        // Each `Node` went through `Box`: dropped once.
+        assert_eq!(drops.load(Ordering::Relaxed), 2);
+        // Each `Pooled` went back to the pool, not through `Box`.
+        let mut back = pool.lock().unwrap().clone();
+        back.sort();
+        let mut expected = vec![PoolSlot(p1), PoolSlot(p2)];
+        expected.sort();
+        assert_eq!(back, expected);
+
+        // The pool owns them now; empty it so Miri sees no leak.
+        for PoolSlot(ptr) in pool.lock().unwrap().drain(..) {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
     }
 }
