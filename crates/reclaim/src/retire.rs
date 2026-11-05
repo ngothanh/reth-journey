@@ -98,10 +98,33 @@ impl RetiredList {
     /// - `obj` points to a live object;
     /// - `obj` is pushed only once, so it is not in any pile already;
     /// - the caller does not use `obj` after this call.
+    ///
+    /// # Panics
+    ///
+    /// If the object is already in a pile. This catches the same object
+    /// retired twice when the two retires are ordered (same thread, or a lock
+    /// or `join` between them). Two retires of one object at the same moment
+    /// are not caught here; under loom they show up as a causality violation.
     pub(crate) unsafe fn push<T: Retirable>(&self, obj: *mut T) {
         // SAFETY: the caller promises `obj` points to a live object.
         let link: &RetireLink = unsafe { (*obj).retire_link() };
         let link_ptr = link as *const RetireLink as *mut RetireLink;
+
+        // A link in no pile has `reclaim == None`: `RetireLink::new` starts it
+        // that way and `free_all` puts it back. `Some` means it is in a pile.
+        //
+        // `assert!`, not `debug_assert!`: the read is one plain load from the
+        // cache line the next lines write anyway, and a second push would turn
+        // the chain into a cycle, a double free far from the line at fault.
+        //
+        // SAFETY: if the caller keeps its promise, no other thread can reach
+        // the link (it is in no pile), so nobody writes this cell now.
+        let in_a_pile = link.reclaim.with(|p| unsafe { (*p).is_some() });
+        assert!(
+            !in_a_pile,
+            "object retired twice: the structure called `retire` on the same \
+             object more than once"
+        );
 
         // SAFETY: the link is not in the pile yet (the caller pushes `obj`
         // only once), so no other thread can reach these two cells. They are
@@ -156,6 +179,15 @@ impl RetiredList {
             let obj = unsafe { (*link).obj.with(|p| *p) };
             let reclaim = unsafe { (*link).reclaim.with(|p| *p).unwrap() };
 
+            // Give the link back empty, as `RetireLink::new` made it, so an
+            // object that `reclaim` returns to a pool can be retired again
+            // without tripping the check in `push`. This must happen before
+            // `reclaim`: after it, the link is no longer ours to touch.
+            //
+            // SAFETY: the same link, still alive, and only this thread holds it.
+            unsafe { (*link).obj.with_mut(|p| *p = null_mut()) };
+            unsafe { (*link).reclaim.with_mut(|p| *p = None) };
+
             // SAFETY:
             // 1. `obj` and `reclaim` were written together by `push::<T>`:
             //    `obj` is a `*mut T` with its type removed, and `reclaim` is
@@ -195,75 +227,9 @@ impl Default for RetireLink {
 #[cfg(all(test, not(loom)))]
 mod tests {
     use super::*;
+    use crate::test_support::{Arc, Node, PoolSlot, Pooled};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
-
-    /// Plays the role of a segment. `drops` counts how many times a node was
-    /// really dropped, so a test can see whether `reclaim` freed it.
-    struct Node {
-        link: RetireLink,
-        data: u64,
-        drops: Arc<AtomicUsize>,
-    }
-
-    /// An object that belongs to a pool: `reclaim` gives it back to the pool
-    /// instead of freeing it.
-    struct Pooled {
-        link: RetireLink,
-        pool: Arc<Mutex<Vec<PoolSlot>>>,
-    }
-
-    /// The address of one `Pooled` object sitting in the pool.
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-    struct PoolSlot(*mut Pooled);
-
-    // SAFETY: a slot is only an address. Moving it to another thread moves the
-    // address, not the object behind it, and the pool hands each address out
-    // through its `Mutex`.
-    unsafe impl Send for PoolSlot {}
-
-    unsafe impl Retirable for Pooled {
-        fn retire_link(&self) -> &RetireLink {
-            &self.link
-        }
-
-        unsafe fn reclaim(ptr: *mut Self) {
-            // SAFETY: the caller promises `ptr` points to a live `Pooled`.
-            // It is not dropped here: it goes back to the pool, which owns it
-            // from now on.
-            unsafe {
-                (*ptr).pool.lock().unwrap().push(PoolSlot(ptr));
-            }
-        }
-    }
-
-    impl Node {
-        fn boxed(data: u64, drops: &Arc<AtomicUsize>) -> Box<Node> {
-            Box::new(Node {
-                link: RetireLink::new(),
-                data,
-                drops: Arc::clone(drops),
-            })
-        }
-    }
-
-    impl Drop for Node {
-        fn drop(&mut self) {
-            self.drops.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    unsafe impl Retirable for Node {
-        fn retire_link(&self) -> &RetireLink {
-            &self.link
-        }
-
-        unsafe fn reclaim(ptr: *mut Self) {
-            unsafe {
-                drop(Box::from_raw(ptr));
-            }
-        }
-    }
+    use std::sync::Mutex;
 
     #[test]
     fn a_new_link_is_not_in_the_pile() {
@@ -394,6 +360,56 @@ mod tests {
         assert!(list.take_all().is_null(), "the pile is empty");
     }
 
+    /// The second push panics before it writes anything, so the pile still
+    /// holds the object exactly once and can free it normally. (Catching the
+    /// panic instead of `#[should_panic]` lets the test free the node, so Miri
+    /// sees no leak.)
+    #[test]
+    fn pushing_the_same_object_twice_panics() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let ptr = Box::into_raw(Node::boxed(1, &drops));
+        let list = RetiredList::new();
+        unsafe { list.push(ptr) };
+
+        let second = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // SAFETY: none. This breaks `push`'s second promise on purpose.
+            unsafe { list.push(ptr) };
+        }));
+
+        let message = *second.unwrap_err().downcast::<&str>().unwrap();
+        assert!(message.starts_with("object retired twice"), "{message}");
+
+        let chain = list.take_all();
+        assert_eq!(chain, unsafe { &raw mut (*ptr).link });
+        assert!(
+            unsafe { (*chain).next.load(Ordering::Relaxed) }.is_null(),
+            "the failed push did not touch the chain"
+        );
+        unsafe { RetiredList::free_all(chain) };
+        assert_eq!(drops.load(Ordering::Relaxed), 1, "freed once");
+    }
+
+    /// A pooled object comes back from the pool and is retired again. That is
+    /// correct use, so the double-retire check must stay quiet.
+    #[test]
+    fn a_pooled_object_can_be_retired_again() {
+        let pool: Arc<Mutex<Vec<PoolSlot>>> = Arc::new(Mutex::new(Vec::new()));
+        let ptr = Box::into_raw(Box::new(Pooled {
+            link: RetireLink::new(),
+            pool: Arc::clone(&pool),
+        }));
+        let list = RetiredList::new();
+
+        for round in 0..2 {
+            unsafe { list.push(ptr) };
+            unsafe { RetiredList::free_all(list.take_all()) };
+            let back = pool.lock().unwrap().pop();
+            assert_eq!(back, Some(PoolSlot(ptr)), "round {round}: back in the pool");
+        }
+
+        unsafe { drop(Box::from_raw(ptr)) };
+    }
+
     #[test]
     fn each_kind_is_freed_its_own_way() {
         let drops = Arc::new(AtomicUsize::new(0));
@@ -431,5 +447,39 @@ mod tests {
         for PoolSlot(ptr) in pool.lock().unwrap().drain(..) {
             unsafe { drop(Box::from_raw(ptr)) };
         }
+    }
+}
+
+#[cfg(all(test, loom))]
+mod loom_tests {
+    use crate::retire::RetiredList;
+    use crate::sync::{AtomicUsize, Ordering};
+    use crate::test_support::{Arc, Node};
+
+    #[test]
+    fn two_push_one_taker() {
+        loom::model(|| {
+            let drops = Arc::new(AtomicUsize::new(0));
+            let list = Arc::new(RetiredList::new());
+
+            let pushers = (0..2)
+                .map(|i| {
+                    let (list, drops) = (list.clone(), drops.clone());
+                    loom::thread::spawn(move || unsafe {
+                        list.push(Box::into_raw(Node::boxed(i, &drops)));
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            unsafe {
+                RetiredList::free_all(list.take_all());
+            }
+
+            for p in pushers {
+                p.join().unwrap();
+            }
+            unsafe { RetiredList::free_all(list.take_all()) };
+            assert_eq!(drops.load(Ordering::Relaxed), 2);
+        })
     }
 }

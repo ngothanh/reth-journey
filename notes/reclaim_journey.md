@@ -704,3 +704,54 @@ an `unsafe impl`, and `Leak` is `Send + Sync`, so no test could fail.
 Segment<T>` was not needed, because every field of a segment is already `Send`
 when `T` is. An `unsafe impl` that the compiler would have derived by itself is
 a promise nobody asked for.
+
+## Session 2026-11-05 — C2: the pile across threads
+
+## 26. Which orderings does the pile need, and where?
+
+**First answer** — `take_all` written as `swap(null, Release)`: "the pile is
+handed over, so release it".
+
+**What killed it** — review first, then loom. `Release` only orders what this
+thread did *before* the swap, and the taker has nothing to hand on. What it
+needs is the other end: its reads in `free_all` must see what `push` wrote.
+
+**Blog figure (wanted — keep it small):**
+
+```
+Thread A: push(C)                          Thread B: take_all + free_all
+  link.obj     = 600   ┐
+  link.reclaim = 7400  │ written BEFORE
+  link.next    = top   ┘
+  CAS head → 608  ── Release ───────────►  swap head → null  ── Acquire
+                                             ┌ read next         (Relaxed)
+                                             │ read obj, reclaim
+                                             └ call reclaim(obj)
+```
+
+One `Release` covers all three writes above it; one `Acquire` covers all the
+reads below it. Every other access is `Relaxed`: `push` only copies and
+compares the address of the top, it never opens it. Links pushed by other
+threads (2040 by X, 508 by Y) are covered too, because every change to `head`
+is a read-modify-write, so they form one release sequence.
+
+Negative controls, loom model `retire::loom_tests::two_push_one_taker`:
+
+| Change | loom |
+|---|---|
+| `take_all`: `Acquire` → `Release` | red: `Causality violation: Concurrent load and mut accesses`, created `retire.rs:61` (`RetireLink::new`), load `retire.rs:147` (`next` in `free_all`) |
+| `push` CAS success: `Release` → `Relaxed` | red, same place |
+| both right | green, 1.3 s |
+
+The failing read is the very first one in `free_all`, and the write it is not
+ordered after is the link's *creation*: without the pair, the taker may reach
+a link that, in its view, was never built.
+
+**Decided** — `push`: CAS success `Release`; `take_all`: `swap` `Acquire`;
+everything else `Relaxed`.
+
+**Cost** — none in code. It narrowed an earlier belief: in MPMC, loom missed a
+missing ordering on a compare-exchange hand-off. Here it caught both. The
+difference is the shape: MPMC claimed a slot by CAS and wrote the data
+*after*; the pile writes the data *before* its `Release`. The negative control
+is still the only way to know which case you are in.

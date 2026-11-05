@@ -7,6 +7,9 @@ mod root;
 #[allow(unused_imports)]
 mod sync;
 
+#[cfg(test)]
+mod test_support;
+
 pub use domain::*;
 pub use guard::*;
 pub use leak::*;
