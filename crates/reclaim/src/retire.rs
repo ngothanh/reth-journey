@@ -18,6 +18,77 @@ pub(crate) struct RetiredList {
     head: AtomicPtr<RetireLink>,
 }
 
+/// Retired objects linked together by one thread, before any other thread can
+/// see them. `RetiredList::push_chain` puts the whole chain on a pile with one
+/// exchange instead of one per object.
+pub(crate) struct Chain {
+    top: *mut RetireLink,
+    bottom: *mut RetireLink,
+}
+
+impl Chain {
+    pub(crate) fn new() -> Self {
+        Self {
+            top: null_mut(),
+            bottom: null_mut(),
+        }
+    }
+
+    /// Puts one retired object on top of this chain. Nothing is shared yet:
+    /// the chain reaches other threads only through `push_chain`.
+    ///
+    /// # Safety
+    ///
+    /// The caller promises:
+    ///
+    /// - `obj` points to a live object;
+    /// - `obj` is retired only once, so it is not in any pile or chain already;
+    /// - the caller does not use `obj` after this call.
+    ///
+    /// # Panics
+    ///
+    /// If the object is already in a pile or a chain, when that earlier
+    /// retire is ordered before this one (as for `RetiredList::push`).
+    pub(crate) unsafe fn add<T: Retirable>(&mut self, obj: *mut T) {
+        // SAFETY: the caller promises `obj` points to a live object.
+        let link: &RetireLink = unsafe { (*obj).retire_link() };
+        let link_ptr = link as *const RetireLink as *mut RetireLink;
+
+        // A link in no pile or chain has `reclaim == None`: `RetireLink::new`
+        // starts it that way and `free_all` puts it back. `Some` means it is
+        // in a pile or a chain.
+        //
+        // `assert!`, not `debug_assert!`: the read is one plain load from the
+        // cache line the next lines write anyway, and a second add would turn
+        // the chain into a cycle, a double free far from the line at fault.
+        //
+        // SAFETY: if the caller keeps its promise, no other thread can reach
+        // the link (it is in no pile or chain), so nobody writes this cell now.
+        let in_a_pile = link.reclaim.with(|p| unsafe { (*p).is_some() });
+        assert!(
+            !in_a_pile,
+            "object retired twice: the structure called `retire` on the same \
+             object more than once"
+        );
+        // SAFETY: the link is in no pile and in no other chain (the caller
+        // retires `obj` only once), and this chain is ours alone (`&mut self`),
+        // so no other thread can reach these two cells. `push_chain`'s Release
+        // exchange later publishes them together with the chain.
+        link.obj.with_mut(|p| unsafe { *p = obj.cast() });
+        link.reclaim
+            .with_mut(|p| unsafe { *p = Some(reclaim_one::<T>) });
+
+        if self.top.is_null() {
+            self.top = link_ptr;
+            self.bottom = link_ptr;
+            return;
+        }
+
+        link.next.store(self.top, Ordering::Relaxed);
+        self.top = link_ptr;
+    }
+}
+
 /// How many piles a `ShardedList` splits retired objects over. A power of two,
 /// so picking one is a mask, not a division. Same number as folly's
 /// `hazptr_domain` (`kNumShards`).
@@ -65,6 +136,20 @@ impl ShardedList {
         // SAFETY: the caller keeps `RetiredList::push`'s promises; picking a
         // shard changes none of them.
         unsafe { shard.push(obj) }
+    }
+
+    /// Puts a whole chain on one shard, with one exchange.
+    ///
+    /// The shard is picked from the chain's top link. Its other objects may
+    /// belong to other shards by address; that is fine, because nothing looks
+    /// an object up by its shard: `take_all` takes every shard. If a later
+    /// step needs "all objects of kind X are in one shard" (folly's tagged
+    /// cohorts), the chain must be split by shard instead.
+    pub(crate) fn push_chain(&self, chain: Chain) {
+        if chain.top.is_null() {
+            return;
+        }
+        self.shards[Self::shard_of(chain.top.cast())].push_chain(chain);
     }
 
     /// Takes every shard's chain in one call. Each entry is a chain for
@@ -198,6 +283,41 @@ impl RetiredList {
             match self.head.compare_exchange_weak(
                 top,
                 link_ptr,
+                Ordering::Release,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return,
+                Err(current) => top = current,
+            }
+        }
+    }
+
+    /// Puts a whole chain on the pile with one exchange. The chain's newest
+    /// link becomes the new top, and its oldest link points at the old top.
+    ///
+    /// Safe to call: a `Chain` can only be filled by `add`, whose caller
+    /// already promised that every object in it is live and retired once.
+    pub(crate) fn push_chain(&self, chain: Chain) {
+        if chain.top.is_null() {
+            return;
+        }
+
+        let mut top = self.head.load(Ordering::Relaxed);
+        loop {
+            // Only the bottom link points into the shared pile, so only it
+            // has to follow `top` when another thread got there first. The
+            // links above it point at each other and never change.
+            //
+            // SAFETY: `chain.bottom` is the link of a live object (`add`'s
+            // promise), and the chain is ours alone, so no other thread
+            // reaches this link until the exchange below succeeds.
+            unsafe { (*chain.bottom).next.store(top, Ordering::Relaxed) };
+
+            // Release on success: it publishes every write `add` made to the
+            // chain's links, and the store above, to whoever takes the pile.
+            match self.head.compare_exchange_weak(
+                top,
+                chain.top,
                 Ordering::Release,
                 Ordering::Relaxed,
             ) {
@@ -540,7 +660,77 @@ mod tests {
         }
 
         assert_eq!(drops.load(Ordering::Relaxed), N as usize);
-        assert!(list.take_all().iter().all(|c| c.is_null()), "every shard is empty");
+        assert!(
+            list.take_all().iter().all(|c| c.is_null()),
+            "every shard is empty"
+        );
+    }
+
+    #[test]
+    fn a_chain_lands_in_one_shard() {
+        const N: u64 = 20;
+        let drops = Arc::new(AtomicUsize::new(0));
+        let mut chain = Chain::new();
+        for i in 0..N {
+            unsafe { chain.add(Box::into_raw(Node::boxed(i, &drops))) };
+        }
+        let top = chain.top;
+
+        let list = ShardedList::new();
+        list.push_chain(chain);
+
+        let chains = list.take_all();
+        let filled: Vec<usize> = (0..SHARDS).filter(|&i| !chains[i].is_null()).collect();
+        assert_eq!(
+            filled,
+            [ShardedList::shard_of(top.cast())],
+            "one shard only"
+        );
+
+        let mut len = 0;
+        let mut link = chains[filled[0]];
+        while !link.is_null() {
+            len += 1;
+            link = unsafe { (*link).next.load(Ordering::Relaxed) };
+        }
+        assert_eq!(len, N, "the whole chain is in that shard");
+
+        unsafe { RetiredList::free_all(chains[filled[0]]) };
+        assert_eq!(drops.load(Ordering::Relaxed), N as usize);
+    }
+
+    #[test]
+    fn sharded_chains_and_pushes_free_every_object_once() {
+        const CHAINS: u64 = 10;
+        const PER_CHAIN: u64 = 20;
+        const SINGLES: u64 = 50;
+        let drops = Arc::new(AtomicUsize::new(0));
+        let list = ShardedList::new();
+
+        for c in 0..CHAINS {
+            let mut chain = Chain::new();
+            for i in 0..PER_CHAIN {
+                unsafe { chain.add(Box::into_raw(Node::boxed(c * PER_CHAIN + i, &drops))) };
+            }
+            list.push_chain(chain);
+        }
+        for i in 0..SINGLES {
+            unsafe { list.push(Box::into_raw(Node::boxed(i, &drops))) };
+        }
+        list.push_chain(Chain::new());
+
+        for chain in list.take_all() {
+            unsafe { RetiredList::free_all(chain) };
+        }
+
+        assert_eq!(
+            drops.load(Ordering::Relaxed),
+            (CHAINS * PER_CHAIN + SINGLES) as usize
+        );
+        assert!(
+            list.take_all().iter().all(|c| c.is_null()),
+            "every shard is empty"
+        );
     }
 
     #[test]
@@ -581,11 +771,110 @@ mod tests {
             unsafe { drop(Box::from_raw(ptr)) };
         }
     }
+
+    #[test]
+    fn an_empty_chain_changes_nothing() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let a = Box::into_raw(Node::boxed(1, &drops));
+        let list = RetiredList::new();
+        unsafe { list.push(a) };
+
+        list.push_chain(Chain::new());
+
+        let a_link = unsafe { &raw mut (*a).link };
+        assert_eq!(list.take_all(), a_link);
+        assert!(unsafe { (*a_link).next.load(Ordering::Relaxed) }.is_null());
+        unsafe { RetiredList::free_all(a_link) };
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_chain_is_taken_newest_first() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let [a, b, c] = [1, 2, 3].map(|i| Box::into_raw(Node::boxed(i, &drops)));
+        let mut chain = Chain::new();
+        unsafe {
+            chain.add(a);
+            chain.add(b);
+            chain.add(c);
+        }
+
+        let list = RetiredList::new();
+        list.push_chain(chain);
+
+        let [a_link, b_link, c_link] = [a, b, c].map(|n| unsafe { &raw mut (*n).link });
+        let top = list.take_all();
+        assert_eq!(top, c_link);
+        assert_eq!(unsafe { (*c_link).next.load(Ordering::Relaxed) }, b_link);
+        assert_eq!(unsafe { (*b_link).next.load(Ordering::Relaxed) }, a_link);
+        assert!(unsafe { (*a_link).next.load(Ordering::Relaxed) }.is_null());
+
+        unsafe { RetiredList::free_all(top) };
+        assert_eq!(drops.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn a_chain_goes_on_top_of_the_pile() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let [x, a, b, c] = [0, 1, 2, 3].map(|i| Box::into_raw(Node::boxed(i, &drops)));
+        let list = RetiredList::new();
+        unsafe { list.push(x) };
+
+        let mut chain = Chain::new();
+        unsafe {
+            chain.add(a);
+            chain.add(b);
+            chain.add(c);
+        }
+        list.push_chain(chain);
+
+        let [x_link, a_link, b_link, c_link] = [x, a, b, c].map(|n| unsafe { &raw mut (*n).link });
+        let top = list.take_all();
+        assert_eq!(top, c_link);
+        assert_eq!(unsafe { (*c_link).next.load(Ordering::Relaxed) }, b_link);
+        assert_eq!(unsafe { (*b_link).next.load(Ordering::Relaxed) }, a_link);
+        assert_eq!(
+            unsafe { (*a_link).next.load(Ordering::Relaxed) },
+            x_link,
+            "the chain's bottom points at the old top"
+        );
+        assert!(unsafe { (*x_link).next.load(Ordering::Relaxed) }.is_null());
+
+        unsafe { RetiredList::free_all(top) };
+        assert_eq!(drops.load(Ordering::Relaxed), 4);
+    }
+
+    #[test]
+    fn adding_the_same_object_twice_panics() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let ptr = Box::into_raw(Node::boxed(1, &drops));
+        let mut chain = Chain::new();
+        unsafe { chain.add(ptr) };
+
+        let second = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // SAFETY: none. This breaks `add`'s second promise on purpose.
+            unsafe { chain.add(ptr) };
+        }));
+
+        let message = *second.unwrap_err().downcast::<&str>().unwrap();
+        assert!(message.starts_with("object retired twice"), "{message}");
+
+        let link = unsafe { &raw mut (*ptr).link };
+        assert_eq!(chain.top, link, "the failed add did not touch the chain");
+        assert_eq!(chain.bottom, link);
+
+        let list = RetiredList::new();
+        list.push_chain(chain);
+        let top = list.take_all();
+        assert_eq!(top, link);
+        unsafe { RetiredList::free_all(top) };
+        assert_eq!(drops.load(Ordering::Relaxed), 1, "freed once");
+    }
 }
 
 #[cfg(all(test, loom))]
 mod loom_tests {
-    use crate::retire::RetiredList;
+    use crate::retire::{Chain, RetiredList};
     use crate::sync::{AtomicUsize, Ordering};
     use crate::test_support::{Arc, Node};
 
@@ -613,6 +902,36 @@ mod loom_tests {
             }
             unsafe { RetiredList::free_all(list.take_all()) };
             assert_eq!(drops.load(Ordering::Relaxed), 2);
+        })
+    }
+
+    #[test]
+    fn two_chain_pushers_one_taker() {
+        loom::model(|| {
+            let drops = Arc::new(AtomicUsize::new(0));
+            let list = Arc::new(RetiredList::new());
+
+            let pushers = (0..2)
+                .map(|i| {
+                    let (list, drops) = (list.clone(), drops.clone());
+                    loom::thread::spawn(move || {
+                        let mut chain = Chain::new();
+                        unsafe {
+                            chain.add(Box::into_raw(Node::boxed(2 * i, &drops)));
+                            chain.add(Box::into_raw(Node::boxed(2 * i + 1, &drops)));
+                        }
+                        list.push_chain(chain);
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            unsafe { RetiredList::free_all(list.take_all()) };
+
+            for p in pushers {
+                p.join().unwrap();
+            }
+            unsafe { RetiredList::free_all(list.take_all()) };
+            assert_eq!(drops.load(Ordering::Relaxed), 4);
         })
     }
 }

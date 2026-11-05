@@ -143,9 +143,9 @@
 //! half run on the slow cores and `head`'s cache line crosses between the two
 //! clusters.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use reclaim::bench_internals::{RetiredList, ShardedList};
 use concurrent_utils::CachePadded;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use reclaim::bench_internals::{Chain, RetiredList, ShardedList};
 use reclaim::{Retirable, RetireLink};
 use std::sync::Barrier;
 use std::time::{Duration, Instant};
@@ -180,6 +180,19 @@ trait Pile: Sync {
     /// # Safety
     /// `node` is fresh, pushed once, and not used after.
     unsafe fn push(&self, thread: usize, node: *mut Node);
+
+    /// Pushes a group of nodes. By default one by one; the chain piles
+    /// override it to push the whole group with one exchange.
+    ///
+    /// # Safety
+    /// Every node in `nodes` is fresh, pushed once, and not used after.
+    unsafe fn push_many(&self, thread: usize, nodes: &[SendPtr]) {
+        for node in nodes {
+            // SAFETY: the caller keeps `push_many`'s promises for each node.
+            unsafe { self.push(thread, node.0) }
+        }
+    }
+
     fn free_everything(&self);
 }
 
@@ -213,6 +226,66 @@ impl Pile for ShardedList {
     }
 }
 
+/// One head, but each thread pushes its nodes as chains of `CHAIN_LEN`.
+struct OneHeadChains(RetiredList);
+
+impl Pile for OneHeadChains {
+    fn new() -> Self {
+        Self(RetiredList::new())
+    }
+
+    unsafe fn push(&self, _thread: usize, node: *mut Node) {
+        // SAFETY: the caller keeps `push`'s promises.
+        unsafe { self.0.push(node) }
+    }
+
+    unsafe fn push_many(&self, _thread: usize, nodes: &[SendPtr]) {
+        let mut chain = Chain::new();
+        for node in nodes {
+            // SAFETY: the caller keeps `push_many`'s promises: each node is
+            // fresh, added once, and not used after.
+            unsafe { chain.add(node.0) }
+        }
+        self.0.push_chain(chain);
+    }
+
+    fn free_everything(&self) {
+        // SAFETY: this thread took the whole chain; no reader exists.
+        unsafe { RetiredList::free_all(self.0.take_all()) }
+    }
+}
+
+/// Eight shards, and each thread pushes its nodes as chains of `CHAIN_LEN`.
+struct ShardedChains(ShardedList);
+
+impl Pile for ShardedChains {
+    fn new() -> Self {
+        Self(ShardedList::new())
+    }
+
+    unsafe fn push(&self, _thread: usize, node: *mut Node) {
+        // SAFETY: the caller keeps `push`'s promises.
+        unsafe { self.0.push(node) }
+    }
+
+    unsafe fn push_many(&self, _thread: usize, nodes: &[SendPtr]) {
+        let mut chain = Chain::new();
+        for node in nodes {
+            // SAFETY: the caller keeps `push_many`'s promises: each node is
+            // fresh, added once, and not used after.
+            unsafe { chain.add(node.0) }
+        }
+        self.0.push_chain(chain);
+    }
+
+    fn free_everything(&self) {
+        for chain in self.0.take_all() {
+            // SAFETY: this thread took every chain; no reader exists.
+            unsafe { RetiredList::free_all(chain) }
+        }
+    }
+}
+
 /// The control: every thread has a pile of its own, on its own cache line.
 /// Nothing is shared between pushing threads, so this is the best any shared
 /// pile could do on this machine. Not a design: a pile nobody else can take
@@ -221,7 +294,9 @@ struct OnePilePerThread([CachePadded<RetiredList>; 8]);
 
 impl Pile for OnePilePerThread {
     fn new() -> Self {
-        OnePilePerThread(std::array::from_fn(|_| CachePadded::new(RetiredList::new())))
+        OnePilePerThread(std::array::from_fn(
+            |_| CachePadded::new(RetiredList::new()),
+        ))
     }
     unsafe fn push(&self, thread: usize, node: *mut Node) {
         // SAFETY: the caller keeps `push`'s promises.
@@ -234,6 +309,10 @@ impl Pile for OnePilePerThread {
         }
     }
 }
+
+/// How many nodes each `push_many` call gets. Piles without chains still push
+/// them one by one, so only the chain piles see the groups.
+const CHAIN_LEN: usize = 20;
 
 /// `threads` threads push `iters` nodes in total into one `P`, all at once.
 /// Returns the time per push for the whole machine, scaled to `iters`.
@@ -260,9 +339,9 @@ fn timed_pushes<P: Pile>(threads: usize, iters: u64) -> Duration {
             let (pile, barrier) = (&pile, &barrier);
             scope.spawn(move || {
                 barrier.wait();
-                for SendPtr(node) in batch {
-                    // SAFETY: a fresh node, pushed once, not used after.
-                    unsafe { pile.push(thread, node) };
+                for group in batch.chunks(CHAIN_LEN) {
+                    // SAFETY: fresh nodes, each pushed once, not used after.
+                    unsafe { pile.push_many(thread, group) };
                 }
             });
         }
@@ -283,9 +362,13 @@ fn bench_pile<P: Pile>(c: &mut Criterion, name: &str) {
     group.measurement_time(Duration::from_secs(5));
     group.throughput(Throughput::Elements(1));
     for threads in [1usize, 2, 4, 8] {
-        group.bench_with_input(BenchmarkId::from_parameter(threads), &threads, |b, &threads| {
-            b.iter_custom(|iters| timed_pushes::<P>(threads, iters));
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(threads),
+            &threads,
+            |b, &threads| {
+                b.iter_custom(|iters| timed_pushes::<P>(threads, iters));
+            },
+        );
     }
     group.finish();
 }
@@ -302,5 +385,20 @@ fn one_pile_per_thread(c: &mut Criterion) {
     bench_pile::<OnePilePerThread>(c, "one_pile_per_thread");
 }
 
-criterion_group!(benches, one_head, sharded, one_pile_per_thread);
+fn one_head_chains(c: &mut Criterion) {
+    bench_pile::<OneHeadChains>(c, "one_head_chains");
+}
+
+fn sharded_chains(c: &mut Criterion) {
+    bench_pile::<ShardedChains>(c, "sharded_chains");
+}
+
+criterion_group!(
+    benches,
+    one_head,
+    sharded,
+    one_pile_per_thread,
+    one_head_chains,
+    sharded_chains
+);
 criterion_main!(benches);

@@ -24,6 +24,25 @@ pub use root::*;
 pub mod bench_internals {
     use crate::{Retirable, RetireLink};
 
+    /// A chain of retired objects, wrapped like the piles below.
+    pub struct Chain(crate::retire::Chain);
+
+    impl Chain {
+        #[allow(clippy::new_without_default)]
+        #[inline]
+        pub fn new() -> Self {
+            Chain(crate::retire::Chain::new())
+        }
+
+        /// # Safety
+        /// The same promises as the crate's `Chain::add`.
+        #[inline]
+        pub unsafe fn add<T: Retirable>(&mut self, obj: *mut T) {
+            // SAFETY: the caller keeps `add`'s promises.
+            unsafe { self.0.add(obj) }
+        }
+    }
+
     /// The pile, wrapped so its methods can be called from outside the crate.
     pub struct RetiredList(crate::retire::RetiredList);
 
@@ -39,6 +58,11 @@ pub mod bench_internals {
         pub unsafe fn push<T: Retirable>(&self, obj: *mut T) {
             // SAFETY: the caller keeps `push`'s promises.
             unsafe { self.0.push(obj) }
+        }
+
+        #[inline]
+        pub fn push_chain(&self, chain: Chain) {
+            self.0.push_chain(chain.0)
         }
 
         #[inline]
@@ -69,6 +93,11 @@ pub mod bench_internals {
         pub unsafe fn push<T: Retirable>(&self, obj: *mut T) {
             // SAFETY: the caller keeps `push`'s promises.
             unsafe { self.0.push(obj) }
+        }
+
+        #[inline]
+        pub fn push_chain(&self, chain: Chain) {
+            self.0.push_chain(chain.0)
         }
 
         pub fn take_all(&self) -> [*mut RetireLink; 8] {
