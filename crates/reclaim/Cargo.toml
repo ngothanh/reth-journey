@@ -7,10 +7,22 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+# Exposes crate-private types to the benches. Not part of the public API.
+bench-internals = []
+
 [dependencies]
 
 [target.'cfg(loom)'.dependencies]
 loom = "0.7.2"
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "retired_list"
+harness = false
+required-features = ["bench-internals"]
 
 [lints]
 workspace = true

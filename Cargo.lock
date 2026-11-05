@@ -1250,6 +1250,7 @@ dependencies = [
 name = "reclaim"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "loom",
 ]
 
