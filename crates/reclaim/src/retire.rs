@@ -1,6 +1,7 @@
 use crate::sync::AtomicPtr;
 use crate::sync::Ordering;
 use crate::sync::UnsafeCell;
+use concurrent_utils::CachePadded;
 use core::ptr::null_mut;
 
 /// The link stored inside every retirable object.
@@ -15,6 +16,62 @@ pub struct RetireLink {
 /// The pile: retired objects waiting to be freed, chained through their links.
 pub(crate) struct RetiredList {
     head: AtomicPtr<RetireLink>,
+}
+
+/// How many piles a `ShardedList` splits retired objects over. A power of two,
+/// so picking one is a mask, not a division. Same number as folly's
+/// `hazptr_domain` (`kNumShards`).
+const SHARDS: usize = 8;
+
+/// How many low bits of an object's address `shard_of` drops before picking a
+/// shard. The allocator aligns objects, so the lowest bits are the same for
+/// almost every object: `addr & 7` would send every 8-byte-aligned object to
+/// shard 0. Dropping 8 bits skips them; objects within 256 bytes of each other
+/// share a shard, objects further apart spread out. Same as folly's
+/// `kIgnoredLowBits`.
+const IGNORE_LOW_BITS: u32 = 8;
+
+/// The pile split into `SHARDS` piles, so threads that retire at the same time
+/// usually exchange on different `head`s instead of all on one.
+///
+/// Each shard has its own cache line (`CachePadded`). Without the padding all
+/// 8 `head`s fit in one 128-byte line, and the line still travels between cores on almost every
+/// push (L18 measured it: 8 threads were 4–5× better than one head, but still
+/// ≈ 10× below one thread).
+pub(crate) struct ShardedList {
+    shards: [CachePadded<RetiredList>; SHARDS],
+}
+
+impl ShardedList {
+    pub(crate) fn new() -> Self {
+        ShardedList {
+            shards: std::array::from_fn(|_| CachePadded::new(RetiredList::new())),
+        }
+    }
+
+    /// Which shard an object goes to. Depends only on its address, so the
+    /// same object always picks the same shard.
+    fn shard_of(addr: *mut ()) -> usize {
+        ((addr as usize) >> IGNORE_LOW_BITS) & (SHARDS - 1)
+    }
+
+    /// Puts one retired object on the shard its address picks.
+    ///
+    /// # Safety
+    ///
+    /// The same promises as `RetiredList::push`.
+    pub(crate) unsafe fn push<T: Retirable>(&self, obj: *mut T) {
+        let shard = &self.shards[Self::shard_of(obj.cast())];
+        // SAFETY: the caller keeps `RetiredList::push`'s promises; picking a
+        // shard changes none of them.
+        unsafe { shard.push(obj) }
+    }
+
+    /// Takes every shard's chain in one call. Each entry is a chain for
+    /// `RetiredList::free_all`, or null if that shard was empty.
+    pub(crate) fn take_all(&self) -> [*mut RetireLink; SHARDS] {
+        std::array::from_fn(|i| self.shards[i].take_all())
+    }
 }
 
 /// An object that a scheme can take over and free later.
@@ -408,6 +465,82 @@ mod tests {
         }
 
         unsafe { drop(Box::from_raw(ptr)) };
+    }
+
+    /// Real `Box` addresses, not made-up ones: the point of dropping the low
+    /// bits is what the allocator really hands out.
+    #[test]
+    fn real_addresses_spread_over_every_shard() {
+        const N: usize = 10_000;
+        let drops = Arc::new(AtomicUsize::new(0));
+        let nodes: Vec<*mut Node> = (0..N)
+            .map(|i| Box::into_raw(Node::boxed(i as u64, &drops)))
+            .collect();
+
+        let mut per_shard = [0usize; SHARDS];
+        for &node in &nodes {
+            per_shard[ShardedList::shard_of(node.cast())] += 1;
+        }
+
+        for (shard, &count) in per_shard.iter().enumerate() {
+            assert!(
+                (N / 16..=N / 4).contains(&count),
+                "shard {shard} got {count} of {N}: {per_shard:?}"
+            );
+        }
+
+        for node in nodes {
+            unsafe { drop(Box::from_raw(node)) };
+        }
+    }
+
+    /// Without dropping the low bits, alignment alone decides the shard. The
+    /// same addresses, picked with `addr & 7`, all land in one place.
+    #[test]
+    fn without_dropping_low_bits_every_object_lands_in_one_shard() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let nodes: Vec<*mut Node> = (0..1_000)
+            .map(|i| Box::into_raw(Node::boxed(i, &drops)))
+            .collect();
+
+        assert!(nodes.iter().all(|&n| (n as usize) & (SHARDS - 1) == 0));
+
+        for node in nodes {
+            unsafe { drop(Box::from_raw(node)) };
+        }
+    }
+
+    #[test]
+    fn each_shard_has_its_own_cache_line() {
+        let line = align_of::<CachePadded<()>>();
+        let list = ShardedList::new();
+        for pair in list.shards.windows(2) {
+            let a = &pair[0].head as *const _ as usize;
+            let b = &pair[1].head as *const _ as usize;
+            assert_eq!(b - a, line, "neighbouring heads are one line apart");
+        }
+    }
+
+    #[test]
+    fn sharded_round_trip_frees_every_object_once() {
+        const N: u64 = 100;
+        let drops = Arc::new(AtomicUsize::new(0));
+        let list = ShardedList::new();
+        for i in 0..N {
+            unsafe { list.push(Box::into_raw(Node::boxed(i, &drops))) };
+        }
+
+        let chains = list.take_all();
+        assert!(
+            chains.iter().filter(|c| !c.is_null()).count() > 1,
+            "the objects went to more than one shard"
+        );
+        for chain in chains {
+            unsafe { RetiredList::free_all(chain) };
+        }
+
+        assert_eq!(drops.load(Ordering::Relaxed), N as usize);
+        assert!(list.take_all().iter().all(|c| c.is_null()), "every shard is empty");
     }
 
     #[test]

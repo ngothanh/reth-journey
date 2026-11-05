@@ -12,6 +12,7 @@ repository.workspace = true
 bench-internals = []
 
 [dependencies]
+concurrent-utils = { path = "../concurrent-utils" }
 
 [target.'cfg(loom)'.dependencies]
 loom = "0.7.2"

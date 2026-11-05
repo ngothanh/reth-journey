@@ -1,7 +1,5 @@
 mod arc;
 mod atomic_cell;
-mod backoff;
-mod cache_padded;
 mod cell_sender;
 mod condvar;
 mod mpmc;
@@ -17,8 +15,7 @@ mod wait_list;
 mod wake_list;
 
 pub use atomic_cell::AtomicCell;
-pub use backoff::Backoff;
-pub use cache_padded::CachePadded;
+pub use concurrent_utils::{Backoff, CachePadded};
 pub use cell_sender::{Channel, Receiver, Sender};
 pub use mpmc::MpmcRing;
 pub use mutex::{Mutex, MutexGuard};

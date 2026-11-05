@@ -53,4 +53,26 @@ pub mod bench_internals {
             unsafe { crate::retire::RetiredList::free_all(link) }
         }
     }
+
+    /// The pile split over 8 heads, wrapped the same way.
+    pub struct ShardedList(crate::retire::ShardedList);
+
+    impl ShardedList {
+        #[allow(clippy::new_without_default)]
+        pub fn new() -> Self {
+            ShardedList(crate::retire::ShardedList::new())
+        }
+
+        /// # Safety
+        /// The same promises as the crate's `RetiredList::push`.
+        #[inline]
+        pub unsafe fn push<T: Retirable>(&self, obj: *mut T) {
+            // SAFETY: the caller keeps `push`'s promises.
+            unsafe { self.0.push(obj) }
+        }
+
+        pub fn take_all(&self) -> [*mut RetireLink; 8] {
+            self.0.take_all()
+        }
+    }
 }

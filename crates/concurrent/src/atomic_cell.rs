@@ -34,7 +34,7 @@ use sync::{AtomicBool, Ordering, UnsafeCell};
 use sync::spin_hint;
 
 #[cfg(not(loom))]
-use crate::backoff::Backoff;
+use crate::Backoff;
 
 use crate::Pod;
 #[cfg(not(loom))]

@@ -407,6 +407,7 @@ name = "concurrent"
 version = "0.1.0"
 dependencies = [
  "atomic-wait",
+ "concurrent-utils",
  "criterion",
  "crossbeam-queue",
  "loom",
@@ -415,6 +416,10 @@ dependencies = [
  "tokio",
  "trybuild",
 ]
+
+[[package]]
+name = "concurrent-utils"
+version = "0.1.0"
 
 [[package]]
 name = "const_format"
@@ -1250,6 +1255,7 @@ dependencies = [
 name = "reclaim"
 version = "0.1.0"
 dependencies = [
+ "concurrent-utils",
  "criterion",
  "loom",
 ]
