@@ -1,0 +1,45 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+html,body{margin:0;background:#0b0f14}
+.fig{display:inline-block;padding:40px 46px 44px;background:radial-gradient(120% 120% at 15% 0%,#141c26 0%,#0b0f14 72%);font-family:Archivo,sans-serif;color:#E3E9EF;max-width:1180px}
+.title{font-size:21px;font-weight:600;letter-spacing:.005em;margin:0 0 6px}
+.sub{color:#8C9BAA;font-size:15px;margin:0 0 22px;max-width:1040px;line-height:1.45}
+.note{color:#8C9BAA;font-size:14px;margin-top:16px;max-width:1040px;line-height:1.5}
+code,.mono{font-family:'JetBrains Mono',monospace;font-size:.9em}
+code{color:#E3E9EF;background:#1f2933;border-radius:4px;padding:1px 5px}
+b{font-weight:700}
+.a{color:#E8A44E}.t{color:#4FBCC7}.r{color:#EC7A70}.m{color:#8C9BAA}
+table.tb{border-collapse:separate;border-spacing:0;background:#161D25;border-radius:12px;overflow:hidden;font-size:15.5px;box-shadow:0 0 0 1px #2B353F}
+.tb th{text-align:left;font-weight:600;color:#8C9BAA;font-size:12.5px;letter-spacing:.07em;text-transform:uppercase;padding:13px 18px;background:#121820}
+.tb td{padding:12px 18px;border-top:1px solid #2B353F;vertical-align:top;line-height:1.45}
+.tb td.num{text-align:right;font-family:'JetBrains Mono',monospace;font-size:14.5px;white-space:nowrap}
+.tb th.num{text-align:right}
+.tb tr.hl td{background:rgba(232,164,78,.08)}
+.tb tr.bad td{background:rgba(236,122,112,.09)}
+.tb tr.ok td{background:rgba(79,188,199,.08)}
+.tb td.first{font-weight:600}
+/* timelines */
+table.tl{border-collapse:separate;border-spacing:0;font-size:15.5px;background:#161D25;border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px #2B353F}
+.tl th{color:#8C9BAA;font-size:12.5px;letter-spacing:.07em;text-transform:uppercase;text-align:left;padding:12px 18px;background:#121820;font-weight:600}
+.tl td{padding:10px 18px;border-top:1px solid #2B353F;vertical-align:top;line-height:1.45;min-width:120px}
+.tl td.n{color:#8C9BAA;font-family:'JetBrains Mono',monospace;font-size:14px;min-width:0;width:26px}
+.tl tr.bad td{background:rgba(236,122,112,.11)}
+.tl tr.bad td.cell{color:#F2A49C}
+.tl tr.ok td{background:rgba(79,188,199,.09)}
+.tl tr.warn td{background:rgba(232,164,78,.09)}
+.tl td.idle{color:#4c5864}
+/* boxes */
+.row{display:flex;align-items:center;gap:14px;flex-wrap:nowrap}
+.box{background:#161D25;border:1px solid #2B353F;border-radius:10px;padding:10px 16px;font-size:15px;white-space:nowrap}
+.box.a{border-color:#E8A44E;color:#E3E9EF;box-shadow:0 0 0 1px rgba(232,164,78,.25)}
+.box.t{border-color:#4FBCC7;color:#E3E9EF;box-shadow:0 0 0 1px rgba(79,188,199,.25)}
+.box.r{border-color:#EC7A70;color:#E3E9EF;box-shadow:0 0 0 1px rgba(236,122,112,.25)}
+.box.dim{opacity:.55}
+.arrow{color:#8C9BAA;font-family:'JetBrains Mono',monospace;font-size:16px}
+.lbl{color:#8C9BAA;font-size:13px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.lbl code{text-transform:none;letter-spacing:0}
+.cap{color:#8C9BAA;font-size:13.5px}
+.panel{background:#121820;border:1px solid #2B353F;border-radius:12px;padding:18px 22px}
+</style></head><body><div class="fig"><div class="title">Four promises about <code>retire_link</code></div><table class="tb"><tr><th class="">Promise</th><th class="">Means</th><th class="">Broken by (100% safe code)</th></tr><tr class=""><td class="first">ownership</td><td class="">the link is a field of <b>this</b> object, shared with no other</td><td class="">returning a link from a shared <code>static</code>: each retire overwrites it, and the pile loses objects</td></tr><tr class=""><td class="first">determinism</td><td class="">the <b>same</b> link on every call</td><td class="">a getter that branches: the scheme writes one link and reads another</td></tr><tr class=""><td class="first">stability</td><td class="">the link does not <b>move</b> while retired</td><td class=""><code>UnsafeCell</code> replacing what contains the link: stored pointers dangle</td></tr><tr class=""><td class="first">non-interference</td><td class="">the object does not <b>touch</b> the link while retired</td><td class=""><code>UnsafeCell</code> writing the link's contents: the chain is corrupted</td></tr></table><div class="note">Stability and non-interference share one window: from <code>retire(p)</code> until <code>reclaim(p)</code> returns. Both came from one exhibit, the <code>UnsafeCell</code>, which split in two.</div></div></body></html>
