@@ -578,3 +578,140 @@ root, several guards) are not covered yet, and both are needed only by the sorte
 ---
 
 **Modeling ends here.** Next is Stage 2 in `plan/reclaim_modeling.md`: the core types, L6.
+
+---
+
+## §10 The registry  (C3, lesson L21)
+
+### What it is
+
+A round may free an object only if no reader is using it, and a reader says what it uses by
+writing into a **record**. The **registry** is the list of all records of one scheme in one
+domain, so a round can read every one of them (the **scan**). Each record holds a
+**payload** (what the reader wrote: an address for hazard pointers, an epoch number for
+epoch), an `in_use` flag, and `next`. The registry decides nothing about what is written;
+it only hands records out (**claim**), takes them back (**release**), and lets a round walk
+them.
+
+### Rule 1 — a record is never freed while the registry lives
+
+Exhibit: `release` frees the record.
+
+```
+start: T1 holds R1, R1.payload = A.  head → R1 → null
+1. T2: loads head → gets R1's address (the scan has started)
+2. T1: drops its guard → release(R1) unlinks R1 and frees its memory
+3. T2: reads R1.payload → reads freed memory
+   -> USE-AFTER-FREE        (Miri, many seeds: needs T2 paused between 1 and 3)
+```
+
+Making records safe to free would need a reclamation scheme for the records, which would
+need a registry of its own. Immortal records end that chain. Records are freed only in the
+registry's `Drop`, when no thread can be scanning. They are **reused** instead.
+
+### Rule 2 — release clears the payload, then marks the record free
+
+Exhibit: the other order (`in_use = false`, then `payload = null`).
+
+```
+start: T1 holds R1, R1.payload = A.  T3 wants to read node B.
+1. T1: release(R1), line a → R1.in_use = false
+2. T3: claim → takes R1; guard.protect writes B into R1.payload
+3. T1: line b → R1.payload = null          (T3's B is wiped)
+4. T2: B was popped and retired; the round scans, no payload says B → frees B
+5. T3: reads B through its guard
+   -> USE-AFTER-FREE        (Miri, many seeds)
+```
+
+Once `in_use = false` can be seen, the record belongs to the next claimer, and the old
+owner must not write it again. A consequence for the scan: it reads free records too. That
+is harmless only because of this rule — a free record's payload is always cleared.
+
+### Decisions
+
+- **Who holds a claim — not the registry's business.** Hazard pointers: a guard, from
+  `domain.guard()` to the guard's drop (two guards on one thread = two records). Epoch: a
+  thread, from its first `pin()` to thread exit, because a claim per pin would cost a
+  shared compare-exchange (up to ≈ 125 ns at 8 threads, from C2) where a pin should cost
+  one store. Thread-exit hand-back therefore belongs to C6.
+- **A linked list first.** The scan runs once per round, not once per retired object
+  (payloads go into a set, then each retired object is one lookup). In a list the scan is
+  H dependent cache misses; in a grow-only array the same misses overlap. Predicted: at
+  H = 64 and 1,000 retired objects per round, ≈ 6.4 ns per object for the list against
+  ≈ 1 ns for a chained push; at H = 8, ≈ 0.8 ns. C5's scan bench decides; the array comes
+  only if it measures a reason.
+- **`claim` loses → move on.** Taking a record is a compare-exchange on `in_use` from
+  `false` to `true`. The loser does not retry that record (it is now in use); it tries the
+  next one, and allocates a new record only at the end of the list. A new record is added
+  at `head` with the pile's `push` loop.
+- **Records are padded** (`CachePadded`, 128 bytes on aarch64). Every `protect` writes its
+  own record's payload, on every operation. Two records on one line would be false sharing
+  on the readers' path — L18 measured that at 3–4×.
+
+### The signatures
+
+```rust
+// registry.rs
+
+/// What a reader writes into a record. Clearing it must make it mean "using nothing".
+pub(crate) trait Payload: Default + Send + Sync {
+    fn clear(&self);
+}
+// impl Payload for AtomicPtr<()>  (C5: clear = store null)
+// impl Payload for AtomicU64      (C6: clear = store "not pinned")
+
+pub(crate) struct Record<P> {
+    payload: P,
+    in_use: AtomicBool,
+    next: *const CachePadded<Record<P>>, // written while the record is private, never after
+}
+
+pub(crate) struct Registry<P: Payload> {
+    head: AtomicPtr<CachePadded<Record<P>>>,
+    _owns: PhantomData<P>, // the registry owns every record's `P`; see below
+}
+
+impl<P: Payload> Record<P> {
+    pub(crate) fn payload(&self) -> &P;
+}
+
+impl<P: Payload> Registry<P> {
+    pub(crate) fn new() -> Self;
+    /// A record nobody else holds: a free one if there is one, else a new one.
+    pub(crate) fn claim(&self) -> &Record<P>;
+    /// # Safety
+    /// The caller holds the claim on `rec`, `rec` came from this registry, and the caller
+    /// does not use `rec` again until it claims it again.
+    pub(crate) unsafe fn release(&self, rec: &Record<P>);
+    /// Every record, in use or free. Free ones have a cleared payload (Rule 2).
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Record<P>>;
+}
+
+impl<P: Payload> Drop for Registry<P> { /* frees every record */ }
+// No `unsafe impl Send/Sync`. Corrected in L22: `AtomicPtr<T>` is `Send + Sync` for every
+// `T`, so the compiler derives both for `Registry` without looking at `P`. The registry owns
+// the `P`s (drops them on its thread → needs `P: Send`; hands `&P` to many threads → needs
+// `P: Sync`), so it carries a `PhantomData<P>` field to make the compiler check exactly that.
+```
+
+Why `release` is `unsafe`: any `&Record` from `iter` could be passed to it, and releasing a
+record someone else holds is Rule 2's exhibit with a different first line.
+
+### Open — not C3's to settle
+
+- **What a guard stores.** `claim` returns `&Record<P>`, borrowed from the registry. A
+  hazard-pointer guard must keep its record between calls, so it stores a raw pointer
+  (`NonNull<Record<P>>`). That pointer is valid as long as the registry lives (Rule 1), so
+  the guard must keep the registry alive — an `Arc` to the scheme. Today
+  `Reclaimer::guard(&self)` has no `Arc` to clone. C5 decides how the guard gets one.
+- **Orderings** — derived in L23, each with a loom model and a red negative control:
+
+  | Pair | Publishes | Model |
+  |---|---|---|
+  | `push_new` CAS `Release` → `iter`'s `head` load `Acquire` | a new record, built (`next`, `in_use`, `payload`) | `a_scan_sees_a_new_record_whole` |
+  | `release`'s `in_use` store `Release` → `claim`'s CAS `Acquire` | the old owner's clear (Rule 2) | `a_claimed_record_starts_cleared` |
+
+  Everything else is `Relaxed`: `claim`'s CAS failure (the loser reads nothing through
+  it), the payload stores and loads (their ordering against the scan is C5's fence
+  question), and `Drop` (ordered by the hand-over that gave it `&mut`).
+

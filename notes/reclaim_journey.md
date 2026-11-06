@@ -826,3 +826,59 @@ matches the no-sharing control.
 Left open, not blocking C3: the 4-thread chain point; `concurrent_utils::
 CachePadded` is 64 bytes on x86_64 (should be 128, own commit); the threshold
 counter folly adds in `push_list` comes with the reclaim trigger.
+
+## Session 2026-11-06 — C3: the registry (L20–L22)
+
+## 28. What does the registry need from its fields, and from `P`?
+
+**First answers** — `in_use` as a plain `bool` (`is_free`); `next` as an `AtomicPtr`
+without a reason; and, from the teacher, "the registry needs an `unsafe impl Send + Sync`
+because it holds raw pointers".
+
+**What killed them** — two questions per field: can another thread read it while it is
+written, and is it written through `&` or by its owner? `payload` (owner ↔ scan) and
+`in_use` (claimers ↔ claimers) are atomic. `next` is written only while `push_new` owns
+the record, before the compare-exchange publishes it, so it is a plain `*const`; the
+pile's `next` was atomic only because the scheme reaches a link through `&`. The
+`Send + Sync` check compiled with no `unsafe impl`: `AtomicPtr<T>` is `Send + Sync` for
+every `T`, so the compiler never looked at `P`. The registry owns the `P`s (drops them on
+its thread → `P: Send`; hands `&P` to many threads → `P: Sync`), and only the `Payload`
+supertraits carried that.
+
+**Decided** — `_owns: PhantomData<P>`, so the compiler checks both. `Drop` loads `head`
+`Relaxed` and frees with plain reads: `&mut self` means nobody else can reach the list,
+and the hand-over that produced `&mut` (last `Arc` drop, `join`) already ordered every
+`push_new` before it — "no one writes any more" explains no race, not visibility.
+
+**Teacher's wrong turns** — the `unsafe impl` note in §10 (corrected), and once reporting
+"it compiles" from a build output cut off before the error.
+
+**Gates** — 4 tests + Miri green. Negative controls red: `Drop` that frees nothing →
+Miri `memory leaked` (128-byte, 128-aligned records from `push_new`); `push_new` that
+never links → the list walk finds `[]` instead of three records.
+
+## 29. Which orderings does the registry need? (L23)
+
+**First answer** — everything `Relaxed`, as instructed, with a `claim` that took a record
+when `in_use` was *true* and took it without a compare-exchange.
+
+**What killed it** — the single-thread tests caught the inverted check (two claims, one
+record). Loom model 1 (two claimers) is green with the compare-exchange and red with
+load-then-store. Model 2 (a scan meets a new record) was **green with every access
+`Relaxed`** — and it could not have failed: loom ran it once, with the scan before the
+claimer, on an empty list. A `panic!` inside the scan loop still passed. Made to wait
+(`yield_now` until the record is there), it went red. The teacher had first guessed
+"loom cannot see these fields"; wrong — loom watched the atomics, the model never reached
+them. A third model for Rule 2 had the same empty first version, then went red with
+`Relaxed`: a claimer could take a released record and still see the old address.
+
+**Decided** — two pairs. `push_new` `Release` / `iter` `Acquire` (a found record is fully
+built); `release` `Release` / `claim` `Acquire` (the old clear is visible to the next
+owner). `next` became a `sync::UnsafeCell` so loom checks the read inside `Iter::next`,
+on every walk, not only where a test happens to look. Each of the four orderings has a
+negative control that goes red.
+
+**Cost** — the lesson worth keeping: **a model whose interesting interleaving never runs
+is green for free.** Count loom's iterations, or put a `panic!` where the model should
+reach, before trusting a green. The negative control would have shown it too — it stayed
+green, which is how the problem was found.

@@ -152,6 +152,8 @@ two sections after this one.
 | 19 | **step 6** final bench: which wins, and why | 5b | 4 h | 168 |
 | — | **the journal** — ~10 min appended at the close of each of the 19 edits | all | 3 h | **171** |
 
+*2026-11-06: C3's thread-exit hand-back moved to C6, its only user (`plan/reclaim_c3.md`, L21 Q3): C3 4.5 → 4 h, C6 23 → 23.5 h. The total does not change.*
+
 Three things this ordering buys that a different one would not:
 
 - **C5 before C6.** Hazard pointers are the simpler scheme and the first real user of C3's

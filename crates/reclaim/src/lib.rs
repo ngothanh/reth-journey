@@ -9,6 +9,7 @@ mod sync;
 
 #[cfg(test)]
 mod test_support;
+mod registry;
 
 pub use domain::*;
 pub use guard::*;
