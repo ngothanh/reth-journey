@@ -882,3 +882,17 @@ negative control that goes red.
 is green for free.** Count loom's iterations, or put a `panic!` where the model should
 reach, before trusting a green. The negative control would have shown it too — it stayed
 green, which is how the problem was found.
+
+## C3 closed (2026-11-07)
+
+The registry is done: `Payload` (`clear`), `Record<P>` (padded; `payload`, `in_use`,
+`next` in a `sync::UnsafeCell`), `Registry<P>` (`push_new`, `claim`, `iter`, `Drop`,
+`PhantomData<P>` for `Send`/`Sync`), `Record::release`. Gates: 8 std tests, Miri on
+`registry::tests`, 3 loom models, and a red negative control for each ordering, for the
+compare-exchange in `claim`, for `Drop` (Miri leak), for `push_new`'s link, and for reuse
+(64 threads in turn → 1 record; a `claim` that never reuses → 64).
+
+Moved out: thread-exit hand-back → C6 (its only user). Left open for C5: what a guard
+stores and how it keeps the registry alive (`Reclaimer::guard(&self)` has no `Arc`); the
+scan missing a record pushed after it loaded `head` (folly's `hcount_` argument); list vs
+grow-only array, decided by the scan bench.

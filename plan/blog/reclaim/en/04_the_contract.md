@@ -105,8 +105,8 @@ about promises. It came from the `UnsafeCell` trace.
 ## The handle a structure holds
 
 A structure doesn't call a scheme directly. It holds a `Domain<R>`: a handle to one
-scheme and its root registry, the list of declared roots from Part 2. The handle is
-cheap to clone, because inside it is just an `Arc`.
+scheme and its root list, the declared roots from Part 2. The handle is cheap to clone,
+because inside it is just an `Arc`.
 
 ![Domain<R>: declare_root, remove_root, guard and retire, all passing through to one scheme](../img/cards/domain.png)
 

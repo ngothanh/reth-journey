@@ -5,7 +5,7 @@
 > **Bar**: (c) — both are Layer-1 substrate, so the two-track rule applies: a sealed numeric prediction *before* every measurement, then the measured number, then reconcile the gap
 > **Mirror target**: folly `hazptr` (Domain / holder / retire), `crossbeam-epoch` (Collector / LocalHandle / Guard / three-epoch cycle), `haphazard`, and `crossbeam_queue::SegQueue` (block cursor + per-slot DESTROY bit)
 > **Feeds into**: `concurrent` skiplist · `bufpool` page reclaim · P4 price levels · P5 ledger + cross-shard queues
-> **Current position**: **edits 1–4 are done** (C1 2026-10-09 · Q1 2026-10-11 · Q2 and Q3 2026-10-12). The queue is `SegQueue<T, R: Reclaimer>` on the `reclaim` crate with `Leak`; the refcount and `SegGuard` are deleted. Q3 was merged into Q2 (see "What happened" under the Q table). Next is edit 5, C2.
+> **Current position**: **edits 1–4 are done** (C1 2026-10-09 · Q1 2026-10-11 · Q2 and Q3 2026-10-12). The queue is `SegQueue<T, R: Reclaimer>` on the `reclaim` crate with `Leak`; the refcount and `SegGuard` are deleted. Q3 was merged into Q2 (see "What happened" under the Q table). **C2 closed 2026-11-05, C3 closed 2026-11-07** (`plan/reclaim_c3.md`). Next is edit 7, C4.
 > **Before and through C1**: `plan/reclaim_modeling.md` — the map, then twelve lessons (15 h:
 > ≈ 8 h of model, then C1's own 7 h as core types and behaviour). This ladder assumes the
 > model is already held; the C1 sessions kept stalling because it was not.

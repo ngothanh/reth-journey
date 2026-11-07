@@ -112,7 +112,7 @@ impossible.
 ## What declared roots give you at runtime
 
 The domain is a handle around one scheme (Part 4 builds it). It keeps the declared roots
-in a list, the root registry. In a debug build, `retire` walks the registry and asserts
+in a list, the **root list**. In a debug build, `retire` walks the root list and asserts
 that no root still holds the object being retired:
 
 ```rust
@@ -123,7 +123,7 @@ assert!(
 );
 ```
 
-In a release build the registry is a struct with no fields. Its `declare` and `remove`
+In a release build the root list is a struct with no fields. Its `declare` and `remove`
 methods have empty bodies, and a test asserts `size_of::<RootRegistry>() == 0`.
 Production pays nothing.
 

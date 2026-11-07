@@ -10,8 +10,8 @@ This job is called *safe memory reclamation*. This series builds a crate for it,
 `reclaim`, starting from an empty `lib.rs`. It's a design investigation, not a tutorial.
 Every decision is forced by a crash, a verification tool or a measurement. The wrong
 first attempts are kept, because they explain the design better than the final code
-does. More parts will follow as the crate grows: a small record per thread that the
-scheme can find, the rule that decides when freeing starts, hazard pointers, and epoch.
+does. More parts will follow as the crate grows: the rule that decides when freeing
+starts and which thread pays for it, then hazard pointers, then epoch.
 
 ## The parts
 
@@ -66,19 +66,36 @@ heads), false sharing between them, a control where no thread shares anything, a
 chains that push 20 objects with one exchange. Sharding plus chains matches the control.
 A one-line formula explains why chains on one shared head missed the prediction.
 
+**[Part 9 — The registry: where readers' announcements live.](09_the_registry.md)** A
+round must read every reader's announcement, so the announcements live in records on a
+list that only grows. Five questions decide the shape. Why a record is never freed (it
+would need a reclamation scheme of its own). Why `release` clears before it frees. Why
+a guard holds a record under hazard pointers but a thread holds one under epoch. Why a
+linked list now and an array only if a measurement asks for one, and why every record
+is padded.
+
+**[Part 10 — Three fields, two ordering pairs, and a loom model that couldn't
+fail.](10_registry_correctness.md)** Which fields must be atomic, and why the pile's
+`next` is atomic but the registry's isn't. The compiler declared the registry `Send +
+Sync` without looking at its payload type. A loom model passed with every access
+`Relaxed`, because loom ran it once and it never reached a record. The fixed models
+found the two ordering pairs and a real bug in `release`. Sixty-four threads share one
+record, and the count never goes down.
+
 ## How to read it
 
 In order. Each part starts where the previous one stopped and ends with the question the
 next one answers. Parts 1–3 explain the model, with little code. Parts 4–5 build the
 contract between object, structure and scheme, and the first structure that uses it.
 Parts 6–8 build the crate's first concurrent component, the pile: first for one thread,
-then for many, then measured with eight.
+then for many, then measured with eight. Parts 9–10 build the second, the registry of
+readers' records: its design first, then the work of making it correct across threads.
 
 ## Scope
 
 This series covers the `reclaim` crate as built so far: the interface (`Retirable`,
-`Reclaimer`, `Guard`, `Domain`, `Root`), the `Leak` scheme, and the pile of retired
-objects, with sharding and chains. Schemes that really free memory (hazard pointers and
+`Reclaimer`, `Guard`, `Domain`, `Root`), the `Leak` scheme, the pile of retired
+objects, with sharding and chains, and the registry of readers' records. Schemes that really free memory (hazard pointers and
 epoch) come in later parts. Built and measured on `aarch64` (Apple M2, 4 performance + 4
 efficiency cores, 128-byte cache lines). Every correctness claim is one that Miri or
 loom checked, with a negative control showing the check can fail. Every number comes
@@ -116,6 +133,14 @@ the run.
 - **release sequence** — a chain of read-modify-write operations (such as `swap` or a
   compare-exchange) on one atomic. An `Acquire` read at the end of the chain
   synchronizes with every `Release` in it: it sees what each of them published.
+- **record** — one slot a reader writes its announcement into: a payload, an `in_use`
+  flag, and a link to the next record.
+- **registry** — the list of all records of one scheme. It only grows; records are
+  reused, never freed while it lives.
+- **claim / release** — take a record nobody else holds / give it back for reuse.
+- **payload** — what a reader writes into its record: an address (hazard pointers) or
+  an epoch number (epoch).
+- **scan** — the part of a round that walks the registry and reads every payload.
 - **false sharing** — independent data that sits on one cache line. A write to any part
   of it invalidates the other cores' copies of the whole line.
 - **negative control** — breaking the code on purpose to check that a test or tool

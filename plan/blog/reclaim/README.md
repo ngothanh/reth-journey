@@ -4,10 +4,12 @@ A design investigation into freeing memory that another thread may still be read
 Every lock-free linked structure has this problem when there is no garbage collector.
 The series builds a crate, `reclaim`, from an empty `lib.rs`. It starts with the model:
 two rules, three roles, roots and guards. Then it builds the contract between object,
-structure and scheme. It ends with the crate's first concurrent component: a pile that
-holds retired objects of any type and never allocates. The pile's cost per push falls
-from ≈ 125 ns (one shared head, 8 threads) to the level of a control in which no thread
-shares anything (≈ 0.8 ns).
+structure and scheme. Then come the crate's first two concurrent components. The first is a pile
+that holds retired objects of any type and never allocates. Its cost per push falls from
+≈ 125 ns (one shared head, 8 threads) to the level of a control in which no thread
+shares anything (≈ 0.8 ns). The second is the registry where readers announce what they
+hold: records that are never freed, two ordering pairs, and a loom model that passed
+only because it never ran the interleaving it was written for.
 
 Every decision is forced by a crash, Miri, loom or a benchmark. The wrong first attempts
 are part of the story. More parts follow as the crate grows.
@@ -28,3 +30,5 @@ are part of the story. More parts follow as the crate grows.
 | 6 | [The pile of retired objects](en/06_the_pile.md) |
 | 7 | [One `Release`, one `Acquire`, everything else `Relaxed`](en/07_orderings.md) |
 | 8 | [Measuring the pile: one head, eight heads, and chains](en/08_measuring.md) |
+| 9 | [The registry: where readers' announcements live](en/09_the_registry.md) |
+| 10 | [Three fields, two ordering pairs, and a loom model that couldn't fail](en/10_registry_correctness.md) |

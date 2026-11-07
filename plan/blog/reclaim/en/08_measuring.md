@@ -161,12 +161,13 @@ Three numbers measured here became the starting point for every later prediction
 ## Where this leaves us
 
 The pile is done: a three-word link inside every object, one `Release` and one
-`Acquire`, eight padded shards, and chains that reach the no-sharing control. One
-question was left out on purpose: who keeps a chain between retires while it fills up?
-A thread does. So each thread needs a small record of its own, one the scheme can find
-and that stays alive after the thread exits. That's the next part of the crate, and of
-this series.
+`Acquire`, eight padded shards, and chains that reach the no-sharing control.
+
+The pile is half of what a round needs. It says what *could* be freed. The other half
+says what can't be freed yet: the objects that readers are still holding. Part 3's
+readers announce what they hold by writing into slots. A round has to find every one of
+those slots, on every core, and no slot may disappear while the round reads it.
 
 ---
 
-*Previous: [Part 7](07_orderings.md) · [Index](00_index.md)*
+*Next: [Part 9 — The registry: where readers' announcements live](09_the_registry.md) · Previous: [Part 7](07_orderings.md) · [Index](00_index.md)*

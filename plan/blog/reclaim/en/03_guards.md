@@ -4,7 +4,8 @@ Rule 2 says every reader that already holds an address must have finished with i
 the object is freed. Part 1 showed that a reader can't announce "I'm reading" by writing
 into the object. So it has to write somewhere else, somewhere that's alive for the whole
 program and that the scheme can look at. Call it a **slot**: one small piece of shared
-memory per thread, owned by the scheme.
+memory, owned by the scheme. (Part 9 builds the slots, and shows why hazard pointers
+give each guard its own slot while epoch gives each thread one.)
 
 A **guard** is what a reader holds while its announcement is in its slot. Dropping the
 guard clears the slot. Both classic schemes, hazard pointers and epoch, agree on that

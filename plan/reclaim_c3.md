@@ -161,7 +161,7 @@ reuse. Decay arrives with the thread cache (deferred); CPU keying is recorded, n
 - **Gate**: you can name the ordering on each atomic access and the pair it belongs to
 - **Est**: 2 h
 
-### L24 — Reuse across threads
+### L24 — Reuse across threads  ✅ 2026-11-07
 - **Where on the map**: claim / release, the owner from L21 Q3
 - **Input**: L23
 - **Output**: the test from the ladder: 64 threads run one after another, each claims,

@@ -308,6 +308,77 @@ impl RetiredList {
         }
     }
 }''', True),
+"registry_types": ("registry.rs — the record, and the registry that owns them",
+'''pub(crate) struct Record<P: Payload> {
+    payload: P,                                         // ① written by the owner, read by the scan
+    in_use: AtomicBool,                                 // ① claimers race on it
+    next: UnsafeCell<*const CachePadded<Record<P>>>,    // written before publishing, then only read
+}
+
+pub(crate) struct Registry<P: Payload> {
+    head: AtomicPtr<CachePadded<Record<P>>>,            // AtomicPtr<T> is Send + Sync for every T…
+    _owns: PhantomData<P>,                              // …so this says "I own P values":
+}                                                       // Send needs P: Send, Sync needs P: Sync''', True),
+
+"registry_push_new": ("registry.rs — push_new: allocate a claimed record, add it at head",
+'''pub(crate) fn push_new(&self) -> &Record<P> {
+    // once, before the loop: a retry must still have the record to write into
+    let new_record = Box::into_raw(Box::new(CachePadded::new(Record::<P>::new())));
+    let mut top = self.head.load(Ordering::Relaxed);
+    loop {
+        // SAFETY: not in the list yet, so no other thread can reach it
+        unsafe { (&*new_record).next.with_mut(|p| *p = top) };
+        match self.head.compare_exchange_weak(
+            top, new_record,
+            Ordering::Release,                // ① publishes the record, fully built
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return unsafe { &*new_record },   // SAFETY: records are never freed (Rule 1)
+            Err(current) => top = current,             // retry on the head that won
+        }
+    }
+}''', True),
+
+"registry_claim_release": ("registry.rs — claim a free record or make one; release clears, then frees",
+'''pub(crate) fn claim(&self) -> &Record<P> {
+    for rec in self.iter() {                       // ③ iter loads head with Acquire
+        if rec.in_use
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)   // ④ one winner
+            .is_ok()
+        {
+            return rec;                            // the loser moves on to the next record
+        }
+    }
+    self.push_new()                                // nothing free: a new record
+}
+
+/// # Safety: the caller holds the claim, and does not use the record again until it claims it again.
+pub(crate) unsafe fn release(&self) {
+    self.payload.clear();                          // first: the payload means "using nothing"
+    self.in_use.store(false, Ordering::Release);   // ② then free; pairs with claim's Acquire
+}''', True),
+
+"loom_scan_model": ("registry.rs — loom: a scan must see a new record fully built",
+'''loom::model(|| {
+    let registry = Arc::new(Registry::<AtomicPtr<()>>::new());
+    let reader = {
+        let registry = registry.clone();
+        loom::thread::spawn(move || {
+            let rec = registry.claim();                       // ① empty: push_new publishes a record
+            rec.payload().store(0x1000 as *mut (), Ordering::Relaxed);
+        })
+    };
+    // ③ wait for the record. Without this loop loom runs the scan first, on an
+    //    empty list, once, and the model checks nothing.
+    let rec = loop {
+        if let Some(rec) = registry.iter().next() { break rec; }
+        loom::thread::yield_now();
+    };
+    assert!(rec.in_use.load(Ordering::Relaxed));
+    let p = rec.payload().load(Ordering::Relaxed);
+    assert!(p.is_null() || p == 0x1000 as *mut ());
+    reader.join().unwrap();
+})''', True),
 }
 
 TERMS = {
@@ -337,4 +408,12 @@ thread 'retire::loom_tests::two_push_one_taker' panicked at loom-0.7.2/src/rt/lo
     created: <span class="pt">crates/reclaim/src/retire.rs:61:19</span>          <span class="dim">RetireLink::new</span>
     load: thread #0 @ <span class="pt">crates/reclaim/src/retire.rs:147:46</span>   <span class="dim">first read of next in free_all</span>
 <span class="dim">test retire::loom_tests::two_push_one_taker ...</span> <span class="err">FAILED</span>'''),
+"term_loom_registry": ("LOOM_LOCATION=1 cargo test --release — push_new's compare-exchange weakened to Relaxed",
+'''<span class="pr">$</span> RUSTFLAGS="--cfg loom" LOOM_LOCATION=1 cargo test -p reclaim --release --lib registry::loom_tests
+<span class="dim">running 1 test</span>
+<span class="err">Causality violation: Concurrent read and write accesses.</span>
+    created: <span class="pt">crates/reclaim/src/registry.rs:147:19</span>          <span class="dim">Record::new</span>
+       read: thread #0 @ <span class="pt">crates/reclaim/src/registry.rs:107:33</span>   <span class="dim">next, in Iter::next</span>
+      write: thread #1 @ <span class="pt">crates/reclaim/src/registry.rs:37:42</span>    <span class="dim">next, in push_new</span>
+<span class="dim">test registry::loom_tests::a_scan_sees_a_new_record_whole ...</span> <span class="err">FAILED</span>'''),
 }

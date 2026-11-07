@@ -236,6 +236,25 @@ mod tests {
         assert!(rec.payload().load(Ordering::Relaxed).is_null());
     }
 
+    /// Threads that come and go one after another reuse one record. Without reuse every
+    /// thread would add a record, and every later scan would walk all of them.
+    #[test]
+    fn sixty_four_threads_in_turn_share_one_record() {
+        let registry = std::sync::Arc::new(Registry::<AtomicPtr<()>>::new());
+        for _ in 0..64 {
+            let registry = registry.clone();
+            std::thread::spawn(move || {
+                let rec = registry.claim();
+                rec.payload().store(0x1000 as *mut (), Ordering::Relaxed);
+                // SAFETY: claimed just above, not used after this.
+                unsafe { rec.release() };
+            })
+            .join()
+            .unwrap();
+        }
+        assert_eq!(registry.iter().count(), 1);
+    }
+
     #[test]
     fn registry_is_send_and_sync() {
         fn needs_send_sync<X: Send + Sync>() {}
